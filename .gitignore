@@ -1,0 +1,48 @@
+# Environnements virtuels Python
+venv/
+.venv/
+env/
+ENV/
+
+# Caches et fichiers compilés Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Caches des modèles IA (Whisper / OCR)
+.whisper_cache/
+*/.whisper_cache/
+
+# Configuration personnelle (versionner uniquement config.example.ini)
+config.ini
+
+# Données personnelles, sources et résultats générés (CONFIDENTIEL)
+export_contacts/
+fichiers sources/
+transcriptions/
+resultats_anonymisation/
+
+# Fichiers d'index, annuaires et rapports sensibles
+contacts.txt
+contacts_indexes.txt
+contacts_anonymises.txt
+contacts_dedoublonnes.txt
+audit_noms_residuels.txt
+tous_numeros_sms.txt
+tous_emails_trouves.txt
+*.csv
+*.mbox
+*.eml
+*.xml
+*.aup3
+*.tmp_extract.wav
+
+# Fichiers système et éditeurs
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

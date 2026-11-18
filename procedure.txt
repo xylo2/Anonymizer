@@ -1,0 +1,22 @@
+
+Comment exporter ses contacts manuellement depuis Google Contacts
+
+1. Rendez-vous sur google.com en étant connecté au bon profil Google.
+2. Dans le menu de gauche, cliquez sur Exporter (ou sur l'icône d'exportation en haut à droite selon la vue).
+3. Choisissez les contacts à exporter (par exemple Contacts ou Contacts fréquents).
+4. Sélectionnez le format CSV Google (Google CSV), puis cliquez sur Exporter.
+5. Renommez le fichier téléchargé (contacts.csv) et placez-le dans le même dossier que vos scripts.
+
+
+• Contacts : Ce sont les fiches que vous avez créées ou enregistrées volontairement (avec numéro de téléphone, e-mail, adresse, etc.).
+• Autres contacts : Ce sont des contacts enregistrés automatiquement par Google (principalement Gmail) dès que vous répondez à un e-mail ou envoyez un message à une nouvelle adresse, sans jamais avoir créé de fiche pour cette personne.
+
+
+Comment sélectionner et exporter tous les « Autres contacts »
+
+1. Afficher les cases à cocher : Passez votre souris sur la photo ou l'initiale du tout premier contact de la liste, puis cochez la case qui apparaît à sa gauche.
+2. Sélectionner toute la liste d'un coup : Dès qu'un contact est coché, une barre bleue apparaît tout en haut de la liste. Cliquez sur la case à cocher située tout à gauche de cette barre (à côté du nombre de contacts sélectionnés) ou sur la petite flèche à côté, puis choisissez Tout (All).
+3. Lancer l'export : Dans cette même barre bleue en haut à droite, cliquez sur l'icône Plus d'actions (les trois points verticaux ⋮), puis cliquez sur Exporter.
+4. Choisir le format : Sélectionnez CSV Google (Google CSV) et validez en cliquant sur Exporter.
+
+Alternative encore
