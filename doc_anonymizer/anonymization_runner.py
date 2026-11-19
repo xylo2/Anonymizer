@@ -37,13 +37,12 @@ class DocumentAnonymizationRunner:
     AUTO_PERSON_PAIR_PATTERN: Pattern[str] = re.compile(
         r"(?<![A-Za-zÀ-ÿ\-])("
         r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç']{1,20}[\-\u2010-\u2015][A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç']{2,20}|"
-        r"Jean\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç'-]{2,20}|"
         r"(?:[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]|l(?=[a-zéèêëàâäîïôöùûüç]{4,}))[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç']{2,21}"
-        r")\s+"
+        r")(?<!\bParfait)(?<!\bBonjour)(?<!\bSalut)(?<!\bMerci)\s+"
         r"(?:((?:De|Du|Des|de|du|des|Le|La|le|la|Van|Von|Ben|El|Al|Ould|Dos|Da|Di)(?:\s+(?:La|Le|Les|la|le|les))?)\s+)?"
         r"(?!(?:par|avec|pour|chez|dans|sur|sous|vers|entre|sans|et|ou|de|du|des|le|la|les)\b)"
         r"([A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç]"
-        r"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25}(?:\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25})?)(?![A-Za-zÀ-ÿ])"
+        r"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25})(?![A-Za-zÀ-ÿ])"
     )
 
     UPPER_PAIR_PATTERN: Pattern[str] = re.compile(
@@ -152,13 +151,18 @@ class DocumentAnonymizationRunner:
         :param after_explicit_title: True si précédé d'une civilité explicite.
         :return: True si le mot ne doit pas être considéré comme un nom.
         """
+        title_abbrevs = {"dr", "pr", "mme", "mlle", "me", "mr"}
         for tok in word.split():
             norm: str = DocumentTextUtils.normalize_word(tok)
             if (
-                norm in AuditAndStateManager.COMMON_FRENCH_STOPWORDS
-                or norm in ContactRulesLoader.COMMON_WORD_COLLISIONS
+                norm in title_abbrevs
+                or norm in AuditAndStateManager.COMMON_FRENCH_STOPWORDS
                 or norm in self.config.excluded_words
-                or norm in self.rules.alias_words
+                or (norm in self.rules.alias_words and not self.rules.is_first_name(tok))
+            ):
+                return True
+            if norm in ContactRulesLoader.COMMON_WORD_COLLISIONS and (
+                after_known_first_name or not self.rules.is_first_name(tok)
             ):
                 return True
             if not after_explicit_title and norm in self.config.surname_collisions:
@@ -335,6 +339,10 @@ class DocumentAnonymizationRunner:
         w1: str = match.group(1)
         particle: str = match.group(2) or ""
         w2: str = match.group(3)
+        tail: str = match.string[match.end():match.end() + 4]
+        if re.match(r"^\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]\.", tail):
+            return match.group(0)
+
         f1: bool = self._is_known_first_name_ocr(w1)
         if self._is_non_surname_word(w1) or self._is_non_surname_word(
             w2, after_known_first_name=f1
@@ -355,7 +363,7 @@ class DocumentAnonymizationRunner:
         if w1.isupper() and len(w1) >= 4 and len(w2_parts) == 1 and (f2 or self._is_title_case_token(w2)):
             return f"{self._format_surname_initials(w1)} {part_init}{w2}"
 
-        if f1 and (not f2 or particle or len(w2_parts) >= 2) and len(w2) >= 2:
+        if f1 and (not f2 or particle or len(w2_parts) >= 2 or self._is_title_case_token(w2)) and len(w2) >= 2:
             return f"{w1} {part_init}{self._format_surname_initials(w2)}"
 
         if not f1 and f2 and len(w1) >= 2:
@@ -484,8 +492,6 @@ class DocumentAnonymizationRunner:
                 lambda m: self.rules.lookup_keyword_alias(m.group(0)), text
             )
 
-        text = self.UPPER_PAIR_PATTERN.sub(self._replace_upper_pair_match, text)
-        text = self.AUTO_PERSON_PAIR_PATTERN.sub(self._replace_person_pair_match, text)
         text = re.sub(
             r"\b(Jean[\-\u2010-\u2015\s][A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç']{2,20})\s+"
             r"(?:((?:de|du|des|d'|le|la|van|von|ben|el|al|ould|dos|da|di)(?:\s+(?:la|le|les))?)\s+)?"
@@ -497,6 +503,9 @@ class DocumentAnonymizationRunner:
             ),
             text,
         )
+        text = self.UPPER_PAIR_PATTERN.sub(self._replace_upper_pair_match, text)
+        text = self.AUTO_PERSON_PAIR_PATTERN.sub(self._replace_person_pair_match, text)
+        text = self.AUTO_PERSON_PAIR_PATTERN.sub(self._replace_person_pair_match, text)
         text = self.MIME_TOKEN_RECIPIENT_PATTERN.sub(self._replace_mime_recipient, text)
         text = self.PARENS_PSEUDO_PATTERN.sub(r"\1([PSEUDO_MASQUE])", text)
         text = DocumentTextUtils.REGEX_GLUED_PERSON_BIRTH_DATE.sub(r"\1[JOUR_MOIS_MASQUES]/\2", text)
@@ -579,6 +588,7 @@ class DocumentAnonymizationRunner:
         if self.rules.combined_location_pattern is not None:
             masked = self.rules.combined_location_pattern.sub("LIEU_MASQUE", masked)
         return os.path.join(folder, masked)
+
     def flush_batch(self) -> None:
         """Écrit le lot en cours sur disque et met à jour l'état et l'audit."""
         if not self.current_chunk:
@@ -602,7 +612,6 @@ class DocumentAnonymizationRunner:
         self.audit.save()
         count: int = self.audit.write_report()
         print(f"    [+] LOT ÉCRIT : '{full_out_path}' (Audit : {count} nom(s))", flush=True)
-
     @staticmethod
     def _collect_files_sorted(root_folder: str) -> List[str]:
         """Collecte et trie tous les fichiers non cachés d'un répertoire."""
@@ -654,6 +663,7 @@ class DocumentAnonymizationRunner:
         self.current_size += block_bytes
         self.current_batch_files.append(trans_path)
         self.processed_in_session += 1
+
     def anonymize_single_file(
         self, trans_path: str, force_reprocess: bool = False
     ) -> bool:

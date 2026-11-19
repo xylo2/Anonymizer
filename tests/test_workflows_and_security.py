@@ -3,10 +3,13 @@
 import os
 import shutil
 import tempfile
+import time
 import unittest
+from unittest.mock import patch
 from doc_anonymizer.anonymization_runner import DocumentAnonymizationRunner
 from doc_anonymizer.comm_extractors import CommunicationExtractor
 from doc_anonymizer.config_manager import PipelineConfig
+from doc_anonymizer.power_manager import SystemSleepInhibitor
 from doc_anonymizer.text_utils import DocumentTextUtils
 import lancer_contacts
 import lancer_documents
@@ -15,8 +18,8 @@ import lancer_documents
 class TestWorkflowsAndSecurity(unittest.TestCase):
     """
     Vérifie les workflows complets (titres, audit, passe manuelle, CLI),
-    la protection anti-XXE XML, le tri chronologique SMS et la non-régression
-    sur les faux positifs.
+    la protection anti-XXE XML, le tri chronologique SMS, le maintien en éveil
+    et la non-régression sur les faux positifs.
     """
 
     def setUp(self) -> None:
@@ -177,7 +180,6 @@ class TestWorkflowsAndSecurity(unittest.TestCase):
         self.assertLess(
             sms_text.index("Premier message"), sms_text.index("Second message")
         )
-
     def test_cli_entrypoints_indexed_pairs_and_residual_audit(self) -> None:
         """
         Vérifie l'exécution réelle des points d'entrée CLI lancer_contacts.py
@@ -185,7 +187,6 @@ class TestWorkflowsAndSecurity(unittest.TestCase):
         l'audit des noms résiduels avec suggestion phonétique et l'absence de faux positifs.
         """
         import sys
-        from unittest.mock import patch
 
         csv_dir: str = os.path.join(self.test_dir, "export_contacts")
         os.makedirs(csv_dir, exist_ok=True)
@@ -230,7 +231,6 @@ class TestWorkflowsAndSecurity(unittest.TestCase):
         self.assertTrue(os.path.exists(lot_file))
         with open(lot_file, "r", encoding="utf-8") as f:
             lot_text: str = f.read()
-
         self.assertIn("[DATE_MASQUEE]", lot_text)
         self.assertIn("Jean D.", lot_text)
         self.assertIn("Claire B.", lot_text)
@@ -255,3 +255,33 @@ class TestWorkflowsAndSecurity(unittest.TestCase):
             audit_txt: str = f_aud.read()
         self.assertIn("RAPPORT D'AUDIT DES NOMS PROPRES RÉSIDUELS", audit_txt)
         self.assertIn("Proche de 'Dupont'", audit_txt)
+
+    def test_system_sleep_inhibitor_lifecycle(self) -> None:
+        """
+        Vérifie le démarrage et l'arrêt propres du thread de maintien en éveil
+        ainsi que le renouvellement périodique de l'état d'exécution.
+        """
+        calls: list[int] = []
+
+        def _fake_apply(self_obj: SystemSleepInhibitor) -> int:
+            calls.append(1)
+            return 1
+
+        with patch.object(os, "name", "nt"), patch.object(
+            SystemSleepInhibitor, "_apply_windows_state", _fake_apply
+        ):
+            inhibitor = SystemSleepInhibitor(enabled=True, refresh_interval=0.05)
+            with inhibitor:
+                self.assertTrue(inhibitor._win_active)
+                self.assertIsNotNone(inhibitor._heartbeat_thread)
+                assert inhibitor._heartbeat_thread is not None
+                self.assertTrue(inhibitor._heartbeat_thread.is_alive())
+                time.sleep(0.12)
+
+            self.assertFalse(inhibitor._win_active)
+            self.assertIsNone(inhibitor._heartbeat_thread)
+            self.assertGreaterEqual(len(calls), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

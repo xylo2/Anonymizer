@@ -1,5 +1,6 @@
 # Commandes pip à exécuter : pip install faster-whisper numpy scipy
 
+from __future__ import annotations
 from collections import defaultdict
 import datetime
 import email
@@ -10,14 +11,15 @@ import mailbox
 import os
 import re
 import sqlite3
-from typing import Any, DefaultDict, Dict, Iterable, List, Optional, Set, Tuple
+import threading
+from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Optional, Set, Tuple
 import xml.etree.ElementTree as ET
-from faster_whisper import WhisperModel
-import numpy as np
-from scipy.io import wavfile
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.office_extractors import OfficeAndDocumentExtractor
 from doc_anonymizer.text_utils import DocumentTextUtils
+
+if TYPE_CHECKING:
+    from faster_whisper import WhisperModel
 
 
 class CommunicationExtractor:
@@ -32,15 +34,18 @@ class CommunicationExtractor:
         self,
         config: PipelineConfig,
         doc_extractor: OfficeAndDocumentExtractor,
+        stop_event: Optional[threading.Event] = None,
     ) -> None:
         """
         Initialise l'extracteur sans charger immédiatement Whisper en RAM.
 
         :param config: Instance de PipelineConfig.
         :param doc_extractor: Extracteur PDF pour les pièces jointes.
+        :param stop_event: Événement d'interruption Ctrl+C partagé.
         """
         self.config: PipelineConfig = config
         self.doc_extractor: OfficeAndDocumentExtractor = doc_extractor
+        self.stop_event: threading.Event = stop_event or threading.Event()
         self._whisper_model: Optional[WhisperModel] = None
         self._whisper_cache_dir: str = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
@@ -51,13 +56,15 @@ class CommunicationExtractor:
     @property
     def whisper_model(self) -> Optional[WhisperModel]:
         """
-        Charge le modèle Whisper uniquement au premier fichier audio rencontré.
+        Importe et charge le modèle Whisper uniquement au premier fichier audio rencontré.
 
         :return: Instance de WhisperModel ou None si l'audio est désactivé.
         """
         if not self.config.enable_audio:
             return None
         if self._whisper_model is None:
+            from faster_whisper import WhisperModel
+
             cache_dir: str = os.path.normpath(self._whisper_cache_dir)
             os.makedirs(cache_dir, exist_ok=True)
             print(f"Chargement du modèle audio Whisper '{self.config.whisper_model}'...", flush=True)
@@ -242,6 +249,7 @@ class CommunicationExtractor:
         finally:
             if mbox_handle is not None:
                 mbox_handle.close()
+
     @staticmethod
     def _validate_safe_xml_header(xml_path: str) -> None:
         """
@@ -313,14 +321,15 @@ class CommunicationExtractor:
         except Exception as exc:
             errors.append(f"{file_name} -> Erreur parsing XML ({exc})")
             return {}, errors
-
     def extract_audio(self, file_path: str) -> Tuple[Optional[str], Optional[str]]:
         """
-        Transcrit un fichier audio via faster-whisper.
+        Transcrit un fichier audio via faster-whisper avec vérification d'arrêt Ctrl+C.
 
         :param file_path: Chemin vers le fichier audio.
         :return: Tuple (transcription_formatee, message_erreur).
         """
+        if self.stop_event.is_set():
+            return None, "Interrompu par l'utilisateur"
         model: Optional[WhisperModel] = self.whisper_model
         if not self.config.enable_audio or not model:
             return None, "Transcription audio désactivée"
@@ -331,6 +340,8 @@ class CommunicationExtractor:
             segments, _ = model.transcribe(file_path, beam_size=5, vad_filter=True)
             lines: List[str] = []
             for seg in segments:
+                if self.stop_event.is_set():
+                    return None, "Interrompu par l'utilisateur"
                 txt: str = seg.text.strip()
                 if txt:
                     mins, secs = divmod(int(seg.start), 60)
@@ -348,8 +359,13 @@ class CommunicationExtractor:
         :param file_path: Chemin vers le fichier .aup3.
         :return: Tuple (transcription_formatee, message_erreur).
         """
+        if self.stop_event.is_set():
+            return None, "Interrompu par l'utilisateur"
         if not self.config.enable_audio or not self.whisper_model:
             return None, "Transcription audio désactivée"
+        import numpy as np
+        from scipy.io import wavfile
+
         file_name: str = os.path.basename(file_path)
         temp_wav: str = f"{file_path}.tmp_extract.wav"
         conn: Optional[sqlite3.Connection] = None

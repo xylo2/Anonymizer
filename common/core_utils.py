@@ -77,7 +77,6 @@ class SharedCoreUtils:
         if digits.startswith("0") and len(digits) == 10 and digits.isdigit():
             return digits
         return ""
-
     @staticmethod
     def normalize_email_alias(raw_email: str, lowercase: bool = True) -> str:
         """
@@ -165,6 +164,7 @@ class SharedCoreUtils:
         :return: Ensemble des noms de lieux normalisés.
         """
         return cls.load_words_set(file_path)
+
     @staticmethod
     def atomic_write_text(
         target_path: str, content: str, encoding: str = "utf-8"
@@ -189,7 +189,6 @@ class SharedCoreUtils:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             raise
-
     @staticmethod
     def format_duration(seconds: float) -> str:
         """
@@ -222,11 +221,16 @@ class SharedCoreUtils:
         if os.name == "nt":
             es_continuous: int = 0x80000000
             es_system_required: int = 0x00000001
-            flags: int = (
-                (es_continuous | es_system_required) if enable else es_continuous
+            es_awaymode_required: int = 0x00000040
+            raw_flags: int = (
+                (es_continuous | es_system_required | es_awaymode_required)
+                if enable
+                else es_continuous
             )
             try:
-                ctypes.windll.kernel32.SetThreadExecutionState(flags)
+                ctypes.windll.kernel32.SetThreadExecutionState(  # type: ignore[attr-defined]
+                    ctypes.c_uint(raw_flags)
+                )
             except Exception:
                 pass
             return

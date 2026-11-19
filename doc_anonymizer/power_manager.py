@@ -6,40 +6,80 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from typing import Any, Optional, Type
 
 
 class SystemSleepInhibitor:
     """
     Gestionnaire de contexte multiplateforme empêchant la mise en veille
-    ou l'extinction automatique sous Windows (SetThreadExecutionState)
-    et sous Linux (systemd-inhibit) pendant un traitement long.
+    ou l'extinction automatique sous Windows (SetThreadExecutionState avec
+    rafraîchissement périodique et AwayMode) et sous Linux (systemd-inhibit).
     """
 
     ES_CONTINUOUS: int = 0x80000000
     ES_SYSTEM_REQUIRED: int = 0x00000001
+    ES_AWAYMODE_REQUIRED: int = 0x00000040
 
-    def __init__(self, enabled: bool = True) -> None:
+    def __init__(self, enabled: bool = True, refresh_interval: float = 30.0) -> None:
         """
         Initialise le contrôleur d'alimentation multiplateforme.
 
         :param enabled: Active ou désactive le blocage de la mise en veille.
+        :param refresh_interval: Intervalle en secondes de renouvellement Windows.
         """
         self.enabled: bool = enabled
+        self.refresh_interval: float = refresh_interval
         self._win_active: bool = False
+        self._stop_heartbeat: threading.Event = threading.Event()
+        self._heartbeat_thread: Optional[threading.Thread] = None
         self._linux_proc: Optional[subprocess.Popen[bytes]] = None
 
-    def _enable_windows(self) -> None:
+    def _apply_windows_state(self) -> int:
         """
-        Active le maintien en éveil sous Windows via kernel32 avec typage c_uint.
+        Applique les drapeaux d'éveil Windows sur le thread courant.
+
+        :return: État précédent retourné par l'API Win32 (0 en cas d'échec).
         """
-        try:
-            flags: ctypes.c_uint = ctypes.c_uint(
+        flags: ctypes.c_uint = ctypes.c_uint(
+            self.ES_CONTINUOUS
+            | self.ES_SYSTEM_REQUIRED
+            | self.ES_AWAYMODE_REQUIRED
+        )
+        res: int = ctypes.windll.kernel32.SetThreadExecutionState(flags)  # type: ignore[attr-defined]
+        if res == 0:
+            fallback: ctypes.c_uint = ctypes.c_uint(
                 self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
             )
-            res: int = ctypes.windll.kernel32.SetThreadExecutionState(flags)  # type: ignore[attr-defined]
+            res = ctypes.windll.kernel32.SetThreadExecutionState(fallback)  # type: ignore[attr-defined]
+        return res
+
+    def _windows_heartbeat_loop(self) -> None:
+        """
+        Renouvelle périodiquement l'état d'éveil sur un thread dédié afin
+        d'empêcher Windows Modern Standby de suspendre le processus.
+        """
+        while not self._stop_heartbeat.is_set():
+            try:
+                self._apply_windows_state()
+            except Exception:
+                pass
+            self._stop_heartbeat.wait(self.refresh_interval)
+    def _enable_windows(self) -> None:
+        """
+        Active le maintien en éveil sous Windows et démarre le thread de maintien.
+        """
+        try:
+            res: int = self._apply_windows_state()
             self._win_active = res != 0
             if self._win_active:
+                self._stop_heartbeat.clear()
+                self._heartbeat_thread = threading.Thread(
+                    target=self._windows_heartbeat_loop,
+                    name="windows-sleep-inhibitor",
+                    daemon=True,
+                )
+                self._heartbeat_thread.start()
                 print(
                     "[ALIMENTATION] Mise en veille Windows désactivée "
                     "pendant le traitement.",
@@ -108,6 +148,10 @@ class SystemSleepInhibitor:
         Restaure les paramètres normaux d'alimentation à la sortie du bloc.
         """
         if self._win_active:
+            self._stop_heartbeat.set()
+            if self._heartbeat_thread is not None:
+                self._heartbeat_thread.join(timeout=1.5)
+                self._heartbeat_thread = None
             try:
                 ctypes.windll.kernel32.SetThreadExecutionState(  # type: ignore[attr-defined]
                     ctypes.c_uint(self.ES_CONTINUOUS)

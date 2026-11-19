@@ -1,16 +1,18 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 import os
 import re
 import threading
 import time
 from typing import Dict, List, Optional, Set, Tuple
 from common.core_utils import SharedCoreUtils
+from doc_anonymizer.chat_extractors import MultiPlatformChatExtractor
 from doc_anonymizer.comm_extractors import CommunicationExtractor
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.office_extractors import OfficeAndDocumentExtractor
 from doc_anonymizer.text_utils import DocumentTextUtils
+from doc_anonymizer.whatsapp_zip_extractor import WhatsAppZipExtractor
 
 
 class DocumentExtractionRunner:
@@ -20,7 +22,7 @@ class DocumentExtractionRunner:
     """
 
     AUDIO_EXTS: Tuple[str, ...] = (
-        ".wav", ".mp3", ".m4a", ".ogg", ".flac", ".aac", ".amr",
+        ".wav", ".mp3", ".m4a", ".ogg", ".opus", ".flac", ".aac", ".amr",
     )
     IMAGE_EXTS: Tuple[str, ...] = (
         ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff",
@@ -44,7 +46,18 @@ class DocumentExtractionRunner:
             OfficeAndDocumentExtractor(enable_ocr=config.enable_ocr)
         )
         self.comm_extractor: CommunicationExtractor = CommunicationExtractor(
-            config=config, doc_extractor=self.doc_extractor
+            config=config,
+            doc_extractor=self.doc_extractor,
+            stop_event=self.stop_event,
+        )
+        self.chat_extractor: MultiPlatformChatExtractor = (
+            MultiPlatformChatExtractor(config=config)
+        )
+        self.wa_zip_extractor: WhatsAppZipExtractor = WhatsAppZipExtractor(
+            config=config,
+            doc_extractor=self.doc_extractor,
+            comm_extractor=self.comm_extractor,
+            chat_extractor=self.chat_extractor,
         )
         self.extraction_errors: List[str] = []
         self._io_lock: threading.Lock = threading.Lock()
@@ -60,7 +73,6 @@ class DocumentExtractionRunner:
             return configured
         cpu_total: int = os.cpu_count() or 2
         return max(1, min(4, cpu_total))
-
     @staticmethod
     def load_tracking_set(tracking_path: str) -> Set[str]:
         """
@@ -87,6 +99,7 @@ class DocumentExtractionRunner:
             os.makedirs(parent_dir, exist_ok=True)
         with open(tracking_path, "a", encoding="utf-8") as f:
             f.write(f"{entry}\n")
+
     @classmethod
     def categorize_extension(cls, ext: str) -> str:
         """
@@ -105,6 +118,8 @@ class DocumentExtractionRunner:
             return "Web"
         if ext in {".mbox", ".eml"}:
             return "Emails"
+        if ext in {".json", ".zip", ".vtt"}:
+            return "Chats"
         if ext == ".xml":
             return "SMS"
         if ext == ".ics":
@@ -131,7 +146,6 @@ class DocumentExtractionRunner:
         if os.path.isabs(self.config.sources_dir):
             return os.path.normpath(self.config.sources_dir)
         return os.path.normpath(os.path.join(self.config.root_dir, self.config.sources_dir))
-
     def _file_priority_key(self, file_path: str) -> Tuple[int, int, str]:
         """
         Calcule une clé de priorité pour reporter les fichiers lourds à la fin.
@@ -184,6 +198,7 @@ class DocumentExtractionRunner:
                 collected.append(os.path.join(root_path, file_name))
         collected.sort(key=self._file_priority_key)
         return collected
+
     def _write_transcription_block(self, period: str, category: str, raw_base_name: str, content: str) -> str:
         """
         Écrit de façon thread-safe le contenu extrait dans transcriptions/AAAA-MM/Catégorie/.
@@ -202,6 +217,139 @@ class DocumentExtractionRunner:
                 f_out.write(content)
         return out_path
 
+    def _resolve_chat_output_stem(self, file_path: str, raw_stem: str) -> str:
+        """
+        Évite les collisions entre fichiers génériques (messages.json, message_1.html).
+
+        :param file_path: Chemin complet du fichier de chat.
+        :param raw_stem: Nom sans extension assaini.
+        :return: Nom de base unique pour la transcription.
+        """
+        low_stem: str = raw_stem.lower()
+        if low_stem == "messages" or low_stem.startswith("message_"):
+            parent_name: str = os.path.basename(os.path.dirname(file_path))
+            if parent_name:
+                return self._sanitize_filesystem_stem(f"chat_{parent_name}_{raw_stem}")
+        return raw_stem
+    def _process_chat_or_archive(
+        self,
+        file_path: str,
+        norm_rel: str,
+        ext: str,
+        raw_stem: str,
+        target_phones: Dict[str, str],
+        allowed_emails: Set[str],
+        already_extracted: Set[str],
+        discovered_phones: Set[str],
+        discovered_emails: Set[str],
+    ) -> Optional[List[str]]:
+        """
+        Traite les exports de messageries (ZIP WhatsApp, JSON chats/Teams, VTT Teams, HTML Messenger, TXT WhatsApp).
+        """
+        from doc_anonymizer.teams_chat_extractor import TeamsChatExtractor
+
+        generated_paths: List[str] = []
+
+        if ext == ".vtt":
+            vtt_txt, vtt_err = TeamsChatExtractor(self.config).extract_teams_vtt(file_path)
+            if self.stop_event.is_set():
+                return []
+            if vtt_err or not vtt_txt:
+                if vtt_err:
+                    with self._io_lock:
+                        self.extraction_errors.append(f"{norm_rel} -> {vtt_err}")
+                return []
+            period: str = DocumentTextUtils.resolve_file_period(
+                vtt_txt, os.path.basename(file_path), file_path
+            )
+            generated_paths.append(
+                self._write_transcription_block(period, "Chats", raw_stem, vtt_txt)
+            )
+            with self._io_lock:
+                self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
+                already_extracted.add(norm_rel)
+            return generated_paths
+
+        if ext == ".zip":
+            wa_chats, wa_atts, zip_err = self.wa_zip_extractor.extract_whatsapp_zip(file_path)
+            if self.stop_event.is_set():
+                return []
+            if zip_err:
+                with self._io_lock:
+                    self.extraction_errors.append(f"{norm_rel} -> {zip_err}")
+                return []
+            if wa_chats or wa_atts:
+                for period, chat_block in sorted(wa_chats.items()):
+                    generated_paths.append(
+                        self._write_transcription_block(period, "Chats", raw_stem, chat_block)
+                    )
+                for att_period, att_cat, att_stem, att_text in wa_atts:
+                    generated_paths.append(
+                        self._write_transcription_block(att_period, att_cat, att_stem, att_text)
+                    )
+                with self._io_lock:
+                    self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
+                    already_extracted.add(norm_rel)
+            return generated_paths
+
+        if ext == ".json":
+            local_phones: Set[str] = set()
+            local_emails: Set[str] = set()
+            chats_by_month, chat_err = self.chat_extractor.extract_json_chat(
+                file_path, target_phones, allowed_emails, local_phones, local_emails
+            )
+            if self.stop_event.is_set():
+                return []
+            with self._io_lock:
+                discovered_phones.update(local_phones)
+                discovered_emails.update(local_emails)
+            if chat_err:
+                with self._io_lock:
+                    self.extraction_errors.append(f"{norm_rel} -> {chat_err}")
+                return []
+            if chats_by_month:
+                chat_stem: str = self._resolve_chat_output_stem(file_path, raw_stem)
+                for period, chat_block in sorted(chats_by_month.items()):
+                    generated_paths.append(
+                        self._write_transcription_block(period, "Chats", chat_stem, chat_block)
+                    )
+                with self._io_lock:
+                    self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
+                    already_extracted.add(norm_rel)
+            return generated_paths
+
+        if ext in self.HTML_EXTS:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f_html:
+                raw_html: str = f_html.read()
+            if self.chat_extractor.is_messenger_html_file(file_path, raw_html):
+                fb_by_month: Dict[str, str] = self.chat_extractor.extract_messenger_html(file_path, raw_html)
+                if fb_by_month:
+                    chat_stem = self._resolve_chat_output_stem(file_path, raw_stem)
+                    for period, fb_block in sorted(fb_by_month.items()):
+                        generated_paths.append(
+                            self._write_transcription_block(period, "Chats", chat_stem, fb_block)
+                        )
+                    with self._io_lock:
+                        self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
+                        already_extracted.add(norm_rel)
+                return generated_paths
+
+        if ext == ".txt":
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f_txt:
+                raw_txt: str = f_txt.read()
+            if self.chat_extractor.is_whatsapp_text_file(raw_txt):
+                wa_by_month: Dict[str, str] = self.chat_extractor.extract_whatsapp_text(file_path, raw_txt)
+                if wa_by_month:
+                    for period, wa_block in sorted(wa_by_month.items()):
+                        generated_paths.append(
+                            self._write_transcription_block(period, "Chats", raw_stem, wa_block)
+                        )
+                    with self._io_lock:
+                        self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
+                        already_extracted.add(norm_rel)
+                return generated_paths
+
+        return None
     def process_single_file(
         self, file_path: str, target_phones: Dict[str, str], allowed_emails: Set[str],
         already_extracted: Set[str], sms_processed: Set[str],
@@ -209,15 +357,6 @@ class DocumentExtractionRunner:
     ) -> List[str]:
         """
         Traite un fichier source (compatible exécution parallèle) et retourne les transcriptions.
-
-        :param file_path: Chemin vers le fichier candidat.
-        :param target_phones: Téléphones issus des fichiers de contacts.
-        :param allowed_emails: E-mails issus des fichiers de contacts.
-        :param already_extracted: Fichiers déjà traités.
-        :param sms_processed: Clés SMS déjà extraites.
-        :param discovered_phones: Collecteur des numéros rencontrés.
-        :param discovered_emails: Collecteur des e-mails rencontrés.
-        :return: Liste des chemins de transcriptions générées.
         """
         if self.stop_event.is_set():
             return []
@@ -248,20 +387,28 @@ class DocumentExtractionRunner:
             if sms_by_month:
                 for period, entries in sorted(sms_by_month.items()):
                     entries.sort(key=lambda item: item)
-                    merged_sms: str = "".join(block for _, block in entries)
-                    generated_paths.append(self._write_transcription_block(period, category, raw_stem, merged_sms))
+                    generated_paths.append(
+                        self._write_transcription_block(period, category, raw_stem, "".join(b for _, b in entries))
+                    )
                 with self._io_lock:
                     for num in local_phones:
-                        if num in target_phones:
-                            key: str = f"{file_name}|{num}"
-                            if key not in sms_processed:
-                                self.append_tracking_entry(self.config.sms_tracking_file, key)
-                                sms_processed.add(key)
+                        key: str = f"{file_name}|{num}"
+                        if num in target_phones and key not in sms_processed:
+                            self.append_tracking_entry(self.config.sms_tracking_file, key)
+                            sms_processed.add(key)
             return generated_paths
 
         with self._io_lock:
             if norm_rel in already_extracted:
                 return []
+
+        chat_res: Optional[List[str]] = self._process_chat_or_archive(
+            file_path, norm_rel, ext, raw_stem, target_phones, allowed_emails,
+            already_extracted, discovered_phones, discovered_emails,
+        )
+        if chat_res is not None:
+            return chat_res
+
         if ext in {".mbox", ".eml"}:
             local_mail_disc: Set[str] = set()
             emails_by_month, err = self.comm_extractor.extract_emails(file_path, allowed_emails, local_mail_disc)
@@ -304,11 +451,8 @@ class DocumentExtractionRunner:
         else:
             return []
 
-        if self.stop_event.is_set():
-            return []
-
-        if err_msg or not extracted_text:
-            if err_msg:
+        if self.stop_event.is_set() or err_msg or not extracted_text:
+            if err_msg and not self.stop_event.is_set():
                 with self._io_lock:
                     self.extraction_errors.append(f"{norm_rel} -> {err_msg}")
             return []
@@ -369,7 +513,8 @@ class DocumentExtractionRunner:
 
     def run(self) -> None:
         """
-        Exécute la phase autonome d'extraction multi-formats en parallèle.
+        Exécute la phase autonome d'extraction multi-formats en parallèle
+        avec prise en compte immédiate de Ctrl+C.
         """
         start_time: float = time.time()
         workers: int = self.get_worker_count()
@@ -399,11 +544,19 @@ class DocumentExtractionRunner:
                 ): fp
                 for fp in files
             }
-            for idx, future in enumerate(as_completed(futures), start=1):
-                fp: str = futures[future]
-                print(f"[{idx}/{total}] Terminé : {os.path.basename(fp)}", flush=True)
-                if future.result():
-                    processed_count += 1
+            pending_futures = set(futures.keys())
+            while pending_futures:
+                done_batch = [fut for fut in list(pending_futures) if fut.done()]
+                if not done_batch:
+                    time.sleep(0.1)
+                    continue
+                for future in done_batch:
+                    pending_futures.remove(future)
+                    fp: str = futures[future]
+                    idx: int = total - len(pending_futures)
+                    print(f"[{idx}/{total}] Terminé : {os.path.basename(fp)}", flush=True)
+                    if future.result():
+                        processed_count += 1
             executor.shutdown(wait=True)
         except KeyboardInterrupt:
             self.stop_event.set()

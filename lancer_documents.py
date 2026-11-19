@@ -2,9 +2,10 @@
 
 import argparse
 import os
+import signal
 import sys
 import time
-from typing import List, Optional
+from typing import Any, List, Optional
 
 ROOT_DIR: str = os.path.dirname(os.path.abspath(__file__))
 if ROOT_DIR not in sys.path:
@@ -14,6 +15,7 @@ from common.core_utils import SharedCoreUtils
 from doc_anonymizer.anonymization_runner import DocumentAnonymizationRunner
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.pipeline_runner import DocAnonymizerPipelineRunner
+from doc_anonymizer.power_manager import SystemSleepInhibitor
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -63,6 +65,24 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Réapplique uniquement contacts_manuels.txt sur les lots existants.",
     )
     return parser.parse_args(argv)
+def _install_sigint_handler() -> None:
+    """
+    Force l'arrêt immédiat du processus au second Ctrl+C sous Windows
+    si un thread C/C++ (OCR ou Whisper) bloque la sortie.
+    """
+    sigint_count: List[int] = [0]
+
+    def _on_sigint(signum: int, frame: Any) -> None:
+        sigint_count[0] += 1
+        if sigint_count[0] >= 2:
+            print(
+                "\n[ARRÊT FORCÉ] Second Ctrl+C détecté : fermeture immédiate.",
+                flush=True,
+            )
+            os._exit(130)
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, _on_sigint)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -72,6 +92,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     :param argv: Arguments CLI optionnels.
     :return: Code de retour système (0 si succès).
     """
+    _install_sigint_handler()
     args = parse_args(argv)
     config = PipelineConfig(args.config)
 
@@ -95,16 +116,22 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
 
     t_start: float = time.time()
-    SharedCoreUtils.prevent_sleep(not args.allow_sleep)
     try:
         if args.manual_only:
-            anon_runner = DocumentAnonymizationRunner(config, manual_only=True)
-            anon_runner.run_on_existing_results()
+            with SystemSleepInhibitor(enabled=not args.allow_sleep):
+                anon_runner = DocumentAnonymizationRunner(config, manual_only=True)
+                anon_runner.run_on_existing_results()
         else:
-            pipeline = DocAnonymizerPipelineRunner(config)
+            pipeline = DocAnonymizerPipelineRunner(
+                config, prevent_sleep=not args.allow_sleep
+            )
             pipeline.run_all()
-    finally:
-        SharedCoreUtils.prevent_sleep(False)
+    except KeyboardInterrupt:
+        print(
+            "\n[ARRÊT] Traitement interrompu proprement par l'utilisateur (Ctrl+C).",
+            flush=True,
+        )
+        return 130
 
     elapsed: str = SharedCoreUtils.format_duration(time.time() - t_start)
     print(f"[FIN] Pipeline documentaire terminé en {elapsed}.", flush=True)

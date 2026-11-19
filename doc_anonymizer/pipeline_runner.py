@@ -1,6 +1,6 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 import os
 import shutil
 import threading
@@ -86,6 +86,7 @@ class DocAnonymizerPipelineRunner:
                 processed_count += 1
 
         return processed_count
+
     def _reset_results_for_second_pass(self) -> None:
         """
         Nettoie intégralement les anciens lots et l'état JSON avant de relancer
@@ -138,7 +139,6 @@ class DocAnonymizerPipelineRunner:
         self._anonymize_pending_transcriptions(second_anonymizer)
         second_anonymizer.finalize(pass_start)
         return True
-
     def run_all(self) -> None:
         """
         Exécute le rattrapage des transcriptions, l'extraction parallèle et
@@ -195,17 +195,28 @@ class DocAnonymizerPipelineRunner:
                     ): fp
                     for fp in files
                 }
-                for idx, future in enumerate(as_completed(futures), start=1):
-                    fp: str = futures[future]
-                    generated_txts: List[str] = future.result()
-                    print(f"[{idx}/{total_files}] Extrait : {os.path.basename(fp)}", flush=True)
-                    for trans_txt in generated_txts:
-                        ok: bool = anonymizer.anonymize_single_file(trans_txt, force_reprocess=True)
-                        print(
-                            f"    -> Anonymisation : {'OK' if ok else 'IGNORÉ'} "
-                            f"(tampon : {len(anonymizer.current_chunk)} fichier(s), {anonymizer.current_size} octets)",
-                            flush=True,
-                        )
+                pending_futures = set(futures.keys())
+                while pending_futures:
+                    done_batch = []
+                    for fut in list(pending_futures):
+                        if fut.done():
+                            done_batch.append(fut)
+                    if not done_batch:
+                        time.sleep(0.1)
+                        continue
+                    for future in done_batch:
+                        pending_futures.remove(future)
+                        fp: str = futures[future]
+                        generated_txts: List[str] = future.result()
+                        idx: int = total_files - len(pending_futures)
+                        print(f"[{idx}/{total_files}] Extrait : {os.path.basename(fp)}", flush=True)
+                        for trans_txt in generated_txts:
+                            ok: bool = anonymizer.anonymize_single_file(trans_txt, force_reprocess=True)
+                            print(
+                                f"    -> Anonymisation : {'OK' if ok else 'IGNORÉ'} "
+                                f"(tampon : {len(anonymizer.current_chunk)} fichier(s), {anonymizer.current_size} octets)",
+                                flush=True,
+                            )
 
                 executor.shutdown(wait=True)
                 self._anonymize_pending_transcriptions(anonymizer)
@@ -219,7 +230,7 @@ class DocAnonymizerPipelineRunner:
                 print("\n[INTERROMPU] Ctrl+C détecté : sauvegarde des lots déjà anonymisés...", flush=True)
                 extractor.finalize_reports(discovered_phones, discovered_emails)
                 anonymizer.flush_batch()
-                raise
+                os._exit(130)
 
         elapsed_str: str = SharedCoreUtils.format_duration(time.perf_counter() - start_time)
         print(f"\nPipeline parallèle terminé en {elapsed_str}.", flush=True)

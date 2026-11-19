@@ -1,20 +1,15 @@
 # Commandes pip à exécuter :
 # pip install pymupdf rapidocr-onnxruntime python-docx odfpy striprtf openpyxl python-pptx
 
+from __future__ import annotations
 import os
 import re
-from typing import Any, List, Optional, Tuple
-from docx import Document as DocxDocument
-from odf import teletype
-from odf.opendocument import load as load_odt
-from odf.text import P as OdfP
-import openpyxl
-from pptx import Presentation
-import pymupdf
-from rapidocr_onnxruntime import RapidOCR
-from striprtf.striprtf import rtf_to_text
+from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.text_utils import DocumentTextUtils
+
+if TYPE_CHECKING:
+    from rapidocr_onnxruntime import RapidOCR
 
 
 class OfficeAndDocumentExtractor:
@@ -44,7 +39,7 @@ class OfficeAndDocumentExtractor:
     @property
     def ocr_engine(self) -> Optional[RapidOCR]:
         """
-        Charge le moteur RapidOCR uniquement à la première image ou page PDF
+        Importe et charge le moteur RapidOCR uniquement à la première image ou page PDF
         scannée rencontrée.
 
         :return: Instance de RapidOCR ou None si l'OCR est désactivé.
@@ -52,6 +47,8 @@ class OfficeAndDocumentExtractor:
         if not self.enable_ocr:
             return None
         if self._ocr_engine is None:
+            from rapidocr_onnxruntime import RapidOCR
+
             print("Chargement du moteur OCR (RapidOCR)...", flush=True)
             self._ocr_engine = RapidOCR()
             print("[OK] Moteur OCR chargé.", flush=True)
@@ -82,6 +79,8 @@ class OfficeAndDocumentExtractor:
         :param is_stream: Indique si pdf_source est un flux bytes.
         :return: Tuple (texte_formate, message_erreur).
         """
+        import pymupdf
+
         doc: Optional[Any] = None
         try:
             doc = (
@@ -142,6 +141,8 @@ class OfficeAndDocumentExtractor:
         :param file_path: Chemin vers le fichier .docx.
         :return: Tuple (texte_formate, message_erreur).
         """
+        from docx import Document as DocxDocument
+
         file_name: str = os.path.basename(file_path)
         try:
             doc = DocxDocument(file_path)
@@ -165,6 +166,10 @@ class OfficeAndDocumentExtractor:
         :param file_path: Chemin vers le fichier .odt.
         :return: Tuple (texte_formate, message_erreur).
         """
+        from odf import teletype
+        from odf.opendocument import load as load_odt
+        from odf.text import P as OdfP
+
         file_name: str = os.path.basename(file_path)
         try:
             doc = load_odt(file_path)
@@ -187,6 +192,8 @@ class OfficeAndDocumentExtractor:
         :param file_path: Chemin vers le fichier .rtf.
         :return: Tuple (texte_formate, message_erreur).
         """
+        from striprtf.striprtf import rtf_to_text
+
         file_name: str = os.path.basename(file_path)
         try:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -218,6 +225,8 @@ class OfficeAndDocumentExtractor:
         :param file_path: Chemin vers le fichier .xlsx.
         :return: Tuple (texte_formate, message_erreur).
         """
+        import openpyxl
+
         file_name: str = os.path.basename(file_path)
         try:
             wb = openpyxl.load_workbook(file_path, data_only=True)
@@ -246,6 +255,8 @@ class OfficeAndDocumentExtractor:
         :param file_path: Chemin vers le fichier .pptx.
         :return: Tuple (texte_formate, message_erreur).
         """
+        from pptx import Presentation
+
         file_name: str = os.path.basename(file_path)
         try:
             prs = Presentation(file_path)
