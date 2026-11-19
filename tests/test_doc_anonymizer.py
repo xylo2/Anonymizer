@@ -238,7 +238,7 @@ class TestDocAnonymizer(unittest.TestCase):
             self.assertIn("Jean D. L. T.", res_txt)
             self.assertIn("Jean-Eudes L.", res_txt)
             self.assertIn("Jean Eudes M.", res_txt)
-            self.assertIn("Dr Jean Philippe B.", res_txt)
+            self.assertIn("Dr Jean P. B.", res_txt)
             self.assertIn("Famille V.", res_txt)
             self.assertIn("Dr L.", res_txt)
             self.assertIn("MME Alice M.", res_txt)

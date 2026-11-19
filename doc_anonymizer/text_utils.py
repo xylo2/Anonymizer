@@ -4,7 +4,6 @@ from datetime import datetime
 import html
 import os
 import re
-import tempfile
 from typing import Any, Dict, List, Optional, Pattern, Set, Tuple
 import unicodedata
 import xml.etree.ElementTree as ET
@@ -94,20 +93,20 @@ class DocumentTextUtils:
     REGEX_BIRTH_DATE: Pattern[str] = re.compile(
         r"(?i)\b((?:n[ée](?:[\(（]e[\)）]|e)?(?:\s+le)?(?:/rang)?|date\s+de\s+naissance|naissance|ddn|"
         r"enfant|fils|fille|b[ée]b[ée]|nourrisson|patient|patiente)\s*(?:du|le)?\s*[:=\-]?\s*)"
-        r"(?:\d{1,2}[/\-.]\d{1,2}[/\-.]|\d{1,2}\s+[a-zéû]+\s+|(?:0[1-9]|\d|3)(?:0[1-9]|1[0-2]|0s))((?:19|20)\d{2}|\d{2})\b"
+        r"(?:\d{1,2}[/\-.]\d{1,2}[/\-.]|\d{1,2}\s+[a-zéû]+\s+|(?:0[1-9]|[12]\d|3[01])(?:0[1-9]|1[0-2]|0s))((?:19|20)\d{2}|\d{2})\b"
     )
     REGEX_GLUED_PERSON_BIRTH_DATE: Pattern[str] = re.compile(
         r"((?:Aurélie\s+S\.|S\.,?\s*AURELIE|AURELIE)\s*)"
-        r"(?:0[1-9]|\d|3)[/\-.](?:0[1-9]|1[0-2])[/\-.]((?:19|20)\d{2})\b",
+        r"(?:0[1-9]|[12]\d|3[01])[/\-.](?:0[1-9]|1[0-2])[/\-.]((?:19|20)\d{2})\b",
         re.IGNORECASE,
     )
     REGEX_FACILITIES_AND_ZONES: Pattern[str] = re.compile(
         r"\b(?:CHU|Clinique|Polyclinique|H[ôo]pital|Centre\s+[Hh]ospitalier|"
         r"Maison\s+[Mm][ée]dicale|Maison\s+de\s+[Ss]ant[ée]|Institut|Espace|Foyer|"
-        r"Centre\s+[Cc]ommercial|ZAC|ZI|Gare\s+de|Porte\s+de|Rives\s+de)\s*"
+        r"Centre\s+[Cc]ommercial|ZAC|ZI|Gare\s+de|Porte\s+de|Rives\s+de)[ \t]*"
         r"(?:de\s+la\s+|des\s+|du\s+|de\s+|d'|l')?"
         r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+"
-        r"(?:[\s\-]+(?:de|du|des|la|le|les|l'|sur|en|[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+)){0,4}\b"
+        r"(?:[ \t\-]+(?:de|du|des|la|le|les|l'|sur|en|[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+)){0,4}\b"
     )
     REGEX_URL: Pattern[str] = re.compile(
         r"(?:https?://|www\.)[^\s<>\"'\)\]]+", re.IGNORECASE
@@ -119,20 +118,20 @@ class DocumentTextUtils:
         r"sentier|faubourg|fbg\.?|r[ée]sidence|r[ée]s\.?|lotissement|hameau|"
         r"lieu-dit|lieudit|esplanade|terrasse|parvis|promenade|foss[ée]s|vente)"
     )
-    _STREET_TYPES_WITH_NUM: str = rf"(?:{_STREET_TYPES_NO_NUM}|place|pl\.?|voie|cr\.?)"
+    _STREET_TYPES_WITH_NUM: str = rf"(?:{_STREET_TYPES_NO_NUM}|r\.?|place|pl\.?|voie|cr\.?)"
 
     REGEX_STREET_ADDRESS: Pattern[str] = re.compile(
-        rf"(?i)\b(?:\d{{1,4}}(?:\s*(?:bis|ter|quater))?\s*[,]?\s*{_STREET_TYPES_WITH_NUM}(?:(?![a-zà-ÿ0-9])|(?=(?:de|du|des|d)[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]))"
-        rf"|{_STREET_TYPES_NO_NUM}(?:(?![a-zà-ÿ0-9])|(?=(?:de|du|des|d)[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])))\s*"
-        rf"(?:de\s*la\s*|des\s*|du\s*|de\s*|d'|l')?[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
-        rf"[^\n,;()\[\]{{}}]{{2,45}}"
+        rf"(?i)\b(?:\d{{1,4}}[ \t]*(?:bis|ter|quater)?[ \t]*[,]?[ \t]*{_STREET_TYPES_WITH_NUM}(?:(?![a-zà-ÿ0-9])|(?=[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]))"
+        rf"|{_STREET_TYPES_NO_NUM}(?:(?![a-zà-ÿ0-9])|(?=(?:de|du|des|d)[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])))[ \t]*"
+        rf"(?:de[ \t]*la[ \t]*|des[ \t]*|du[ \t]*|de[ \t]*|d'|l')?[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
+        rf"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç0-9'\- \t]{{2,42}}"
     )
 
     REGEX_POSTAL_CITY: Pattern[str] = re.compile(
-        r"(?<!\d)\b(?:0[1-9]|[1-8]\d|9[0-8])\d{3}\s*"
+        r"(?<!\d)\b(?:0[1-9]|[1-8]\d|9[0-8])\d{3}[ \t]*"
         r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+"
-        r"(?:[\s\-]+(?:sur|sous|en|de|du|des|la|le|les|l'|st|ste|saint|sainte|cedex|"
-        r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+)){0,5}(?:\s*\d{1,2})?\b"
+        r"(?:[ \t\-]+(?:sur|sous|en|de|du|des|la|le|les|l'|st|ste|saint|sainte|cedex|"
+        r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+)){0,5}(?:[ \t]*\d{1,2})?\b"
     )
     ORG_GENERIC_WORDS = frozenset({
         "france", "travail", "pole", "emploi", "caf", "cpam", "urssaf",
@@ -494,7 +493,7 @@ class DocumentTextUtils:
             "l": "[li1]", "o": "[oôö0]", "ô": "[oôö0]", "ö": "[oôö0]",
             "s": "[s5]", "u": "[uùûü]", "ù": "[uùûü]", "û": "[uùûü]", "ü": "[uùûü]",
             "y": "[yÿ]", "ÿ": "[yÿ]",
-            " ": r"[\s\-'\u2019]*", "-": r"[\s\-'\u2019]*",
+            " ": r"[\s\-'\u2019]+", "-": r"[\s\-'\u2019]*",
             "'": r"[\s\-'\u2019]*", "\u2019": r"[\s\-'\u2019]*",
         }
         if low in ocr_classes:
@@ -525,7 +524,7 @@ class DocumentTextUtils:
         """Construit une expression régulière Trie compacte tolérante OCR."""
         trie: Dict[str, Any] = {}
         unique_sorted: List[str] = sorted(
-            {w.strip() for w in words if w and w.strip()},
+            {w.strip().lower() for w in words if w and w.strip()},
             key=lambda x: (-len(x), x),
         )
         for word in unique_sorted:
