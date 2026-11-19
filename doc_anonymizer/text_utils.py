@@ -92,6 +92,7 @@ class DocumentTextUtils:
     )
     REGEX_FACILITIES_AND_ZONES: Pattern[str] = re.compile(
         r"\b(?:CHU|Clinique|Polyclinique|H[ôo]pital|Centre\s+[Hh]ospitalier|"
+        r"Maison\s+[Mm][ée]dicale|Maison\s+de\s+[Ss]ant[ée]|Institut|Espace|Foyer|"
         r"Centre\s+[Cc]ommercial|ZAC|Gare\s+de|Porte\s+de|Rives\s+de)\s+"
         r"(?:de\s+la\s+|des\s+|du\s+|de\s+|d'|l')?"
         r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+"
