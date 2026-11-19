@@ -89,7 +89,7 @@ class TranscriptionNameRestorer:
         self, current_root: str, category: str, target_name: str
     ) -> str:
         """
-        Détermine le chemin cible transcriptions/AAAA-MM/Catégorie/fichier.txt.
+        Détermine le chemin cible extracted_texts/AAAA-MM/Catégorie/fichier.txt.
 
         :param current_root: Dossier parent actuel du fichier.
         :param category: Catégorie thématique.
@@ -113,7 +113,7 @@ class TranscriptionNameRestorer:
         """
         Supprime les sous-dossiers devenus vides après déplacement.
 
-        :param base_dir: Répertoire racine transcriptions.
+        :param base_dir: Répertoire racine extracted_texts.
         """
         for root_path, dirs, files in os.walk(base_dir, topdown=False):
             if root_path == base_dir:
@@ -126,7 +126,7 @@ class TranscriptionNameRestorer:
 
     def run(self) -> int:
         """
-        Parcourt transcriptions, restaure les noms et replace les fichiers
+        Parcourt extracted_texts, restaure les noms et replace les fichiers
         dans leur dossier périodique AAAA-MM exact.
 
         :return: Nombre de fichiers déplacés ou renommés.
@@ -144,7 +144,7 @@ class TranscriptionNameRestorer:
             for file_name in sorted(files):
                 if (
                     file_name.startswith(".")
-                    or file_name == "rapport_extraction.txt"
+                    or file_name in {"rapport_extraction.txt", "extraction_report.txt"}
                     or not file_name.lower().endswith(".txt")
                 ):
                     continue

@@ -473,7 +473,10 @@ class DocumentExtractionRunner:
                 f_mail.writelines(f"{mail}\n" for mail in sorted(merged_emails))
 
         if self.extraction_errors:
-            report_path: str = os.path.join(self.config.transcriptions_dir, "rapport_extraction.txt")
+            report_path: str = self.config.extraction_report_file
+            report_dir: str = os.path.dirname(report_path)
+            if report_dir:
+                os.makedirs(report_dir, exist_ok=True)
             with open(report_path, "w", encoding="utf-8") as f_err:
                 f_err.writelines(f"{err}\n" for err in self.extraction_errors)
 

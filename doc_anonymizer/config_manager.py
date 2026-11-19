@@ -71,6 +71,9 @@ class PipelineConfig:
         self.audit_copy_file: str = self._resolve_path(
             "paths", "audit_copy_file", "audits/audit_noms_residuels_copier.txt"
         )
+        self.extraction_report_file: str = self._resolve_path(
+            "paths", "extraction_report_file", "audits/extraction_report.txt"
+        )
 
         self.first_names_file: str = self._resolve_path(
             "files", "first_names_file", "data/prenoms.txt"
@@ -86,18 +89,18 @@ class PipelineConfig:
         )
 
         self.state_file: str = os.path.join(
-            self.results_dir, ".etat_anonymisation.json"
+            self.results_dir, ".anonymization_state.json"
         )
         self.resume_state_file: str = self.state_file
         self.extraction_state_file: str = os.path.join(
-            self.transcriptions_dir, ".etat_extraction.json"
+            self.transcriptions_dir, ".extraction_state.txt"
         )
         self.extraction_tracking_file: str = self.extraction_state_file
         self.sms_tracking_file: str = os.path.join(
-            self.transcriptions_dir, ".etat_sms.txt"
+            self.transcriptions_dir, ".sms_state.txt"
         )
         self.email_tracking_file: str = os.path.join(
-            self.transcriptions_dir, ".etat_emails.txt"
+            self.transcriptions_dir, ".email_state.txt"
         )
         self.enable_ocr: bool = self._get_bool("extraction", "enable_ocr", True)
         self.enable_audio: bool = self._get_bool(

@@ -27,10 +27,11 @@ class TestWhatsAppAndMessengerHtml(unittest.TestCase):
                 "first_names_file = prenoms.txt\n"
                 "[paths]\n"
                 "root_dir = .\n"
-                "sources_dir = fichiers sources\n"
-                "transcriptions_dir = transcriptions\n"
-                "results_dir = resultats_anonymisation\n"
+                "sources_dir = input_documents\n"
+                "transcriptions_dir = extracted_texts\n"
+                "results_dir = anonymized_results\n"
                 "contacts_file = contacts.txt\n"
+                "extraction_report_file = audits/extraction_report.txt\n"
                 "[extraction]\n"
                 "enable_ocr = false\n"
                 "enable_audio = false\n"
@@ -47,10 +48,10 @@ class TestWhatsAppAndMessengerHtml(unittest.TestCase):
     def test_zip_ignored_and_unzipped_whatsapp_with_messenger_html(self) -> None:
         """
         Vérifie qu'un .zip non décompressé est ignoré avec avertissement dans
-        rapport_extraction.txt, et qu'un dossier WhatsApp dézippé + HTML Messenger
+        audits/extraction_report.txt, et qu'un dossier WhatsApp dézippé + HTML Messenger
         sont correctement traités.
         """
-        sources: str = os.path.join(self.test_dir, "fichiers sources")
+        sources: str = os.path.join(self.test_dir, "input_documents")
         os.makedirs(sources, exist_ok=True)
 
         zip_path: str = os.path.join(sources, "Archive_A_Dezipper.zip")
@@ -87,7 +88,7 @@ class TestWhatsAppAndMessengerHtml(unittest.TestCase):
         config = PipelineConfig(self.ini_path)
         DocAnonymizerPipelineRunner(config=config, prevent_sleep=False).run_all()
 
-        report_path: str = os.path.join(config.transcriptions_dir, "rapport_extraction.txt")
+        report_path: str = config.extraction_report_file
         self.assertTrue(os.path.exists(report_path))
         with open(report_path, "r", encoding="utf-8") as f_rep:
             self.assertIn("dézipper manuellement", f_rep.read())

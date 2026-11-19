@@ -17,7 +17,15 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 2. Exécution des pipelines
+### 2. Préparation des exports sources
+
+Déposez vos fichiers CSV dans **`input_contacts/`** et vos autres documents/dossiers décompressés dans **`input_documents/`** en suivant les guides pas-à-pas dédiés :
+
+* **[Export Contacts, Courriels & SMS](docs/exports/CONTACTS_ET_EMAILS.md)** : Google Contacts, Microsoft Outlook/365, Gmail (`.mbox`), `.eml` et SMS/MMS Android (`.xml`).
+* **[Export Messageries Professionnelles](docs/exports/MESSAGERIES_PRO.md)** : Google Chat (`messages.json`) et Microsoft Teams (`messages.json` & transcriptions `.vtt`).
+* **[Export Messageries Personnelles](docs/exports/MESSAGERIES_PERSO.md)** : WhatsApp (archive `.zip` **dézippée manuellement** ou `.txt`), Messenger (`.json` / `.html`) et Signal (`.json`).
+
+### 3. Exécution des pipelines
 
 ```bash
 # Étape 1 : Générer output_contacts/contacts.txt depuis input_contacts/*.csv
@@ -31,7 +39,7 @@ python run_documents.py --anonymize-only
 python run_documents.py --anonymize-only --reset-results
 ```
 
-### 3. Boucle d'audit et règles manuelles
+### 4. Boucle d'audit et règles manuelles
 
 ```bash
 # Compléter automatiquement les lignes 'Prénom Nom = ' ajoutées dans output_contacts/contacts_manuels.txt
@@ -47,12 +55,12 @@ python run_documents.py --manual-only
 
 * **`input_contacts/`** : dépôt des fichiers CSV Google Contacts / Outlook.
 * **`input_documents/`** : dépôt des documents et dossiers décompressés à traiter.
-* **`extracted_texts/`** : transcriptions brutes extraites, classées par mois (`AAAA-MM/<Catégorie>/`).
-* **`anonymized_results/`** : lots finaux anonymisés (`lot_XX/anonymise_partie_XXX.txt`).
+* **`extracted_texts/`** : transcriptions brutes extraites, classées par mois (`AAAA-MM/<Catégorie>/`), avec les fichiers de suivi `.extraction_state.txt`, `.sms_state.txt` et `.email_state.txt`.
+* **`anonymized_results/`** : lots finaux anonymisés (`lot_XX/anonymise_partie_XXX.txt`) et état de reprise `.anonymization_state.json`.
 * **`data/`** : référentiels lexicaux (`prenoms.txt`, `villes_masquees.txt`, `collisions_noms.txt`, `mots_exclus.txt`).
 * **`output_contacts/`** : annuaire généré (`contacts.txt`), règles manuelles (`contacts_manuels.txt`), contacts découverts (`contacts_emails_decouverts.txt`) et fichiers intermédiaires (`.intermediaires/`).
-* **`audits/`** : rapports d'audit (`audit_noms_residuels.txt`, `audit_noms_residuels_copier.txt`) et tampons d'identifiants.
-* **`docs/`** & **`tools/`** : documentation complète et utilitaires CLI.
+* **`audits/`** : rapports d'audit (`audit_noms_residuels.txt`, `audit_noms_residuels_copier.txt`), rapport d'erreurs d'extraction (`extraction_report.txt`) et tampons d'identifiants.
+* **`docs/`** & **`tools/`** : documentation complète et utilitaires CLI (`complete_manual_contacts.py`, `restore_transcription_names.py`, `sync_contacts.py`, `generate_pdf_guide.py`).
 
 ---
 

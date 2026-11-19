@@ -195,7 +195,6 @@ class DocumentTextUtils:
         "disney", "molotov", "salto", "ocs", "bein", "rmc", "bfm", "lci",
         "cnews", "tf1", "m6", "arte", "w9", "tmc", "tfx", "nrj12",
     })
-
     MOJIBAKE_REPLACEMENTS: Tuple[Tuple[str, str], ...] = (
         ("\ufffd", "e"), ("ï¿½", "e"),
         ("Ã©", "é"), ("Ã¨", "è"), ("Ãª", "ê"), ("Ã«", "ë"),
@@ -262,20 +261,12 @@ class DocumentTextUtils:
 
     @staticmethod
     def atomic_write_text(target_path: str, content: str) -> None:
-        """Écrit un fichier texte de façon atomique via fichier temporaire."""
-        parent_dir: str = os.path.dirname(os.path.abspath(target_path))
-        os.makedirs(parent_dir, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(
-            dir=parent_dir, prefix=".tmp_anon_", suffix=".txt"
+        """Écrit un fichier texte de façon atomique avec tolérance aux verrous Windows."""
+        from common.core_utils import SharedCoreUtils
+
+        SharedCoreUtils.atomic_write_text(
+            target_path=target_path, content=content, encoding="utf-8"
         )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f_out:
-                f_out.write(content)
-            os.replace(tmp_path, target_path)
-        except Exception:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-            raise
 
     @staticmethod
     def _normalize_fr_phone(raw_val: str) -> str:

@@ -43,14 +43,18 @@ python run_documents.py --anonymize-only
 python run_documents.py --anonymize-only --reset-results
 ```
 
+* Les transcriptions brutes sont enregistrées dans `extracted_texts/AAAA-MM/<Catégorie>/` (suivies par `.extraction_state.txt` et `.sms_state.txt`).
+* Les lots anonymisés sont écrits dans `anonymized_results/lot_XX/anonymise_partie_XXX.txt` (suivis par `.anonymization_state.json`).
+
 ---
 
 ## 4. Exploitation des rapports d'audit (`audits/`)
 
-À chaque lot écrit dans **`anonymized_results/`**, deux fichiers d'audit sont mis à jour dans **`audits/`** avec filtrage strict des référentiels situés dans **`data/`** (`mots_exclus.txt`, `collisions_noms.txt`, `villes_masquees.txt`, `prenoms.txt`) :
+À chaque lot écrit dans **`anonymized_results/`**, les rapports sont mis à jour dans **`audits/`** avec filtrage strict des référentiels situés dans **`data/`** (`mots_exclus.txt`, `collisions_noms.txt`, `villes_masquees.txt`, `prenoms.txt`) :
 
 * **`audits/audit_noms_residuels.txt`** *(rapport détaillé)* : regroupe les paires `Nom Prénom` et `Prénom Nom` sous une entrée canonique classée par priorité (`5+ occurrences`, `2 à 4 occurrences`, `1 occurrence`), avec suggestion phonétique `(Proche de '...')`.
 * **`audits/audit_noms_residuels_copier.txt`** *(rapport épuré)* : contient uniquement les lignes au format `Prénom Nom = ` prêtes à coller dans `output_contacts/contacts_manuels.txt`.
+* **`audits/extraction_report.txt`** : liste les éventuels fichiers illisibles ou archives `.zip` ignorées lors de l'extraction.
 
 ---
 

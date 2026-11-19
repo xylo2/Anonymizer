@@ -54,7 +54,7 @@ class DocAnonymizerPipelineRunner:
         for root_path, _, existing_files in os.walk(trans_dir):
             for file_name in sorted(existing_files):
                 if (
-                    file_name == "rapport_extraction.txt"
+                    file_name in {"rapport_extraction.txt", "extraction_report.txt"}
                     or file_name.startswith(".")
                     or not file_name.lower().endswith(".txt")
                 ):

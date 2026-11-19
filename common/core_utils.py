@@ -77,6 +77,7 @@ class SharedCoreUtils:
         if digits.startswith("0") and len(digits) == 10 and digits.isdigit():
             return digits
         return ""
+
     @staticmethod
     def normalize_email_alias(raw_email: str, lowercase: bool = True) -> str:
         """
@@ -164,18 +165,20 @@ class SharedCoreUtils:
         :return: Ensemble des noms de lieux normalisés.
         """
         return cls.load_words_set(file_path)
-
     @staticmethod
     def atomic_write_text(
         target_path: str, content: str, encoding: str = "utf-8"
     ) -> None:
         """
-        Écrit un fichier texte de façon atomique via un fichier temporaire.
+        Écrit un fichier texte de façon atomique avec tolérance aux verrous Windows.
 
         :param target_path: Chemin du fichier cible.
         :param content: Contenu texte à écrire.
         :param encoding: Encodage cible (défaut : 'utf-8').
         """
+        import stat
+        import time
+
         parent_dir: str = os.path.dirname(os.path.abspath(target_path))
         os.makedirs(parent_dir, exist_ok=True)
         fd, tmp_path = tempfile.mkstemp(
@@ -184,11 +187,27 @@ class SharedCoreUtils:
         try:
             with os.fdopen(fd, "w", encoding=encoding, newline="\n") as f_out:
                 f_out.write(content)
-            os.replace(tmp_path, target_path)
+            for attempt in range(5):
+                try:
+                    os.replace(tmp_path, target_path)
+                    return
+                except PermissionError:
+                    if os.path.exists(target_path):
+                        try:
+                            os.chmod(target_path, stat.S_IWRITE)
+                        except OSError:
+                            pass
+                    if attempt < 4:
+                        time.sleep(0.05 * (attempt + 1))
+            with open(target_path, "w", encoding=encoding, newline="\n") as f_direct:
+                f_direct.write(content)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
         except Exception:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             raise
+
     @staticmethod
     def format_duration(seconds: float) -> str:
         """
