@@ -29,15 +29,27 @@ class DocumentAnonymizationRunner:
     )
 
     AUTO_PERSON_PAIR_PATTERN: Pattern[str] = re.compile(
-        r"(?<![A-Za-zÀ-ÿ])([A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{3,22})\s+"
+        r"(?<![A-Za-zÀ-ÿ])((?:[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]|l(?=[a-zéèêëàâäîïôöùûüç]{4,}))[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,21})\s+"
         r"(?:((?:De|Du|Des|de|du|des|Le|La|le|la|Van|Von|Ben|El|Al|Ould|Dos|Da|Di)(?:\s+(?:La|Le|Les|la|le|les))?)\s+)?"
         r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
         r"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25}(?:\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25})?)(?![A-Za-zÀ-ÿ])"
     )
 
     UPPER_PAIR_PATTERN: Pattern[str] = re.compile(
-        r"(?<![A-Za-zÀ-ÿ])([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç'-]{2,22})\s+([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{4,25})(?![A-Za-zÀ-ÿ])"
+        r"(?<![A-Za-zÀ-ÿ])([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç'-]{2,22})\s+([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{3,25})(?![A-Za-zÀ-ÿ])"
         r"|(?<![A-Za-zÀ-ÿ])([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{4,25})\s+([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç'-]{2,22})(?![A-Za-zÀ-ÿ])"
+    )
+
+    MIME_TOKEN_RECIPIENT_PATTERN: Pattern[str] = re.compile(
+        r'("(?:\\")?)(E\.|EMAIL_\d+)\s+([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç\'-]{2,25})((?:\\")?")'
+    )
+
+    MRZ_LINE_PATTERN: Pattern[str] = re.compile(
+        r"\b(?:IDFRA|P<FRA|[A-Z0-9]{9,}<{2,})[A-Z0-9<]{10,}"
+    )
+
+    PARENS_PSEUDO_PATTERN: Pattern[str] = re.compile(
+        r"(?i)\b((?:vinted|colis|mondial\s*relay|locker|le\s*bon\s*coin|rakuten)\b[^\n\(]{0,35})\(([a-z0-9_.-]{4,25})\)"
     )
 
     GLUED_TITLE_OR_CAMEL: Pattern[str] = re.compile(
@@ -69,7 +81,6 @@ class DocumentAnonymizationRunner:
         self.current_size: int = 0
         self.current_batch_files: List[str] = []
         self.processed_in_session: int = 0
-
     def initialize(self) -> bool:
         """Charge les règles et restaure l'état JSON de reprise."""
         if self._initialized:
@@ -89,6 +100,7 @@ class DocumentAnonymizationRunner:
         )
         self._initialized = True
         return True
+
     @staticmethod
     def _split_glued_tokens(match: re.Match[str]) -> str:
         """Sépare les jetons collés par casse CamelCase ou titre majuscule."""
@@ -98,15 +110,21 @@ class DocumentAnonymizationRunner:
             return f"{match.group(3)} {match.group(4)}"
         return f"{match.group(5)} {match.group(6)}"
 
-    def _is_non_surname_word(self, word: str) -> bool:
+    def _is_non_surname_word(
+        self, word: str, after_known_first_name: bool = False
+    ) -> bool:
         """Vérifie si un mot est un mot-outil, un lieu ou un terme exclu."""
         for tok in word.split():
             norm: str = DocumentTextUtils.normalize_word(tok)
             if (
                 norm in AuditAndStateManager.COMMON_FRENCH_STOPWORDS
+                or norm in ContactRulesLoader.SURNAME_WORD_COLLISIONS
                 or norm in self.config.excluded_words
-                or norm in self.config.masked_locations
                 or norm in self.rules.alias_words
+            ):
+                return True
+            if not after_known_first_name and (
+                norm in self.config.masked_locations
                 or norm in DocumentTextUtils.ORG_GENERIC_WORDS
             ):
                 return True
@@ -151,7 +169,6 @@ class DocumentAnonymizationRunner:
             and token[:1].isupper()
             and token[1:].islower()
         )
-
     def _replace_title_match(self, match: re.Match[str]) -> str:
         """Remplace un nom précédé d'une civilité ou d'un titre."""
         title: str = match.group(1)
@@ -179,10 +196,15 @@ class DocumentAnonymizationRunner:
         part_init: str = self._format_particle_initials(particle)
         sur_init: str = self._format_surname_initials(surname)
         return f"{title} {part_init}{sur_init}"
+
     def _replace_upper_pair_match(self, match: re.Match[str]) -> str:
-        """Masque les paires Prénom NOM et NOM Prénom sans collision avec les mots-outils."""
+        """Masque les paires Prénom NOM et NOM Prénom sans collision avec les sigles."""
         if match.group(1) and match.group(2):
             first_n, last_n = match.group(1), match.group(2)
+            if len(last_n) == 3 and not self._is_known_first_name_ocr(first_n):
+                prefix_slice: str = match.string[max(0, match.start() - 3):match.start()]
+                if not prefix_slice or prefix_slice.endswith(("\n", ": ", ":\n")):
+                    return match.group(0)
             if self._is_non_surname_word(first_n) or self._is_non_surname_word(last_n):
                 return match.group(0)
             return f"{first_n} {self._format_surname_initials(last_n)}"
@@ -196,10 +218,12 @@ class DocumentAnonymizationRunner:
         w1: str = match.group(1)
         particle: str = match.group(2) or ""
         w2: str = match.group(3)
-        if self._is_non_surname_word(w1) or self._is_non_surname_word(w2):
+        f1: bool = self._is_known_first_name_ocr(w1)
+        if self._is_non_surname_word(w1) or self._is_non_surname_word(
+            w2, after_known_first_name=f1
+        ):
             return match.group(0)
 
-        f1: bool = self._is_known_first_name_ocr(w1)
         w2_parts: List[str] = [p for p in w2.split() if p]
         f2: bool = len(w2_parts) == 1 and self._is_known_first_name_ocr(w2)
         part_init: str = self._format_particle_initials(particle)
@@ -219,11 +243,19 @@ class DocumentAnonymizationRunner:
 
         return match.group(0)
 
+    def _replace_mime_recipient(self, match: re.Match[str]) -> str:
+        """Abrège le nom d'un destinataire MIME accolé à un jeton E. ou EMAIL_XXX."""
+        surname: str = match.group(3)
+        if self._is_non_surname_word(surname):
+            return match.group(0)
+        return f"{match.group(1)}{match.group(2)} {self._format_surname_initials(surname)}{match.group(4)}"
     def _anonymize_chunk(self, text: str) -> str:
         """Applique les passes de masquage sur une tranche de texte bornée."""
         token: str = CommunicationExtractor.MAIN_CHARACTER_TOKEN
         text = text.replace(token, self.config.main_character_name)
         text = DocumentTextUtils.repair_mojibake(text)
+        text = text.replace(r"\,", ",").replace(r"\;", ";")
+        text = self.MRZ_LINE_PATTERN.sub("[MRZ_IDENTITE_MASQUEE]", text)
         text = self.GLUED_TITLE_OR_CAMEL.sub(self._split_glued_tokens, text)
 
         if self.config.mask_ssn:
@@ -263,6 +295,8 @@ class DocumentAnonymizationRunner:
 
         text = self.UPPER_PAIR_PATTERN.sub(self._replace_upper_pair_match, text)
         text = self.AUTO_PERSON_PAIR_PATTERN.sub(self._replace_person_pair_match, text)
+        text = self.MIME_TOKEN_RECIPIENT_PATTERN.sub(self._replace_mime_recipient, text)
+        text = self.PARENS_PSEUDO_PATTERN.sub(r"\1([PSEUDO_MASQUE])", text)
 
         if self.rules.combined_location_pattern is not None:
             text = self.rules.combined_location_pattern.sub("[LIEU_MASQUE]", text)

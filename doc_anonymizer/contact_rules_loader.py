@@ -11,8 +11,8 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 class ContactRulesLoader:
     """
     Charge les règles d'anonymisation depuis tous les fichiers de contacts,
-    génère les variantes OCR (y compris collées sans espaces, St/Saint,
-    confusions chiffres/lettres et distance d'édition = 1) et compile les regex Trie.
+    génère les variantes OCR (y compris collées sans espaces, St/Ste/Saint/Sainte
+    et distance d'édition = 1) et compile les regex optimisées (Trie).
     """
 
     OCR_DIGIT_TRANS = str.maketrans({
@@ -23,6 +23,19 @@ class ContactRulesLoader:
         "gard", "ard", "indre", "aube", "gers", "var", "ain", "eure",
         "orne", "lot", "cher", "tarn", "nord", "sud", "est", "ouest",
         "laize", "fay", "hom", "port", "pont", "mont", "val", "bois",
+    })
+
+    SURNAME_WORD_COLLISIONS = frozenset({
+        "grand", "grande", "grands", "grandes", "blanc", "blanche",
+        "blancs", "blanches", "long", "longue", "longs", "longues",
+        "mis", "mise", "trouve", "trouvee", "trouves", "devis",
+        "vivre", "social", "sociale", "email", "emails", "mail",
+        "barre", "barres", "courir", "cuisine", "campagne", "boucher",
+        "petit", "petite", "petits", "petites", "gros", "grosse",
+        "bon", "bonne", "bons", "bonnes", "neuf", "neuve", "jeune",
+        "vieux", "vieille", "fort", "forte", "clair", "claire",
+        "doux", "douce", "sage", "juste", "rose", "aube", "fleur",
+        "pierre", "olive", "cerise", "laurier", "loup", "soleil",
     })
 
     NON_PERSON_ALIAS_MARKERS = (
@@ -63,7 +76,6 @@ class ContactRulesLoader:
             cls.OCR_DIGIT_TRANS
         )
         return re.sub(r"[\s\-'\u2019\._]+", "", base)
-
     @staticmethod
     def is_one_edit_away(word_a: str, word_b: str) -> bool:
         """
@@ -119,14 +131,11 @@ class ContactRulesLoader:
                 p in self._normalized_first_names for p in parts
             )
         return False
+
     def _is_person_rule_for_surname_index(self, kw: str, al: str) -> bool:
         """
         Vérifie qu'une règle représente une personne physique (et non une enseigne,
         un pseudo ou un identifiant technique) avant d'indexer son nom de famille.
-
-        :param kw: Cible textuelle de la règle.
-        :param al: Alias associé.
-        :return: True si le nom de famille peut être indexé pour la protection et l'audit.
         """
         low_al: str = al.strip().lower()
         if any(marker in low_al for marker in self.NON_PERSON_ALIAS_MARKERS):
@@ -165,12 +174,16 @@ class ContactRulesLoader:
                 self.contacts_id[norm_id] = al
             return
 
-        if not is_manual:
-            kw_words: List[str] = [
-                w for w in re.split(r"[\s\-'\u2019]+", kw) if w
-            ]
-            first_kw_word: str = next(iter(kw_words), "")
-            if len(kw_words) == 1 and self.is_first_name(first_kw_word):
+        kw_words: List[str] = [
+            w for w in re.split(r"[\s\-'\u2019]+", kw) if w
+        ]
+        if len(kw_words) == 1:
+            single_norm: str = DocumentTextUtils.normalize_word(
+                next(iter(kw_words), "")
+            )
+            if single_norm in self.SURNAME_WORD_COLLISIONS:
+                return
+            if not is_manual and self.is_first_name(single_norm):
                 return
 
         norm_kw: str = kw.lower()
@@ -190,11 +203,10 @@ class ContactRulesLoader:
                     self.glued_to_alias[rev_key] = al
 
         self._extract_surname_protection(kw, al, is_manual=is_manual)
-
     def _extract_surname_protection(
         self, kw: str, al: str, is_manual: bool = False
     ) -> None:
-        """Protège uniquement les vrais noms de famille de personnes identifiées."""
+        """Protège uniquement les vrais noms de famille sans collision lexicale."""
         if not is_manual and not self._is_person_rule_for_surname_index(kw, al):
             return
 
@@ -217,6 +229,7 @@ class ContactRulesLoader:
             if (
                 len(norm_w) >= 4
                 and is_surname_role
+                and norm_w not in self.SURNAME_WORD_COLLISIONS
                 and norm_w not in self.config.excluded_words
                 and norm_w not in self.config.masked_locations
                 and norm_w not in DocumentTextUtils.ORG_GENERIC_WORDS
@@ -231,6 +244,7 @@ class ContactRulesLoader:
                 )
                 if norm_w not in self.surname_to_alias:
                     self.surname_to_alias[norm_w] = short_alias
+
     def _load_indexed_and_anonymized_pairs(self) -> None:
         """Relie les noms complets de contacts_indexes.txt aux alias de contacts_anonymises.txt."""
         idx_p: str = self.config.indexed_contacts_file
@@ -292,17 +306,20 @@ class ContactRulesLoader:
                 self.keyword_to_alias[surname.upper()] = short_alias
 
     def _expand_saint_locations(self) -> Set[str]:
-        """Ajoute les variantes St/Ste pour les communes composées."""
+        """Génère toutes les variantes Saint/Sainte/St/Ste avec tirets et espaces."""
         expanded: Set[str] = set()
         for loc in self.config.masked_locations:
             norm_loc: str = DocumentTextUtils.normalize_word(loc)
             if norm_loc in self.COMMON_WORD_COLLISIONS:
                 continue
-            expanded.add(loc)
-            if "sainte" in loc:
-                expanded.add(re.sub(r"\bsainte\b", "ste", loc))
-            if "saint" in loc:
-                expanded.add(re.sub(r"\bsaint\b", "st", loc))
+            forms: Set[str] = {loc, loc.replace("-", " "), loc.replace(" ", "-")}
+            for form in list(forms):
+                if re.search(r"\bsainte\b", form):
+                    forms.add(re.sub(r"\bsainte\b", "ste", form))
+                    forms.add(re.sub(r"\bsainte\b", "st", form))
+                if re.search(r"\bsaint\b", form):
+                    forms.add(re.sub(r"\bsaint\b", "st", form))
+            expanded.update(forms)
         return expanded
 
     def _compile_patterns(self) -> None:

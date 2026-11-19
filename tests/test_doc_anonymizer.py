@@ -19,7 +19,7 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 class TestDocAnonymizer(unittest.TestCase):
     """
     Valide les expressions régulières de masquage (NIR, IBAN, adresses, villes, SMS),
-    la tolérance OCR chiffres/lettres, la distance d'édition = 1 et l'audit.
+    la tolérance OCR, les automatisations ICS/MRZ/MIME et l'audit.
     """
 
     def test_sensitive_regex_patterns(self) -> None:
@@ -72,15 +72,15 @@ class TestDocAnonymizer(unittest.TestCase):
         self.assertFalse(ContactRulesLoader.is_one_edit_away("dupont", "durand"))
     def test_anonymization_ocr_glued_and_auto_pairs(self) -> None:
         """
-        Vérifie le masquage des noms collés OCR (MMESOBREROAURELIE), des confusions
-        chiffres/lettres (B0ULON, 1FS), des paires Prénom/Nom et la pertinence de l'audit.
+        Vérifie le masquage des noms collés OCR, des confusions chiffres/lettres,
+        des automatisations ICS/MRZ/MIME/Vinted, des lieux St/Sainte et des collisions lexicales.
         """
         with tempfile.TemporaryDirectory(prefix="test_doc_anon_") as tmp_dir:
             with open(os.path.join(tmp_dir, "prenoms.txt"), "w", encoding="utf-8") as f_fn:
-                f_fn.write("jean\nsophie\nluc\ncédric\nmartin\naurélie\ncharlotte\nnassiba\ngabrielle\n")
+                f_fn.write("jean\nsophie\nluc\ncédric\nmartin\naurélie\ncharlotte\nnassiba\ngabrielle\nphilippe\n")
 
             with open(os.path.join(tmp_dir, "villes_masquees.txt"), "w", encoding="utf-8") as f_loc:
-                f_loc.write("boulon\nifs\nfresney-le-puceux\nboigny-sur-bionne\n")
+                f_loc.write("boulon\nifs\nfresney-le-puceux\nboigny-sur-bionne\nsainte-honorine-du-fay\n")
 
             with open(os.path.join(tmp_dir, "contacts.txt"), "w", encoding="utf-8") as f_ct:
                 f_ct.write(
@@ -88,6 +88,7 @@ class TestDocAnonymizer(unittest.TestCase):
                     "Aurélie Sobréro = Aurélie S.\n"
                     "Cédric Martin = Cédric M.\n"
                     "Jean De La Tour = Jean D. L. T.\n"
+                    "Paul Grand = Paul G.\n"
                     "Elicap = Elicap\n"
                     "L'Observatoire du pain (opinionvalley) = L'Observatoire du pain (opinionvalley)\n"
                 )
@@ -99,8 +100,12 @@ class TestDocAnonymizer(unittest.TestCase):
                 f_txt.write(
                     "Réunion avec Jean Dupont, M. Martin et Jean De La Tour.\n"
                     "En-tête OCR collé : MMESOBREROAURELIE habitant 12 rue des Lilas 14220 B0ULON et 1FS.\n"
-                    "Mot de passe collé : 3005fresneylepuceux à Boigny-sur-Bionne.\n"
+                    "Mot de passe collé : 3005fresneylepuceux à Boigny-sur-Bionne et St Honorine du Fay.\n"
                     "Saisie par Charlotte HIVET et audition de ASMANE Nassiba.\n"
+                    "Agenda ICS : RDV avec Philippe Foret\\, médecin Ramata DIA.\n"
+                    "Liste MIME : \"chollier@exemple.fr Chollier\" et colis Vinted (vaubyessard).\n"
+                    "MRZ : IDFRALM0V4FLX47<<<<<<<<<<<<<<<\n"
+                    "Texte courant à préserver : une grande fenêtre et un grand merci à Paul Grand.\n"
                     "NIR:185057512345678 et IBAN FR7630006000011234567890189.\n"
                     "Mention phonétique : Luc Dubunt et Sophie Moreau.\n"
                 )
@@ -131,6 +136,13 @@ class TestDocAnonymizer(unittest.TestCase):
             self.assertIn("Jean D. L. T.", res_txt)
             self.assertIn("Charlotte H.", res_txt)
             self.assertIn("A. Nassiba", res_txt)
+            self.assertIn("Philippe F.,", res_txt)
+            self.assertIn("Ramata D.", res_txt)
+            self.assertIn('"EMAIL_001 C."', res_txt)
+            self.assertIn("Vinted ([PSEUDO_MASQUE])", res_txt)
+            self.assertIn("[MRZ_IDENTITE_MASQUEE]", res_txt)
+            self.assertIn("une grande fenêtre et un grand merci à Paul G.", res_txt)
+            self.assertNotIn("St Honorine du Fay", res_txt)
             self.assertNotIn("SOBRERO", res_txt)
             self.assertNotIn("HIVET", res_txt)
             self.assertNotIn("ASMANE", res_txt)
