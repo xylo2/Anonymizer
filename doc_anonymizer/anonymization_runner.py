@@ -14,7 +14,7 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 
 class DocumentAnonymizationRunner:
     """
-    Moteur d'anonymisation de niveau 3+ avec découpage par lots,
+    Moteur d'anonymisation de niveau 3+ avec découpage par lots (batch_XX),
     masquage contextuel multi-passes et audit continu.
     """
 
@@ -448,14 +448,14 @@ class DocumentAnonymizationRunner:
         )
         return res
     def flush_batch(self) -> None:
-        """Écrit le lot en cours sur disque, met à jour l'audit et l'état JSON."""
+        """Écrit le lot en cours sur disque dans batch_XX/, met à jour l'audit et l'état JSON."""
         if not self.current_chunk:
             return
         folder_num: int = ((self.audit.file_idx - 1) // self.config.files_per_folder) + 1
-        lot_folder: str = os.path.join(self.config.results_dir, f"lot_{folder_num:02d}")
-        os.makedirs(lot_folder, exist_ok=True)
+        batch_folder: str = os.path.join(self.config.results_dir, f"batch_{folder_num:02d}")
+        os.makedirs(batch_folder, exist_ok=True)
         out_file: str = os.path.join(
-            lot_folder, f"{self.config.file_prefix}partie_{self.audit.file_idx:03d}.txt"
+            batch_folder, f"{self.config.file_prefix}part_{self.audit.file_idx:03d}.txt"
         )
         merged_content: str = "".join(self.current_chunk)
         DocumentTextUtils.atomic_write_text(out_file, merged_content)
@@ -535,7 +535,7 @@ class DocumentAnonymizationRunner:
         total_lots: int = max(0, self.audit.file_idx - 1)
         print(
             f"\n[100.0%] Terminé ({self.processed_in_session} fichier(s) anonymisé(s) en {elapsed:.1f}s).\n"
-            f" * Lots totaux  : {total_lots} dans '{self.config.results_dir}/lot_XX/'\n"
+            f" * Lots totaux  : {total_lots} dans '{self.config.results_dir}/batch_XX/'\n"
             f" * Audit détail : {count} nom(s) dans '{self.config.audit_report_file}'\n"
             f" * Audit copier : {count} nom(s) dans '{self.config.audit_copy_file}'",
             flush=True,
@@ -559,7 +559,7 @@ class DocumentAnonymizationRunner:
         self.finalize(t0)
 
     def run_on_existing_results(self) -> None:
-        """Réapplique uniquement contacts_manuels.txt sur les lots existants."""
+        """Réapplique uniquement manual_contacts.txt sur les lots existants."""
         t0: float = time.time()
         if not self.initialize():
             return

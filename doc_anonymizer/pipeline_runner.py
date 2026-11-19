@@ -9,6 +9,9 @@ from typing import List, Set
 from common.core_utils import SharedCoreUtils
 from doc_anonymizer.anonymization_runner import DocumentAnonymizationRunner
 from doc_anonymizer.config_manager import PipelineConfig
+from doc_anonymizer.discovered_chats_builder import (
+    DiscoveredChatContactsBuilder,
+)
 from doc_anonymizer.discovered_contacts_builder import (
     DiscoveredEmailContactsBuilder,
 )
@@ -89,14 +92,14 @@ class DocAnonymizerPipelineRunner:
 
     def _reset_results_for_second_pass(self) -> None:
         """
-        Nettoie intégralement les anciens lots et l'état JSON avant de relancer
-        une passe complète avec les règles fraîchement découvertes.
+        Nettoie intégralement les anciens lots (batch_XX / lot_XX) et l'état JSON
+        avant de relancer une passe complète avec les règles fraîchement découvertes.
         """
         res_dir: str = self.config.results_dir
         if os.path.isdir(res_dir):
             for entry in os.listdir(res_dir):
                 full_p: str = os.path.join(res_dir, entry)
-                if os.path.isdir(full_p) and entry.startswith("lot_"):
+                if os.path.isdir(full_p) and entry.startswith(("batch_", "lot_")):
                     shutil.rmtree(full_p, ignore_errors=True)
                 elif os.path.isfile(full_p) and entry.endswith(".txt"):
                     try:
@@ -108,24 +111,31 @@ class DocAnonymizerPipelineRunner:
 
     def _run_second_pass_with_discovered_emails(self) -> bool:
         """
-        Génère contacts_emails_decouverts.txt depuis tous_emails_trouves.txt
+        Génère discovered_email_contacts.txt et discovered_chat_contacts.txt
         et exécute une seconde passe d'anonymisation si des règles ont été ajoutées.
 
         :return: True si une seconde passe a été exécutée, False sinon.
         """
-        builder: DiscoveredEmailContactsBuilder = (
+        email_builder: DiscoveredEmailContactsBuilder = (
             DiscoveredEmailContactsBuilder(self.config)
         )
-        added_count, total_count = builder.build_or_update()
-        if added_count <= 0:
+        added_emails, total_emails = email_builder.build_or_update()
+
+        chat_builder: DiscoveredChatContactsBuilder = (
+            DiscoveredChatContactsBuilder(self.config)
+        )
+        added_chats, total_chats = chat_builder.build_or_update()
+
+        if added_emails <= 0 and added_chats <= 0:
             return False
 
         pass_start: float = time.time()
         print(
             f"\n=== SECONDE PASSE D'ANONYMISATION ===\n"
-            f"[CONTACTS DÉCOUVERTS] {added_count} nouvelle(s) règle(s) "
-            f"ajoutée(s) dans '{self.config.discovered_contacts_file}' "
-            f"(total : {total_count}).\n"
+            f"[CONTACTS E-MAILS DÉCOUVERTS] +{added_emails} règle(s) "
+            f"(total : {total_emails}) dans '{self.config.discovered_contacts_file}'.\n"
+            f"[CONTACTS CHATS DÉCOUVERTS]   +{added_chats} règle(s) "
+            f"(total : {total_chats}) dans '{self.config.discovered_chats_file}'.\n"
             "Relance complète de l'anonymisation sur les transcriptions...",
             flush=True,
         )

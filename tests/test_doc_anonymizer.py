@@ -182,10 +182,11 @@ class TestDocAnonymizer(unittest.TestCase):
                     "[paths]\n"
                     "root_dir = .\n"
                     "contacts_file = contacts.txt\n"
-                    "manual_contacts_file = contacts_manuels.txt\n"
-                    "discovered_contacts_file = contacts_emails_decouverts.txt\n"
-                    "audit_report_file = audit_noms_residuels.txt\n"
-                    "audit_copy_file = audit_noms_residuels_copier.txt\n"
+                    "manual_contacts_file = manual_contacts.txt\n"
+                    "discovered_contacts_file = discovered_email_contacts.txt\n"
+                    "discovered_chats_file = discovered_chat_contacts.txt\n"
+                    "audit_report_file = residual_names_audit.txt\n"
+                    "audit_copy_file = residual_names_copy.txt\n"
                 )
 
             config = PipelineConfig(ini_path)
@@ -226,8 +227,8 @@ class TestDocAnonymizer(unittest.TestCase):
             lot_file = os.path.join(
                 tmp_dir,
                 "anonymized_results",
-                "lot_01",
-                "anonymise_partie_001.txt",
+                "batch_01",
+                "anonymized_part_001.txt",
             )
             self.assertTrue(os.path.exists(lot_file))
             with open(lot_file, "r", encoding="utf-8") as f:
