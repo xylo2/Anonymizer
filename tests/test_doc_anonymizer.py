@@ -102,11 +102,12 @@ class TestDocAnonymizer(unittest.TestCase):
     def test_anonymization_ocr_glued_and_auto_pairs(self) -> None:
         """
         Vérifie le masquage complet : noms collés OCR, titres avec prénom,
-        CNI 12 chiffres, dates de naissance (année seule), plaques, établissements et réunions.
+        prénoms composés en Jean (avec ou sans tiret), CNI 12 chiffres, dates de naissance,
+        plaques, établissements et réunions.
         """
         with tempfile.TemporaryDirectory(prefix="test_doc_anon_") as tmp_dir:
             with open(os.path.join(tmp_dir, "prenoms.txt"), "w", encoding="utf-8") as f_fn:
-                f_fn.write("jean\nsophie\nluc\ncédric\nmartin\nalice\ncharlotte\nnadia\nevelyne\nphilippe\n")
+                f_fn.write("jean\nsophie\nluc\ncédric\nmartin\nalice\ncharlotte\nnadia\nevelyne\n")
 
             with open(os.path.join(tmp_dir, "villes_masquees.txt"), "w", encoding="utf-8") as f_loc:
                 f_loc.write("boulon\nifs\nfresney-le-puceux\nboigny-sur-bionne\nsainte-honorine-du-fay\n")
@@ -132,6 +133,7 @@ class TestDocAnonymizer(unittest.TestCase):
             with open(sample_txt, "w", encoding="utf-8") as f_txt:
                 f_txt.write(
                     "Réunion avec Jean Dupont, Docteur Evelyne Moreau et Jean De La Tour.\n"
+                    "Échanges avec Jean-Eudes Lemoine, Jean Eudes Mercier et Dr Jean Philippe Bernard.\n"
                     "Famille Valm\ufffdnt suivie par Delacroix, adresse Rue de la Paix.\n"
                     "En-tête OCR collé : MMEMERCIERALICE habitant 12 rue des Lilas.\n"
                     "Déplacement prévu à B0ULON et 1FS, rendez-vous Clinique Saint-Martin.\n"
@@ -172,6 +174,10 @@ class TestDocAnonymizer(unittest.TestCase):
 
             self.assertIn("Jean D.", res_txt)
             self.assertIn("Docteur Evelyne M.", res_txt)
+            self.assertIn("Jean-Eudes L.", res_txt)
+            self.assertIn("Jean Eudes M.", res_txt)
+            self.assertIn("Dr Jean Philippe B.", res_txt)
+            self.assertNotIn("Lemoine", res_txt)
             self.assertIn("Famille V. suivie par D.", res_txt)
             self.assertNotIn("Saint-Martin", res_txt)
             self.assertIn("[ETABLISSEMENT_LIEU_MASQUE]", res_txt)

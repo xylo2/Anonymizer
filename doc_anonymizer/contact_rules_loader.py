@@ -96,8 +96,8 @@ class ContactRulesLoader:
             edits += 1
         return edits <= 1
     def is_first_name(self, token: str) -> bool:
-        """Vérifie si un jeton est un prénom connu (simple ou composé)."""
-        norm: str = DocumentTextUtils.normalize_word(token)
+        """Vérifie si un jeton est un prénom connu (simple, composé ou commençant par Jean)."""
+        norm: str = re.sub(r"\s+", " ", DocumentTextUtils.normalize_word(token))
         if not self._normalized_first_names and self.config.known_first_names:
             self._normalized_first_names = {
                 DocumentTextUtils.normalize_word(fn)
@@ -105,6 +105,14 @@ class ContactRulesLoader:
             }
         if norm in self._normalized_first_names:
             return True
+        if norm.startswith(("jean ", "jean-")):
+            second_part: str = norm[5:].strip()
+            if (
+                len(second_part) >= 2
+                and second_part.isalpha()
+                and second_part not in {"de", "du", "des", "le", "la", "les", "en", "et"}
+            ):
+                return True
         if "-" in norm:
             parts: List[str] = [p for p in norm.split("-") if p]
             return bool(parts) and all(

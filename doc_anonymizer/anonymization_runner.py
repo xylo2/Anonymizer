@@ -25,11 +25,13 @@ class DocumentAnonymizationRunner:
         r"Mlle|Mademoiselle|Me|Maître|Maitre|Famille|Pharmacie|PHARMACIE)\.?\s+"
         r"(?:((?:de|du|des|d'|le|la|van|von|ben|el|al|ould|dos|da|di)(?:\s+(?:la|le|les))?)\s+)?"
         r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
-        r"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25}(?:\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25})?)(?![A-Za-zÀ-ÿ])"
+        r"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25}"
+        r"(?:\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25}){0,2})(?![A-Za-zÀ-ÿ])"
     )
 
     AUTO_PERSON_PAIR_PATTERN: Pattern[str] = re.compile(
-        r"(?<![A-Za-zÀ-ÿ])((?:[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]|l(?=[a-zéèêëàâäîïôöùûüç]{4,}))[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,21})\s+"
+        r"(?<![A-Za-zÀ-ÿ])((?:Jean[\s\-]+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç]{2,}|"
+        r"(?:[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]|l(?=[a-zéèêëàâäîïôöùûüç]{4,}))[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,21}))\s+"
         r"(?:((?:De|Du|Des|de|du|des|Le|La|le|la|Van|Von|Ben|El|Al|Ould|Dos|Da|Di)(?:\s+(?:La|Le|Les|la|le|les))?)\s+)?"
         r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
         r"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25}(?:\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25})?)(?![A-Za-zÀ-ÿ])"
@@ -173,22 +175,32 @@ class DocumentAnonymizationRunner:
         )
 
     def _replace_title_match(self, match: re.Match[str]) -> str:
-        """Remplace un nom (avec ou sans prénom) précédé d'une civilité ou d'un titre."""
+        """Remplace un nom (avec ou sans prénom simple ou composé en Jean) précédé d'un titre."""
         title: str = match.group(1)
         particle: str = match.group(2) or ""
         raw_target: str = match.group(3)
-        if self._is_non_surname_word(raw_target):
-            return match.group(0)
-
         target_parts: List[str] = [p for p in raw_target.split() if p]
-        if len(target_parts) >= 2 and self._is_known_first_name_ocr(next(iter(target_parts))):
-            first_tok: str = next(iter(target_parts))
-            surname_tok: str = " ".join(target_parts[1:])
+
+        if len(target_parts) >= 3 and self._is_known_first_name_ocr(" ".join(target_parts[:2])):
+            first_tok: str = " ".join(target_parts[:2])
+            surname_tok: str = " ".join(target_parts[2:])
             if self._is_non_surname_word(surname_tok, after_known_first_name=True):
                 return match.group(0)
             part_init: str = self._format_particle_initials(particle)
             sur_init: str = self._format_surname_initials(surname_tok)
             return f"{title} {first_tok} {part_init}{sur_init}"
+
+        if len(target_parts) >= 2 and self._is_known_first_name_ocr(next(iter(target_parts))):
+            first_tok = next(iter(target_parts))
+            surname_tok = " ".join(target_parts[1:])
+            if self._is_non_surname_word(surname_tok, after_known_first_name=True):
+                return match.group(0)
+            part_init = self._format_particle_initials(particle)
+            sur_init = self._format_surname_initials(surname_tok)
+            return f"{title} {first_tok} {part_init}{sur_init}"
+
+        if self._is_non_surname_word(raw_target):
+            return match.group(0)
 
         norm_sur: str = DocumentTextUtils.normalize_word(raw_target)
         if not particle:
