@@ -1,0 +1,46 @@
+# LISTE DES NOMS DE FAMILLE À COLLISION LEXICALE (MOTS COURANTS & FAUX POSITIFS)
+# Ces mots ne sont jamais masqués lorsqu'ils apparaissent seuls, mais restent
+# masqués s'ils sont précédés d'un prénom ou d'une civilité (ex: Paul Grand -> Paul G.).
+
+# --- Adjectifs & couleurs ---
+grand, grande, grands, grandes
+petit, petite, petits, petites
+blanc, blanche, blancs, blanches
+noir, noire, noirs, noires
+brun, brune, bruns, brunes
+roux, rousse
+long, longue, longs, longues
+gros, grosse
+bon, bonne, bons, bonnes
+neuf, neuve
+jeune, vieux, vieille
+fort, forte
+clair, claire
+doux, douce
+sage, juste
+durables, purple, crystal
+
+# --- Noms communs, nature & métiers ---
+aube, fleur, rose, olive, cerise, laurier, loup, soleil, sol, noisette
+pierre, pierres, barre, barres, presse, cuisine, campagne, boucher
+capitaine, chevalier, leclerc, foret, marguerite, diététicienne, dieteticienne
+associés, associes, croix, gibier, gras, homo, marmot, merle, millet
+montmartre, croatie, catail, ceidf, cuvi, mevoila, passedroit
+
+# --- Alimentation, cuisine, blogs & anglophones ---
+cuillère, cuillere, cuisinier, cuisinix, cuistot, cuit, culinaire, gâteau, gateau
+pain, soupe, crème, creme, macarons, bretzel, chocolatine, chocolaterie, papilles
+miam, recette, restaurant, gourmand, gourmande, gourmandises, gastronomiz, faim
+délice, delice, sushis, pastilla, prune, boeuf, cake, cookie, cooking, kitchen
+wine, tequila, canalblog, lemiammiamblog, theloveapple, thetops, buzzsquad
+buzzea, emoovio, livlab, popspirit, foundation, inbox, market, addict
+
+# --- Prénoms & diminutifs détectés en colonne Nom ---
+angel, audric, audry, didou, etienne, lise, lucette, pedro, steve
+
+# --- Verbes & mots grammaticaux ---
+mis, mise, trouve, trouvee, trouves, devis, vivre, social, sociale
+email, emails, mail, courir, laboratoire, atelier, ateliers, chateau, château
+chat, client, clients, club, compagnie, envies, etoile, folie, forum
+haut, hibou, jardin, ligne, loisirs, magazine, maire, midi, parc
+passion, plaisir, raison, serviette, support, survie, univers, volant, vous

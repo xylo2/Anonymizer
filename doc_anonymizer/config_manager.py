@@ -12,7 +12,8 @@ class PipelineConfig:
     """
     Charge et expose de manière typée les paramètres techniques d'extraction
     et d'anonymisation depuis le fichier config.ini unifié, en partageant
-    prenoms.txt, villes_masquees.txt, mots_exclus.txt et les index de contacts.
+    prenoms.txt, villes_masquees.txt, mots_exclus.txt, collisions_noms.txt
+    et les index de contacts.
     """
 
     DEFAULT_PLACEHOLDER_SALT: str = "cle_secrete_a_modifier_987"
@@ -36,7 +37,9 @@ class PipelineConfig:
         self.first_names_file: str = os.path.join(self._base_dir, "prenoms.txt")
         self.locations_file: str = os.path.join(self._base_dir, "villes_masquees.txt")
         self.excluded_words_file: str = os.path.join(self._base_dir, "mots_exclus.txt")
+        self.surname_collisions_file: str = os.path.join(self._base_dir, "collisions_noms.txt")
         self.contacts_file: str = os.path.join(self._base_dir, "contacts.txt")
+        self.surnames_contacts_file: str = os.path.join(self._base_dir, "noms_famille_contacts.txt")
         self.manual_contacts_file: str = os.path.join(self._base_dir, "contacts_manuels.txt")
         self.discovered_contacts_file: str = os.path.join(self._base_dir, "contacts_emails_decouverts.txt")
         self.indexed_contacts_file: str = os.path.join(self._base_dir, "contacts_indexes.txt")
@@ -72,6 +75,7 @@ class PipelineConfig:
         self.masked_locations: Set[str] = set()
         self.known_first_names: Set[str] = set()
         self.excluded_words: Set[str] = set()
+        self.surname_collisions: Set[str] = set()
 
         self._load_french_geo_catalog()
         self._load()
@@ -81,14 +85,16 @@ class PipelineConfig:
         self.sms_tracking_file: str = os.path.join(self.transcriptions_dir, ".sms_numeros_traites.txt")
         self.extraction_tracking_file: str = os.path.join(self.transcriptions_dir, ".fichiers_extraits.txt")
         self.resume_state_file: str = os.path.join(self.results_dir, ".etat_anonymisation.json")
-
     def load_external_lists(self) -> None:
-        """Charge ou recharge les listes externes (villes, mots exclus, prénoms)."""
+        """Charge ou recharge les listes externes (villes, mots exclus, collisions, prénoms)."""
         self.masked_locations.update(
             SharedCoreUtils.load_locations_set(self.locations_file)
         )
         self.excluded_words.update(
             SharedCoreUtils.load_words_set(self.excluded_words_file)
+        )
+        self.surname_collisions.update(
+            SharedCoreUtils.load_words_set(self.surname_collisions_file)
         )
         self._expand_location_variants()
         self.known_first_names.update(
@@ -136,6 +142,7 @@ class PipelineConfig:
             SharedCoreUtils.atomic_write_text(salt_file, f"{generated}\n")
         except OSError:
             pass
+
     def _resolve_path(self, raw_path: str) -> str:
         """Résout un chemin relativement au dossier contenant config.ini."""
         cleaned: str = raw_path.strip()
@@ -160,8 +167,10 @@ class PipelineConfig:
                 "first_names_file": "first_names_file",
                 "locations_file": "locations_file",
                 "excluded_words_file": "excluded_words_file",
+                "surname_collisions_file": "surname_collisions_file",
                 "output_file": "indexed_contacts_file",
                 "anonymized_output_file": "anonymized_contacts_file",
+                "surnames_output_file": "surnames_contacts_file",
                 "inverted_output_file": "contacts_file",
                 "manual_contacts_file": "manual_contacts_file",
                 "discovered_contacts_file": "discovered_contacts_file",
@@ -183,10 +192,10 @@ class PipelineConfig:
             paths_sec = self._parser["paths"]
             for key in (
                 "root_dir", "locations_file", "excluded_words_file",
-                "contacts_file", "manual_contacts_file",
-                "discovered_contacts_file", "all_sms_numbers_file",
-                "all_emails_file", "sources_dir", "transcriptions_dir",
-                "results_dir", "audit_report_file", "audit_copy_file",
+                "surname_collisions_file", "contacts_file", "surnames_contacts_file",
+                "manual_contacts_file", "discovered_contacts_file",
+                "all_sms_numbers_file", "all_emails_file", "sources_dir",
+                "transcriptions_dir", "results_dir", "audit_report_file", "audit_copy_file",
             ):
                 if key in paths_sec:
                     setattr(self, key, self._resolve_path(paths_sec[key]))

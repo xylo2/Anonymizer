@@ -55,6 +55,14 @@ class DocumentTextUtils:
         r"|\d{6}X{4,8}\d{4}"
         r")\b"
     )
+    REGEX_ACCESS_CODES: Pattern[str] = re.compile(
+        r"(?i)\b(?:digicode|code\s*(?:d'acc[èe]s|immeuble|portail|retrait|colis|locker)|"
+        r"mot\s*de\s*passe|mdp)\s*[:=\-]?\s*[A-Za-z0-9#*]{3,20}\b"
+    )
+    REGEX_ADMIN_REFS: Pattern[str] = re.compile(
+        r"(?i)\b(?:dossier\s+sinistre|sinistre|dossier|affaire|rg|siret|siren|permis|cni)\s*"
+        r"(?:n[°o]\s*[:=\-]?\s*|[:=\-]\s*|\s+)(?=[A-Z0-9/\-\s]*\d)[A-Z0-9/\-\s]{5,22}\b"
+    )
     REGEX_URL: Pattern[str] = re.compile(
         r"(?:https?://|www\.)[^\s<>\"'\)\]]+", re.IGNORECASE
     )
@@ -67,8 +75,9 @@ class DocumentTextUtils:
     )
 
     REGEX_STREET_ADDRESS: Pattern[str] = re.compile(
-        rf"(?i)\b\d{{1,4}}(?:\s*(?:bis|ter|quater))?\s*[,]?\s*{_STREET_TYPES}\b"
-        rf"[^\n,;()\[\]{{}}]{{2,50}}"
+        rf"(?i)\b(?:\d{{1,4}}(?:\s*(?:bis|ter|quater))?\s*[,]?\s*)?{_STREET_TYPES}\s+"
+        rf"(?:de\s+la\s+|des\s+|du\s+|de\s+|d'|l')?[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
+        rf"[^\n,;()\[\]{{}}]{{2,45}}"
     )
 
     REGEX_POSTAL_CITY: Pattern[str] = re.compile(
@@ -138,7 +147,9 @@ class DocumentTextUtils:
         "disney", "molotov", "salto", "ocs", "bein", "rmc", "bfm", "lci",
         "cnews", "tf1", "m6", "arte", "w9", "tmc", "tfx", "nrj12",
     })
+
     MOJIBAKE_REPLACEMENTS: Tuple[Tuple[str, str], ...] = (
+        ("\ufffd", "e"), ("ï¿½", "e"),
         ("Ã©", "é"), ("Ã¨", "è"), ("Ãª", "ê"), ("Ã«", "ë"),
         ("Ã ", "à"), ("Ã¢", "â"), ("Ã¤", "ä"),
         ("Ã®", "î"), ("Ã¯", "ï"),
@@ -173,8 +184,14 @@ class DocumentTextUtils:
 
     @classmethod
     def repair_mojibake(cls, text: str) -> str:
-        """Corrige les séquences UTF-8 mal décodées en Latin-1/Windows-1252."""
-        if "Ã" not in text and "â€" not in text and "Â" not in text:
+        """Corrige les séquences UTF-8 mal décodées et les caractères de remplacement."""
+        if (
+            "Ã" not in text
+            and "â€" not in text
+            and "Â" not in text
+            and "\ufffd" not in text
+            and "ï¿½" not in text
+        ):
             return text
         repaired: str = text
         for bad, good in cls.MOJIBAKE_REPLACEMENTS:
@@ -284,6 +301,7 @@ class DocumentTextUtils:
             if month_num:
                 return f"{m_word.group(2)}-{month_num}"
         return None
+
     @classmethod
     def split_sms_addresses(cls, raw_address: str) -> List[str]:
         """Découpe les adresses multiples d'un SMS/MMS et normalise les numéros FR."""

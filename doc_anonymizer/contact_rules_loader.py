@@ -24,21 +24,6 @@ class ContactRulesLoader:
         "laize", "fay", "hom", "port", "pont", "mont", "val", "bois",
     })
 
-    SURNAME_WORD_COLLISIONS = frozenset({
-        "grand", "grande", "grands", "grandes", "blanc", "blanche",
-        "blancs", "blanches", "long", "longue", "longs", "longues",
-        "mis", "mise", "trouve", "trouvee", "trouves", "devis",
-        "vivre", "social", "sociale", "email", "emails", "mail",
-        "barre", "barres", "courir", "cuisine", "campagne", "boucher",
-        "petit", "petite", "petits", "petites", "gros", "grosse",
-        "bon", "bonne", "bons", "bonnes", "neuf", "neuve", "jeune",
-        "vieux", "vieille", "fort", "forte", "clair", "claire",
-        "doux", "douce", "sage", "juste", "rose", "aube", "fleur",
-        "pierre", "pierres", "olive", "cerise", "laurier", "loup", "soleil",
-        "sol", "presse", "noisette", "laboratoire", "atelier", "ateliers",
-        "chateau", "château",
-    })
-
     NON_PERSON_ALIAS_MARKERS = (
         "contact_mail_", "contact_tel_", "service ", "atelier ", "cabinet ",
         "association ", "fondation ", "groupe ", "agence ", "bureau ",
@@ -46,6 +31,7 @@ class ContactRulesLoader:
         "observatoire ", "plate-forme ", "château ", "brasserie ",
         "office ", "succursale ", "pharmacie ", "clinique ", "hopital ",
     )
+
     def __init__(
         self, config: PipelineConfig, manual_only: bool = False
     ) -> None:
@@ -133,7 +119,7 @@ class ContactRulesLoader:
             return False
         if low_al.startswith("-") or "=" in kw or "=" in al:
             return False
-        clean_kw: str = re.sub(r"\s*\([^)]*\)\s*$", "", kw).strip()
+        clean_kw: str = re.sub(r"\s*\([^)]*\)\s*", "", kw).strip()
         words: List[str] = [
             w for w in re.split(r"[\s\-'\u2019]+", clean_kw) if len(w) >= 2
         ]
@@ -171,7 +157,7 @@ class ContactRulesLoader:
             single_norm: str = DocumentTextUtils.normalize_word(
                 next(iter(kw_words), "")
             )
-            if single_norm in self.SURNAME_WORD_COLLISIONS:
+            if single_norm in self.config.surname_collisions:
                 return
             if not is_manual and self.is_first_name(single_norm):
                 return
@@ -195,19 +181,20 @@ class ContactRulesLoader:
                     self.glued_to_alias[rev_key] = al
 
         self._extract_surname_protection(kw, al, is_manual=is_manual)
+
     def _extract_surname_protection(
         self, kw: str, al: str, is_manual: bool = False
     ) -> None:
         """Protège uniquement les vrais noms de famille sans collision lexicale."""
         if not is_manual and not self._is_person_rule_for_surname_index(kw, al):
             return
-        clean_kw: str = re.sub(r"\s*\([^)]*\)\s*$", "", kw).strip()
+        clean_kw: str = re.sub(r"\s*\([^)]*\)\s*", "", kw).strip()
         words: List[str] = [
             w for w in re.split(r"[\s\-'\u2019]+", clean_kw) if len(w) >= 2
         ]
         if not words:
             return
-        clean_al: str = re.sub(r"\s*\([^)]*\)\s*$", "", al).strip()
+        clean_al: str = re.sub(r"\s*\([^)]*\)\s*", "", al).strip()
         first_is_fn: bool = len(words) >= 2 and self.is_first_name(next(iter(words)))
         for idx, word in enumerate(words):
             norm_w: str = DocumentTextUtils.normalize_word(word)
@@ -219,7 +206,7 @@ class ContactRulesLoader:
             if (
                 len(norm_w) >= 4
                 and is_surname_role
-                and norm_w not in self.SURNAME_WORD_COLLISIONS
+                and norm_w not in self.config.surname_collisions
                 and norm_w not in self.config.excluded_words
                 and norm_w not in self.config.masked_locations
                 and norm_w not in DocumentTextUtils.ORG_GENERIC_WORDS
@@ -232,9 +219,8 @@ class ContactRulesLoader:
                 short_alias: str = (
                     clean_al if is_manual and len(words) == 1 else f"{word[:1].upper()}."
                 )
-                if norm_w not in self.surname_to_alias:
+                if norm_w not in self.surname_to_alias or is_manual:
                     self.surname_to_alias[norm_w] = short_alias
-
     def _load_indexed_and_anonymized_pairs(self) -> None:
         """Relie les noms complets de contacts_indexes.txt aux alias de contacts_anonymises.txt."""
         idx_p: str = self.config.indexed_contacts_file
@@ -266,6 +252,7 @@ class ContactRulesLoader:
                 single_al: str = next(iter(als))
                 for fn in fns:
                     self._register_rule(fn, single_al, is_manual=False)
+
     def _load_file_rules(self, file_path: str, is_manual: bool = False) -> int:
         """Charge un fichier de règles cible = alias en ignorant les lignes corrompues."""
         if not os.path.exists(file_path):
@@ -373,6 +360,7 @@ class ContactRulesLoader:
         self._load_file_rules(self.config.indexed_contacts_file, is_manual=False)
         self._load_file_rules(self.config.anonymized_contacts_file, is_manual=False)
         self._load_file_rules(self.config.discovered_contacts_file, is_manual=False)
+        self._load_file_rules(self.config.surnames_contacts_file, is_manual=True)
         self._load_file_rules(self.config.manual_contacts_file, is_manual=True)
         self._register_protected_surnames()
         self._compile_patterns()

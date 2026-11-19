@@ -66,7 +66,6 @@ class DocumentAnonymizationRunner:
         r"\b(Docteur|Dr|Mme|M\.|Pr|Me)(?:\s+\1)+\b"
         r"|\b([A-Z]\.(?:-[A-Z]\.)?)(?:\s+\2)+\b"
     )
-
     def __init__(
         self, config: PipelineConfig, manual_only: bool = False
     ) -> None:
@@ -104,6 +103,7 @@ class DocumentAnonymizationRunner:
         )
         self._initialized = True
         return True
+
     @staticmethod
     def _split_glued_tokens(match: re.Match[str]) -> str:
         """Sépare les jetons collés par casse CamelCase ou titre majuscule."""
@@ -121,7 +121,7 @@ class DocumentAnonymizationRunner:
             norm: str = DocumentTextUtils.normalize_word(tok)
             if (
                 norm in AuditAndStateManager.COMMON_FRENCH_STOPWORDS
-                or norm in ContactRulesLoader.SURNAME_WORD_COLLISIONS
+                or norm in self.config.surname_collisions
                 or norm in self.config.excluded_words
                 or norm in self.rules.alias_words
             ):
@@ -132,7 +132,6 @@ class DocumentAnonymizationRunner:
             ):
                 return True
         return False
-
     @staticmethod
     def _format_surname_initials(surname: str) -> str:
         """Formate un nom de famille en initiale(s) majuscule(s)."""
@@ -172,15 +171,26 @@ class DocumentAnonymizationRunner:
             and token[:1].isupper()
             and token[1:].islower()
         )
+
     def _replace_title_match(self, match: re.Match[str]) -> str:
-        """Remplace un nom précédé d'une civilité ou d'un titre."""
+        """Remplace un nom (avec ou sans prénom) précédé d'une civilité ou d'un titre."""
         title: str = match.group(1)
         particle: str = match.group(2) or ""
-        surname: str = match.group(3)
-        if self._is_non_surname_word(surname):
+        raw_target: str = match.group(3)
+        if self._is_non_surname_word(raw_target):
             return match.group(0)
 
-        norm_sur: str = DocumentTextUtils.normalize_word(surname)
+        target_parts: List[str] = [p for p in raw_target.split() if p]
+        if len(target_parts) >= 2 and self._is_known_first_name_ocr(next(iter(target_parts))):
+            first_tok: str = next(iter(target_parts))
+            surname_tok: str = " ".join(target_parts[1:])
+            if self._is_non_surname_word(surname_tok, after_known_first_name=True):
+                return match.group(0)
+            part_init: str = self._format_particle_initials(particle)
+            sur_init: str = self._format_surname_initials(surname_tok)
+            return f"{title} {first_tok} {part_init}{sur_init}"
+
+        norm_sur: str = DocumentTextUtils.normalize_word(raw_target)
         if not particle:
             known_aliases = self.rules.last_name_to_aliases.get(norm_sur, set())
             if len(known_aliases) == 1:
@@ -189,17 +199,16 @@ class DocumentAnonymizationRunner:
         is_protected: bool = norm_sur in self.rules.protected_surnames
         if (
             not is_protected
-            and self._is_known_first_name_ocr(surname)
+            and self._is_known_first_name_ocr(raw_target)
             and title.lower() not in {
                 "dr", "docteur", "pr", "professeur", "me", "maître", "maitre",
             }
         ):
             return match.group(0)
 
-        part_init: str = self._format_particle_initials(particle)
-        sur_init: str = self._format_surname_initials(surname)
+        part_init = self._format_particle_initials(particle)
+        sur_init = self._format_surname_initials(raw_target)
         return f"{title} {part_init}{sur_init}"
-
     def _replace_upper_pair_match(self, match: re.Match[str]) -> str:
         """Masque les paires Prénom NOM et NOM Prénom sans collision avec les sigles."""
         if match.group(1) and match.group(2):
@@ -252,6 +261,7 @@ class DocumentAnonymizationRunner:
         if self._is_non_surname_word(surname):
             return match.group(0)
         return f"{match.group(1)}{match.group(2)} {self._format_surname_initials(surname)}{match.group(4)}"
+
     def _replace_catalog_location(self, match: re.Match[str]) -> str:
         """Remplace une commune du référentiel national en temps constant O(1)."""
         token: str = match.group(0)
@@ -264,7 +274,7 @@ class DocumentAnonymizationRunner:
         ):
             return token
         prefix: str = match.string[max(0, match.start() - 30):match.start()]
-        if re.search(r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,}\s+$", prefix):
+        if re.search(r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,}\s+", prefix):
             return token
         suffix: str = match.string[match.end():match.end() + 30]
         if re.match(r"^\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,}", suffix):
@@ -290,6 +300,8 @@ class DocumentAnonymizationRunner:
             text = DocumentTextUtils.REGEX_FRANCE_TRAVAIL.sub("[ID_FRANCE_TRAVAIL_MASQUE]", text)
             text = DocumentTextUtils.REGEX_CAF_ALLOCATAIRE.sub("[NUM_ALLOCATAIRE_MASQUE]", text)
             text = DocumentTextUtils.REGEX_OFFICIAL_MEDICAL_ID.sub("[ID_ADMIN_MASQUE]", text)
+            text = DocumentTextUtils.REGEX_ACCESS_CODES.sub("[CODE_ACCES_MASQUE]", text)
+            text = DocumentTextUtils.REGEX_ADMIN_REFS.sub("[REF_ADMIN_MASQUEE]", text)
         text = DocumentTextUtils.REGEX_EMAIL.sub(
             lambda m: self.audit.pseudonymize_id(m.group(0), "EMAIL"), text
         )
@@ -368,6 +380,8 @@ class DocumentAnonymizationRunner:
         if self.config.mask_financial_and_admin_ids:
             masked = DocumentTextUtils.REGEX_IBAN.sub("IBAN_MASQUE", masked)
             masked = DocumentTextUtils.REGEX_OFFICIAL_MEDICAL_ID.sub("ID_ADMIN_MASQUE", masked)
+            masked = DocumentTextUtils.REGEX_ACCESS_CODES.sub("CODE_ACCES_MASQUE", masked)
+            masked = DocumentTextUtils.REGEX_ADMIN_REFS.sub("REF_ADMIN_MASQUEE", masked)
         masked = DocumentTextUtils.REGEX_EMAIL.sub(
             lambda m: self.audit.pseudonymize_id(m.group(0), "EMAIL"), masked
         )
@@ -418,7 +432,6 @@ class DocumentAnonymizationRunner:
         self.audit.save()
         count: int = self.audit.write_report()
         print(f"    [+] LOT ÉCRIT : '{full_out_path}' (Audit : {count} nom(s))", flush=True)
-
     def anonymize_single_file(self, trans_path: str, force_reprocess: bool = False) -> bool:
         """Anonymise une transcription individuelle et l'ajoute au lot courant."""
         if not self._initialized and not self.initialize():

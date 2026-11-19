@@ -43,3 +43,4 @@ Thumbs.db
 /.pydevproject
 /config.ini
 project_export.txt
+.watch_clipboard/

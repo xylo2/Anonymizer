@@ -10,7 +10,7 @@ from google_contacts_parser.geo_data import FrenchGeoCatalog
 class ContactsConfig:
     """
     Charge et expose de manière typée la configuration du pipeline de contacts
-    depuis le fichier config.ini unifié et villes_masquees.txt.
+    depuis le fichier config.ini unifié, villes_masquees.txt et collisions_noms.txt.
     """
 
     def __init__(self, config_path: str = "config.ini") -> None:
@@ -30,8 +30,11 @@ class ContactsConfig:
             self._base_dir, "prenoms_suggeres.txt"
         )
         self.locations_file: str = os.path.join(self._base_dir, "villes_masquees.txt")
+        self.surname_collisions_file: str = os.path.join(self._base_dir, "collisions_noms.txt")
+        self.excluded_words_file: str = os.path.join(self._base_dir, "mots_exclus.txt")
         self.output_file: str = os.path.join(self._base_dir, "contacts_indexes.txt")
         self.anonymized_output_file: str = os.path.join(self._base_dir, "contacts_anonymises.txt")
+        self.surnames_output_file: str = os.path.join(self._base_dir, "noms_famille_contacts.txt")
         self.deduplicated_output_file: str = os.path.join(self._base_dir, "contacts_dedoublonnes.txt")
         self.inverted_output_file: str = os.path.join(self._base_dir, "contacts.txt")
         self.encoding: str = "utf-8-sig"
@@ -50,6 +53,12 @@ class ContactsConfig:
         self._load()
         self.extra_locations.update(
             SharedCoreUtils.load_locations_set(self.locations_file)
+        )
+        self.surname_collisions: Set[str] = SharedCoreUtils.load_words_set(
+            self.surname_collisions_file
+        )
+        self.excluded_words: Set[str] = SharedCoreUtils.load_words_set(
+            self.excluded_words_file
         )
 
         base_locs: Set[str] = self._collect_geo_catalog_locations()
@@ -116,26 +125,24 @@ class ContactsConfig:
         self._parser.read(self.config_path, encoding="utf-8")
         if "files" in self._parser:
             f = self._parser["files"]
-            if "csv_directory" in f:
-                self.csv_directory = self._resolve_path(f["csv_directory"])
+            path_keys: Dict[str, str] = {
+                "csv_directory": "csv_directory",
+                "first_names_file": "first_names_file",
+                "suggested_first_names_file": "suggested_first_names_file",
+                "locations_file": "locations_file",
+                "surname_collisions_file": "surname_collisions_file",
+                "excluded_words_file": "excluded_words_file",
+                "output_file": "output_file",
+                "anonymized_output_file": "anonymized_output_file",
+                "surnames_output_file": "surnames_output_file",
+                "deduplicated_output_file": "deduplicated_output_file",
+                "inverted_output_file": "inverted_output_file",
+            }
+            for ini_key, attr_name in path_keys.items():
+                if ini_key in f:
+                    setattr(self, attr_name, self._resolve_path(f[ini_key]))
             if "csv_prefixes" in f:
                 self.csv_prefixes = [p.lower() for p in self._parse_csv_list(f["csv_prefixes"])]
-            if "first_names_file" in f:
-                self.first_names_file = self._resolve_path(f["first_names_file"])
-            if "suggested_first_names_file" in f:
-                self.suggested_first_names_file = self._resolve_path(
-                    f["suggested_first_names_file"]
-                )
-            if "locations_file" in f:
-                self.locations_file = self._resolve_path(f["locations_file"])
-            if "output_file" in f:
-                self.output_file = self._resolve_path(f["output_file"])
-            if "anonymized_output_file" in f:
-                self.anonymized_output_file = self._resolve_path(f["anonymized_output_file"])
-            if "deduplicated_output_file" in f:
-                self.deduplicated_output_file = self._resolve_path(f["deduplicated_output_file"])
-            if "inverted_output_file" in f:
-                self.inverted_output_file = self._resolve_path(f["inverted_output_file"])
             self.encoding = f.get("encoding", fallback=self.encoding)
 
         if "formatting" in self._parser:

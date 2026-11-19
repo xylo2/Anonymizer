@@ -19,7 +19,7 @@ from google_contacts_parser.text_utils import ContactTextUtils
 class TestContactsPipeline(unittest.TestCase):
     """
     Valide le socle commun, les règles de détection d'entités,
-    la résolution d'homonymes, les suggestions de prénoms et le pipeline complet.
+    la résolution d'homonymes, l'export des noms de famille et le pipeline complet.
     """
 
     def test_shared_normalization_and_duration(self) -> None:
@@ -67,7 +67,7 @@ class TestContactsPipeline(unittest.TestCase):
     def test_full_contacts_pipeline_homonyms_and_dedup(self) -> None:
         """
         Exécute le pipeline complet sur un CSV contenant des homonymes,
-        une société, un doublon avec alias '+' et des prénoms à suggérer.
+        une société, un nom à collision lexicale et l'export noms_famille_contacts.txt.
         """
         with tempfile.TemporaryDirectory(prefix="test_contacts_") as tmp_dir:
             export_dir: str = os.path.join(tmp_dir, "export_contacts")
@@ -77,6 +77,10 @@ class TestContactsPipeline(unittest.TestCase):
             with open(prenoms_path, "w", encoding="utf-8") as f_fn:
                 f_fn.write("jean\nmarie\n")
 
+            collisions_path: str = os.path.join(tmp_dir, "collisions_noms.txt")
+            with open(collisions_path, "w", encoding="utf-8") as f_col:
+                f_col.write("grand\nblanc\n")
+
             csv_path: str = os.path.join(export_dir, "contacts_test.csv")
             with open(csv_path, "w", encoding="utf-8-sig", newline="") as f_csv:
                 f_csv.write(
@@ -84,10 +88,9 @@ class TestContactsPipeline(unittest.TestCase):
                     "Jean,Dupont,jean.dupont@exemple.fr,06 01 02 03 04\n"
                     "Jean,Durand,jean.durand@exemple.fr,06 05 06 07 08\n"
                     "Jean,Dumont,jean.dumont@exemple.fr,06 09 10 11 12\n"
-                    "Jean,Dupont,jean.dupont+pro@exemple.fr,\n"
+                    "Jean,Grand,jean.grand@exemple.fr,\n"
                     "Cabinet Alpha,,contact@alpha-conseil.fr,\n"
                     "Gaspard,Moreau,gaspard.moreau@exemple.fr,\n"
-                    "Zélie-Anne,Bernard,zelie@exemple.fr,\n"
                 )
 
             cfg_path: str = os.path.join(tmp_dir, "config.ini")
@@ -98,6 +101,8 @@ class TestContactsPipeline(unittest.TestCase):
                     "csv_prefixes = contacts\n"
                     "first_names_file = prenoms.txt\n"
                     "suggested_first_names_file = prenoms_suggeres.txt\n"
+                    "surname_collisions_file = collisions_noms.txt\n"
+                    "surnames_output_file = noms_famille_contacts.txt\n"
                     "output_file = contacts_indexes.txt\n"
                     "anonymized_output_file = contacts_anonymises.txt\n"
                     "deduplicated_output_file = contacts_dedoublonnes.txt\n"
@@ -117,19 +122,18 @@ class TestContactsPipeline(unittest.TestCase):
                 content: str = f_out.read()
 
             self.assertIn("Jean D.=0601020304", content)
-            self.assertIn("Jean D.=jean.dupont@exemple.fr", content)
             self.assertIn("Jean Du.=jean.durand@exemple.fr", content)
             self.assertIn("Jean Du-2=jean.dumont@exemple.fr", content)
             self.assertIn("Cabinet Alpha (Alpha Conseil)=contact@alpha-conseil.fr", content)
 
-            self.assertTrue(os.path.exists(config.suggested_first_names_file))
-            with open(config.suggested_first_names_file, "r", encoding="utf-8") as f_sug:
-                sug_lines: List[str] = [
-                    ln.strip()
-                    for ln in f_sug
-                    if ln.strip() and not ln.strip().startswith("#")
-                ]
-            self.assertEqual(sug_lines, ["anne", "gaspard", "zélie"])
+            self.assertTrue(os.path.exists(config.surnames_output_file))
+            with open(config.surnames_output_file, "r", encoding="utf-8") as f_sur:
+                sur_content: str = f_sur.read()
+            self.assertIn("Dupont = D.", sur_content)
+            self.assertIn("Durand = Du.", sur_content)
+            self.assertIn("Dumont = Du-2", sur_content)
+            self.assertNotIn("Grand = G.", sur_content)
+            self.assertNotIn("Moreau = M.", sur_content)
 
 
 if __name__ == "__main__":

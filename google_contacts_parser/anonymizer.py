@@ -12,7 +12,8 @@ from google_contacts_parser.text_utils import ContactTextUtils
 class ContactsAnonymizer:
     """
     Lit les CSV Google Contacts et le fichier d'indexation pour remplacer les noms de famille
-    par leurs initiales, préserver les enseignes/sociétés et différencier les homonymes.
+    par leurs initiales, exporter les noms de famille uniques, préserver les enseignes/sociétés
+    et différencier les homonymes.
     """
 
     def __init__(self, config: ContactsConfig) -> None:
@@ -62,7 +63,6 @@ class ContactsAnonymizer:
                 first_name, last_name = p_first.strip(), p_last.strip()
 
         return first_name, last_name, full_name
-
     def _extract_first_email(self, row: Dict[str, str], fieldnames: List[str]) -> str:
         """
         Récupère la première adresse e-mail renseignée pour un contact dans la ligne CSV.
@@ -80,6 +80,7 @@ class ContactsAnonymizer:
                     if first_val:
                         return first_val.lower() if self.config.lowercase_emails else first_val
         return ""
+
     def _clean_label_text(self, raw_label: str) -> str:
         """
         Retire les mentions de fournisseurs de messagerie et abrège les emplacements
@@ -148,7 +149,6 @@ class ContactsAnonymizer:
                             self.name_to_first_email[cleaned_full] = first_email
                         if base_name not in self.name_to_first_email:
                             self.name_to_first_email[base_name] = first_email
-
     def _format_domain_display(self, domain_root: str) -> str:
         """
         Formate l'affichage d'un nom de domaine en consultant les alias configurés,
@@ -169,6 +169,7 @@ class ContactsAnonymizer:
         return ContactTextUtils.abbreviate_locations_in_text(
             display_val, self.config.all_excluded_locations_norm
         )
+
     def _get_domain_suffix(self, email: str, contact_last_name: str, base_name: str = "") -> str:
         """
         Retourne ' (domaine)' sans extension si le domaine n'est pas redondant.
@@ -200,7 +201,7 @@ class ContactsAnonymizer:
         :param extra_chars: Nombre de lettres supplémentaires en cas d'homonymie.
         :return: Tuple (nom_anonymisé, nom_de_famille_identifié).
         """
-        couple_match: Optional[re.Match[str]] = re.match(r"^(.+?)\s+(et|&)\s+(.+)$", base_name, flags=re.IGNORECASE)
+        couple_match: Optional[re.Match[str]] = re.match(r"^(.+?)\s+(et|&)\s+(.+)", base_name, flags=re.IGNORECASE)
         if couple_match:
             anon_l, last_l = self._anonymize_full_name(couple_match.group(1).strip(), extra_chars=extra_chars)
             anon_r, last_r = self._anonymize_full_name(couple_match.group(3).strip(), extra_chars=extra_chars)
@@ -217,7 +218,6 @@ class ContactsAnonymizer:
             return f"{ContactTextUtils.format_first_name(first_raw)} {ContactTextUtils.format_initials(guessed_last, extra_chars=extra_chars)}".strip(), guessed_last
 
         return ContactTextUtils.format_first_name(base_name), ""
-
     def _resolve_homonym_collision(
         self, base_name: str, initial_name: str, last_name: str, suffix: str,
         assigned_owners: Dict[str, str], identity_to_display: Dict[str, str],
@@ -265,9 +265,116 @@ class ContactsAnonymizer:
                 return fallback
             counter += 1
 
+    def _has_known_first_name_in_label(self, base_name: str, raw_last: str) -> bool:
+        """
+        Vérifie qu'au moins un mot hors nom de famille correspond à un prénom connu
+        ou à un titre médical/civil (Dr, Pr, Mme, M.).
+
+        :param base_name: Nom complet nettoyé du contact.
+        :param raw_last: Nom de famille brut extrait.
+        :return: True si le contact désigne vraisemblablement une personne physique.
+        """
+        title_markers: Set[str] = {
+            "dr", "docteur", "pr", "professeur", "mme", "madame", "m", "monsieur", "me", "maitre"
+        }
+        last_norm: str = ContactTextUtils.normalize_text(raw_last)
+        for tok in re.split(r"[\s\-'\u2019]+", base_name.strip()):
+            norm_tok: str = ContactTextUtils.normalize_text(tok)
+            if not norm_tok or norm_tok == last_norm:
+                continue
+            if norm_tok in self.frequent_first_names or norm_tok in title_markers:
+                return True
+        return False
+    @staticmethod
+    def _extract_surname_alias_from_display(
+        base_name: str, last_name: str, final_display: str
+    ) -> str:
+        """
+        Extrait le suffixe d'initiale attribué au nom de famille dans le libellé final
+        (ex: 'Nathalie D-2.' -> 'D-2.', 'Nathalie Du.' -> 'Du.').
+
+        :param base_name: Identité complète d'origine ('Nathalie Durand').
+        :param last_name: Nom de famille d'origine ('Durand').
+        :param final_display: Libellé anonymisé final ('Nathalie D-2.').
+        :return: Initiale ou alias exact du nom de famille.
+        """
+        clean_disp: str = re.sub(r"\s*\([^)]+\)\s*$", "", final_display).strip()
+        if last_name and base_name.endswith(last_name):
+            first_raw: str = base_name[: -len(last_name)].strip()
+            formatted_first: str = ContactTextUtils.format_first_name(first_raw)
+            if formatted_first and clean_disp.startswith(formatted_first + " "):
+                extracted: str = clean_disp[len(formatted_first) :].strip()
+                if extracted:
+                    return extracted
+        tokens: List[str] = clean_disp.split()
+        if len(tokens) >= 2:
+            return tokens[-1]
+        return f"{last_name.strip()[:1].upper()}."
+
+    def export_surnames_file(
+        self, resolved_surname_aliases: Optional[Dict[str, str]] = None
+    ) -> int:
+        """
+        Exporte les noms de famille uniques de personnes physiques dans noms_famille_contacts.txt
+        en réutilisant leur alias exact de résolution d'homonymie (ex: D-2., Du.).
+
+        :param resolved_surname_aliases: Dictionnaire nom_normalisé -> alias attribué.
+        :return: Nombre de noms de famille exportés.
+        """
+        from doc_anonymizer.audit_state_manager import AuditAndStateManager
+        from doc_anonymizer.text_utils import DocumentTextUtils
+
+        resolved_map: Dict[str, str] = resolved_surname_aliases or {}
+        surnames_map: Dict[str, str] = {}
+        for base_name, raw_last in self.name_to_last_name.items():
+            if ContactTextUtils.is_non_person_entity(
+                base_name, "", self.config.entity_prefixes,
+                self.config.company_keywords, self.frequent_first_names,
+            ):
+                continue
+            if not self._has_known_first_name_in_label(base_name, raw_last):
+                continue
+            for part in re.split(r"[\s\-]+", raw_last.strip()):
+                clean_part: str = re.sub(r"[^A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç']", "", part)
+                if len(clean_part) < 4 or any(ch.isdigit() for ch in part):
+                    continue
+                norm_part: str = SharedCoreUtils.normalize_token(clean_part)
+                compact_part: str = ContactTextUtils.normalize_text(clean_part)
+                if (
+                    len(norm_part) < 4
+                    or norm_part in self.frequent_first_names
+                    or compact_part in self.frequent_first_names
+                    or norm_part in self.config.surname_collisions
+                    or norm_part in self.config.excluded_words
+                    or norm_part in AuditAndStateManager.COMMON_FRENCH_STOPWORDS
+                    or norm_part in DocumentTextUtils.ORG_GENERIC_WORDS
+                    or compact_part in self.config.all_excluded_locations_norm
+                    or compact_part in self.config.all_company_keywords_norm
+                    or compact_part in self.config.all_ignored_domains_norm
+                ):
+                    continue
+                if norm_part not in surnames_map:
+                    display_last: str = clean_part.capitalize()
+                    alias_val: str = resolved_map.get(
+                        norm_part, f"{display_last[:1].upper()}."
+                    )
+                    surnames_map[norm_part] = f"{display_last} = {alias_val}"
+
+        sorted_lines: List[str] = [
+            "# NOMS DE FAMILLE EXTRAITS DES CONTACTS (GÉNÉRÉ AUTOMATIQUEMENT)\n",
+            "# Ne pas éditer manuellement : utilisez contacts_manuels.txt pour vos ajouts.\n\n",
+        ]
+        for key in sorted(surnames_map.keys()):
+            sorted_lines.append(f"{surnames_map[key]}\n")
+
+        SharedCoreUtils.atomic_write_text(
+            self.config.surnames_output_file, "".join(sorted_lines), encoding="utf-8"
+        )
+        return len(surnames_map)
+
     def process(self) -> int:
         """
-        Exécute l'anonymisation complète et écrit le fichier de sortie de façon atomique.
+        Exécute l'anonymisation complète, exporte les noms de famille et écrit le fichier de sortie.
 
         :return: Nombre de lignes écrites.
         """
@@ -277,6 +384,7 @@ class ContactsAnonymizer:
 
         assigned_owners: Dict[str, str] = {}
         identity_to_display: Dict[str, str] = {}
+        resolved_surname_aliases: Dict[str, str] = {}
         output_lines: List[str] = []
 
         with open(self.config.output_file, mode="r", encoding="utf-8") as in_file:
@@ -310,7 +418,15 @@ class ContactsAnonymizer:
                 final_right: str = self._resolve_homonym_collision(
                     base_name, anon_name, last_name, suffix, assigned_owners, identity_to_display
                 )
+                if last_name:
+                    norm_last: str = SharedCoreUtils.normalize_token(last_name)
+                    surname_alias: str = self._extract_surname_alias_from_display(
+                        base_name, last_name, final_right
+                    )
+                    if norm_last and surname_alias and norm_last not in resolved_surname_aliases:
+                        resolved_surname_aliases[norm_last] = surname_alias
                 output_lines.append(f"{contact_val}{self.config.separator}{final_right}\n")
 
         SharedCoreUtils.atomic_write_text(self.config.anonymized_output_file, "".join(output_lines), encoding="utf-8")
+        self.export_surnames_file(resolved_surname_aliases=resolved_surname_aliases)
         return len(output_lines)

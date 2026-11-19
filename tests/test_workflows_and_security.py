@@ -25,14 +25,17 @@ class TestWorkflowsAndSecurity(unittest.TestCase):
         self.res_dir: str = os.path.join(self.test_dir, "resultats_anonymisation")
         os.makedirs(self.trans_dir, exist_ok=True)
 
-        self.config: PipelineConfig = PipelineConfig()
+        isolated_cfg: str = os.path.join(self.test_dir, "config_test_isole.ini")
+        self.config: PipelineConfig = PipelineConfig(config_path=isolated_cfg)
         self.config.transcriptions_dir = self.trans_dir
         self.config.results_dir = self.res_dir
         self.config.contacts_file = os.path.join(self.test_dir, "contacts.txt")
         self.config.indexed_contacts_file = os.path.join(self.test_dir, "contacts_indexes.txt")
         self.config.anonymized_contacts_file = os.path.join(self.test_dir, "contacts_anonymises.txt")
         self.config.discovered_contacts_file = os.path.join(self.test_dir, "contacts_emails_decouverts.txt")
+        self.config.surnames_contacts_file = os.path.join(self.test_dir, "noms_famille_contacts.txt")
         self.config.manual_contacts_file = os.path.join(self.test_dir, "contacts_manuels.txt")
+        self.config.surname_collisions_file = os.path.join(self.test_dir, "collisions_noms.txt")
         self.config.excluded_words_file = os.path.join(self.test_dir, "mots_exclus.txt")
         self.config.locations_file = os.path.join(self.test_dir, "villes_masquees.txt")
         self.config.first_names_file = os.path.join(self.test_dir, "prenoms.txt")
@@ -116,7 +119,7 @@ class TestWorkflowsAndSecurity(unittest.TestCase):
         doc_path = os.path.join(sub_dir, "compte_rendu.txt")
         DocumentTextUtils.atomic_write_text(
             doc_path,
-            "Consultation avec Dr Lefevre et Mme Moreau à Caen.\n"
+            "Consultation avec Dr Lefevre et Mme Valmont à Caen.\n"
             "Note sur Paul Conge et Paul Vacances.\n"
             "Rencontre 1 avec Claire Bernard.\n"
             "Rencontre 2 avec Claire Bernard.\n"
@@ -134,7 +137,7 @@ class TestWorkflowsAndSecurity(unittest.TestCase):
             content = f.read()
 
         self.assertIn("Dr L.", content)
-        self.assertIn("Mme M.", content)
+        self.assertIn("Mme V.", content)
         self.assertIn("[LIEU_MASQUE]", content)
         self.assertIn("Paul Conge", content)
         self.assertIn("Paul Vacances", content)
