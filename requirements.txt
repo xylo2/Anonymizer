@@ -8,3 +8,4 @@ python-pptx>=0.6.23
 faster-whisper>=1.0.3
 numpy>=1.26.0
 scipy>=1.11.0
+coverage>=7.6.0

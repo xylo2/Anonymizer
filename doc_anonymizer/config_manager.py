@@ -99,10 +99,12 @@ class PipelineConfig:
         self.email_tracking_file: str = os.path.join(
             self.transcriptions_dir, ".etat_emails.txt"
         )
-
         self.enable_ocr: bool = self._get_bool("extraction", "enable_ocr", True)
         self.enable_audio: bool = self._get_bool(
             "extraction", "enable_audio", True
+        )
+        self.ignore_google_chat_images: bool = self._get_bool(
+            "extraction", "ignore_google_chat_images", True
         )
         self.whisper_model: str = self._get_str(
             "extraction", "whisper_model", "base"
@@ -177,7 +179,6 @@ class PipelineConfig:
         self.surname_collisions: Set[str] = set()
         self.excluded_words: Set[str] = set()
         self.load_external_lists()
-
     def load_external_lists(self) -> None:
         """Charge ou recharge les dictionnaires externes (prénoms, lieux, collisions, mots exclus)."""
         self.known_first_names = self._load_word_set(self.first_names_file)

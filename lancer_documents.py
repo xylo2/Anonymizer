@@ -64,6 +64,17 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Réapplique uniquement contacts_manuels.txt sur les lots existants.",
     )
+    parser.add_argument(
+        "--anonymize-only",
+        "--anon-only",
+        action="store_true",
+        help="Exécute uniquement l'anonymisation complète depuis transcriptions/ sans extraction.",
+    )
+    parser.add_argument(
+        "--reset-results",
+        action="store_true",
+        help="Supprime les anciens lots avant de relancer l'anonymisation complète.",
+    )
     return parser.parse_args(argv)
 def _install_sigint_handler() -> None:
     """
@@ -121,6 +132,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             with SystemSleepInhibitor(enabled=not args.allow_sleep):
                 anon_runner = DocumentAnonymizationRunner(config, manual_only=True)
                 anon_runner.run_on_existing_results()
+        elif args.anonymize_only:
+            pipeline = DocAnonymizerPipelineRunner(
+                config, prevent_sleep=not args.allow_sleep
+            )
+            pipeline.run_anonymize_only(reset_results=args.reset_results)
         else:
             pipeline = DocAnonymizerPipelineRunner(
                 config, prevent_sleep=not args.allow_sleep

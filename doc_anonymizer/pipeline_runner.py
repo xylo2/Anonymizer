@@ -139,6 +139,53 @@ class DocAnonymizerPipelineRunner:
         self._anonymize_pending_transcriptions(second_anonymizer)
         second_anonymizer.finalize(pass_start)
         return True
+    def run_anonymize_only(self, reset_results: bool = False) -> None:
+        """
+        Exécute uniquement l'étape complète d'anonymisation à partir des
+        transcriptions déjà présentes dans transcriptions/, sans extraction.
+
+        :param reset_results: Nettoie les anciens lots et l'état JSON avant exécution.
+        """
+        start_time: float = time.perf_counter()
+        wall_start: float = time.time()
+        self.stop_event.clear()
+
+        with SystemSleepInhibitor(enabled=self.prevent_sleep):
+            print("=== PIPELINE DOC_ANONYMIZER (ANONYMISATION COMPLÈTE SEULE) ===", flush=True)
+            print(f"[CONFIG] Fichier INI         : {self.config.config_path}", flush=True)
+            print(f"[CONFIG] Contacts auto       : {self.config.contacts_file}", flush=True)
+            print(f"[CONFIG] Contacts découverts : {self.config.discovered_contacts_file}", flush=True)
+            print(f"[CONFIG] Contacts manuels    : {self.config.manual_contacts_file}", flush=True)
+            print(f"[CONFIG] Transcriptions      : {self.config.transcriptions_dir}", flush=True)
+            print(f"[CONFIG] Résultats           : {self.config.results_dir}", flush=True)
+
+            if reset_results:
+                print("[RESET] Suppression des anciens lots et de l'état d'anonymisation...", flush=True)
+                self._reset_results_for_second_pass()
+
+            anonymizer: DocumentAnonymizationRunner = DocumentAnonymizationRunner(config=self.config)
+            if not anonymizer.initialize():
+                print("[ERREUR] Échec de l'initialisation de l'anonymiseur. Arrêt.", flush=True)
+                return
+
+            os.makedirs(self.config.results_dir, exist_ok=True)
+            try:
+                processed: int = self._anonymize_pending_transcriptions(anonymizer)
+                if processed == 0 and anonymizer.processed_in_session == 0:
+                    anonymizer.audit.write_report()
+                    print("[OK] Aucune nouvelle transcription à anonymiser.", flush=True)
+                else:
+                    anonymizer.finalize(wall_start)
+                self._run_second_pass_with_discovered_emails()
+            except KeyboardInterrupt:
+                self.stop_event.set()
+                print("\n[INTERROMPU] Ctrl+C détecté : sauvegarde des lots déjà anonymisés...", flush=True)
+                anonymizer.flush_batch()
+                os._exit(130)
+
+        elapsed_str: str = SharedCoreUtils.format_duration(time.perf_counter() - start_time)
+        print(f"\nAnonymisation complète terminée en {elapsed_str}.", flush=True)
+
     def run_all(self) -> None:
         """
         Exécute le rattrapage des transcriptions, l'extraction parallèle et

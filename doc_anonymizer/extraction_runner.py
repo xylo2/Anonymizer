@@ -12,7 +12,6 @@ from doc_anonymizer.comm_extractors import CommunicationExtractor
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.office_extractors import OfficeAndDocumentExtractor
 from doc_anonymizer.text_utils import DocumentTextUtils
-from doc_anonymizer.whatsapp_zip_extractor import WhatsAppZipExtractor
 
 
 class DocumentExtractionRunner:
@@ -53,12 +52,6 @@ class DocumentExtractionRunner:
         self.chat_extractor: MultiPlatformChatExtractor = (
             MultiPlatformChatExtractor(config=config)
         )
-        self.wa_zip_extractor: WhatsAppZipExtractor = WhatsAppZipExtractor(
-            config=config,
-            doc_extractor=self.doc_extractor,
-            comm_extractor=self.comm_extractor,
-            chat_extractor=self.chat_extractor,
-        )
         self.extraction_errors: List[str] = []
         self._io_lock: threading.Lock = threading.Lock()
 
@@ -73,6 +66,7 @@ class DocumentExtractionRunner:
             return configured
         cpu_total: int = os.cpu_count() or 2
         return max(1, min(4, cpu_total))
+
     @staticmethod
     def load_tracking_set(tracking_path: str) -> Set[str]:
         """
@@ -85,7 +79,6 @@ class DocumentExtractionRunner:
             return set()
         with open(tracking_path, "r", encoding="utf-8") as f:
             return {line.strip() for line in f if line.strip()}
-
     @staticmethod
     def append_tracking_entry(tracking_path: str, entry: str) -> None:
         """
@@ -118,7 +111,7 @@ class DocumentExtractionRunner:
             return "Web"
         if ext in {".mbox", ".eml"}:
             return "Emails"
-        if ext in {".json", ".zip", ".vtt"}:
+        if ext in {".json", ".vtt"}:
             return "Chats"
         if ext == ".xml":
             return "SMS"
@@ -146,6 +139,7 @@ class DocumentExtractionRunner:
         if os.path.isabs(self.config.sources_dir):
             return os.path.normpath(self.config.sources_dir)
         return os.path.normpath(os.path.join(self.config.root_dir, self.config.sources_dir))
+
     def _file_priority_key(self, file_path: str) -> Tuple[int, int, str]:
         """
         Calcule une clé de priorité pour reporter les fichiers lourds à la fin.
@@ -164,6 +158,24 @@ class DocumentExtractionRunner:
         threshold_bytes: int = int(self.config.heavy_file_threshold_mb * 1024 * 1024)
         is_heavy_type: bool = ext in {".mbox", ".aup3"} or ext in self.AUDIO_EXTS
         return (1, size_bytes, file_path) if (is_heavy_type or size_bytes >= threshold_bytes) else (0, 0, file_path)
+    @classmethod
+    def _is_google_chat_image(cls, file_path: str, input_dir: str) -> bool:
+        """
+        Vérifie si le fichier est une image située dans un export Google Chat.
+
+        :param file_path: Chemin complet du fichier candidat.
+        :param input_dir: Répertoire racine des fichiers sources.
+        :return: True s'il s'agit d'une image issue d'un dossier Google Chat.
+        """
+        _, ext_raw = os.path.splitext(file_path)
+        if ext_raw.lower() not in cls.IMAGE_EXTS:
+            return False
+        rel_dir: str = os.path.dirname(os.path.relpath(file_path, input_dir))
+        parts: List[str] = [p.lower() for p in re.split(r"[\\/]+", rel_dir) if p]
+        if "google chat" in parts:
+            return True
+        parent_dir: str = os.path.dirname(file_path)
+        return os.path.exists(os.path.join(parent_dir, "messages.json"))
 
     def collect_source_files(self) -> List[str]:
         """
@@ -190,24 +202,22 @@ class DocumentExtractionRunner:
             os.path.basename(self.config.audit_report_file),
             os.path.basename(self.config.audit_copy_file),
         }
+        ignore_gchat_imgs: bool = getattr(self.config, "ignore_google_chat_images", True)
         for root_path, dirs, files in os.walk(input_dir):
             dirs[:] = sorted(d for d in dirs if d not in self.config.ignored_dirs and not d.startswith("."))
             for file_name in sorted(files):
                 if file_name.startswith(".") or file_name in excluded_files or file_name.endswith((".py", ".ini")):
                     continue
-                collected.append(os.path.join(root_path, file_name))
+                full_path: str = os.path.join(root_path, file_name)
+                if ignore_gchat_imgs and self._is_google_chat_image(full_path, input_dir):
+                    continue
+                collected.append(full_path)
         collected.sort(key=self._file_priority_key)
         return collected
 
     def _write_transcription_block(self, period: str, category: str, raw_base_name: str, content: str) -> str:
         """
         Écrit de façon thread-safe le contenu extrait dans transcriptions/AAAA-MM/Catégorie/.
-
-        :param period: Période AAAA-MM.
-        :param category: Catégorie thématique du document.
-        :param raw_base_name: Nom de fichier d'origine.
-        :param content: Texte extrait prêt à enregistrer.
-        :return: Chemin du fichier transcription généré.
         """
         target_dir: str = os.path.join(self.config.transcriptions_dir, period, category)
         out_path: str = os.path.join(target_dir, f"{raw_base_name}.txt")
@@ -219,82 +229,51 @@ class DocumentExtractionRunner:
 
     def _resolve_chat_output_stem(self, file_path: str, raw_stem: str) -> str:
         """
-        Évite les collisions entre fichiers génériques (messages.json, message_1.html).
-
-        :param file_path: Chemin complet du fichier de chat.
-        :param raw_stem: Nom sans extension assaini.
-        :return: Nom de base unique pour la transcription.
+        Évite les collisions entre fichiers génériques (messages.json, message_1.html, _chat.txt).
         """
         low_stem: str = raw_stem.lower()
-        if low_stem == "messages" or low_stem.startswith("message_"):
+        if low_stem in {"messages", "_chat"} or low_stem.startswith("message_"):
             parent_name: str = os.path.basename(os.path.dirname(file_path))
             if parent_name:
                 return self._sanitize_filesystem_stem(f"chat_{parent_name}_{raw_stem}")
         return raw_stem
     def _process_chat_or_archive(
-        self,
-        file_path: str,
-        norm_rel: str,
-        ext: str,
-        raw_stem: str,
-        target_phones: Dict[str, str],
-        allowed_emails: Set[str],
-        already_extracted: Set[str],
-        discovered_phones: Set[str],
-        discovered_emails: Set[str],
+        self, file_path: str, norm_rel: str, ext: str, raw_stem: str,
+        target_phones: Dict[str, str], allowed_emails: Set[str],
+        already_extracted: Set[str], discovered_phones: Set[str], discovered_emails: Set[str],
     ) -> Optional[List[str]]:
         """
-        Traite les exports de messageries (ZIP WhatsApp, JSON chats/Teams, VTT Teams, HTML Messenger, TXT WhatsApp).
+        Traite les messageries (JSON, VTT, HTML, TXT) et invite à dézipper manuellement les .zip.
         """
         from doc_anonymizer.teams_chat_extractor import TeamsChatExtractor
 
         generated_paths: List[str] = []
+        if ext == ".zip":
+            msg: str = (
+                f"Archive ZIP ignorée ('{norm_rel}') : veuillez dézipper "
+                "manuellement l'archive dans le dossier des sources avant exécution."
+            )
+            print(f"[AVERTISSEMENT] {msg}", flush=True)
+            with self._io_lock:
+                self.extraction_errors.append(f"{norm_rel} -> {msg}")
+            return []
 
         if ext == ".vtt":
             vtt_txt, vtt_err = TeamsChatExtractor(self.config).extract_teams_vtt(file_path)
-            if self.stop_event.is_set():
-                return []
-            if vtt_err or not vtt_txt:
-                if vtt_err:
+            if self.stop_event.is_set() or vtt_err or not vtt_txt:
+                if vtt_err and not self.stop_event.is_set():
                     with self._io_lock:
                         self.extraction_errors.append(f"{norm_rel} -> {vtt_err}")
                 return []
-            period: str = DocumentTextUtils.resolve_file_period(
-                vtt_txt, os.path.basename(file_path), file_path
-            )
-            generated_paths.append(
-                self._write_transcription_block(period, "Chats", raw_stem, vtt_txt)
-            )
+            period: str = DocumentTextUtils.resolve_file_period(vtt_txt, os.path.basename(file_path), file_path)
+            generated_paths.append(self._write_transcription_block(period, "Chats", raw_stem, vtt_txt))
             with self._io_lock:
                 self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
                 already_extracted.add(norm_rel)
             return generated_paths
 
-        if ext == ".zip":
-            wa_chats, wa_atts, zip_err = self.wa_zip_extractor.extract_whatsapp_zip(file_path)
-            if self.stop_event.is_set():
-                return []
-            if zip_err:
-                with self._io_lock:
-                    self.extraction_errors.append(f"{norm_rel} -> {zip_err}")
-                return []
-            if wa_chats or wa_atts:
-                for period, chat_block in sorted(wa_chats.items()):
-                    generated_paths.append(
-                        self._write_transcription_block(period, "Chats", raw_stem, chat_block)
-                    )
-                for att_period, att_cat, att_stem, att_text in wa_atts:
-                    generated_paths.append(
-                        self._write_transcription_block(att_period, att_cat, att_stem, att_text)
-                    )
-                with self._io_lock:
-                    self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
-                    already_extracted.add(norm_rel)
-            return generated_paths
-
         if ext == ".json":
-            local_phones: Set[str] = set()
-            local_emails: Set[str] = set()
+            local_phones, local_emails = set(), set()
             chats_by_month, chat_err = self.chat_extractor.extract_json_chat(
                 file_path, target_phones, allowed_emails, local_phones, local_emails
             )
@@ -310,9 +289,7 @@ class DocumentExtractionRunner:
             if chats_by_month:
                 chat_stem: str = self._resolve_chat_output_stem(file_path, raw_stem)
                 for period, chat_block in sorted(chats_by_month.items()):
-                    generated_paths.append(
-                        self._write_transcription_block(period, "Chats", chat_stem, chat_block)
-                    )
+                    generated_paths.append(self._write_transcription_block(period, "Chats", chat_stem, chat_block))
                 with self._io_lock:
                     self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
                     already_extracted.add(norm_rel)
@@ -322,13 +299,11 @@ class DocumentExtractionRunner:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f_html:
                 raw_html: str = f_html.read()
             if self.chat_extractor.is_messenger_html_file(file_path, raw_html):
-                fb_by_month: Dict[str, str] = self.chat_extractor.extract_messenger_html(file_path, raw_html)
+                fb_by_month = self.chat_extractor.extract_messenger_html(file_path, raw_html)
                 if fb_by_month:
                     chat_stem = self._resolve_chat_output_stem(file_path, raw_stem)
                     for period, fb_block in sorted(fb_by_month.items()):
-                        generated_paths.append(
-                            self._write_transcription_block(period, "Chats", chat_stem, fb_block)
-                        )
+                        generated_paths.append(self._write_transcription_block(period, "Chats", chat_stem, fb_block))
                     with self._io_lock:
                         self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
                         already_extracted.add(norm_rel)
@@ -338,29 +313,24 @@ class DocumentExtractionRunner:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f_txt:
                 raw_txt: str = f_txt.read()
             if self.chat_extractor.is_whatsapp_text_file(raw_txt):
-                wa_by_month: Dict[str, str] = self.chat_extractor.extract_whatsapp_text(file_path, raw_txt)
+                wa_by_month = self.chat_extractor.extract_whatsapp_text(file_path, raw_txt)
                 if wa_by_month:
+                    chat_stem = self._resolve_chat_output_stem(file_path, raw_stem)
                     for period, wa_block in sorted(wa_by_month.items()):
-                        generated_paths.append(
-                            self._write_transcription_block(period, "Chats", raw_stem, wa_block)
-                        )
+                        generated_paths.append(self._write_transcription_block(period, "Chats", chat_stem, wa_block))
                     with self._io_lock:
                         self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
                         already_extracted.add(norm_rel)
                 return generated_paths
-
         return None
     def process_single_file(
         self, file_path: str, target_phones: Dict[str, str], allowed_emails: Set[str],
         already_extracted: Set[str], sms_processed: Set[str],
         discovered_phones: Set[str], discovered_emails: Set[str],
     ) -> List[str]:
-        """
-        Traite un fichier source (compatible exécution parallèle) et retourne les transcriptions.
-        """
+        """Traite un fichier source (compatible exécution parallèle) et retourne les transcriptions."""
         if self.stop_event.is_set():
             return []
-
         input_dir: str = self._resolve_input_dir()
         norm_rel: str = os.path.normpath(os.path.relpath(file_path, input_dir))
         file_name: str = os.path.basename(file_path)
@@ -371,8 +341,7 @@ class DocumentExtractionRunner:
         generated_paths: List[str] = []
 
         if ext == ".xml":
-            local_phones: Set[str] = set()
-            local_emails: Set[str] = set()
+            local_phones, local_emails = set(), set()
             with self._io_lock:
                 sms_snapshot: Set[str] = set(sms_processed)
             sms_by_month, xml_errors = self.comm_extractor.parse_sms_xml(
@@ -402,7 +371,7 @@ class DocumentExtractionRunner:
             if norm_rel in already_extracted:
                 return []
 
-        chat_res: Optional[List[str]] = self._process_chat_or_archive(
+        chat_res = self._process_chat_or_archive(
             file_path, norm_rel, ext, raw_stem, target_phones, allowed_emails,
             already_extracted, discovered_phones, discovered_emails,
         )
@@ -464,11 +433,7 @@ class DocumentExtractionRunner:
             already_extracted.add(norm_rel)
         return [out_p]
     def load_all_filter_contacts(self) -> Tuple[Optional[Dict[str, str]], Optional[Set[str]]]:
-        """
-        Fusionne les téléphones et e-mails des trois fichiers de contacts.
-
-        :return: Tuple (dictionnaire_telephones, ensemble_emails) ou (None, None).
-        """
+        """Fusionne les téléphones et e-mails des trois fichiers de contacts."""
         target_phones, allowed_emails = DocumentTextUtils.load_filter_contacts(self.config.contacts_file)
         if target_phones is None or allowed_emails is None:
             return None, None
@@ -482,12 +447,7 @@ class DocumentExtractionRunner:
         return target_phones, allowed_emails
 
     def finalize_reports(self, discovered_phones: Set[str], discovered_emails: Set[str]) -> None:
-        """
-        Écrit les rapports d'identifiants rencontrés et d'erreurs d'extraction.
-
-        :param discovered_phones: Numéros rencontrés pendant l'extraction.
-        :param discovered_emails: E-mails rencontrés pendant l'extraction.
-        """
+        """Écrit les rapports d'identifiants rencontrés et d'erreurs d'extraction."""
         existing_sms: Set[str] = self.load_tracking_set(self.config.all_sms_numbers_file)
         expanded: Set[str] = set()
         for raw_entry in existing_sms | discovered_phones:
@@ -512,10 +472,7 @@ class DocumentExtractionRunner:
                 f_err.writelines(f"{err}\n" for err in self.extraction_errors)
 
     def run(self) -> None:
-        """
-        Exécute la phase autonome d'extraction multi-formats en parallèle
-        avec prise en compte immédiate de Ctrl+C.
-        """
+        """Exécute la phase autonome d'extraction multi-formats en parallèle."""
         start_time: float = time.time()
         workers: int = self.get_worker_count()
         print(f"=== ÉTAPE 1 : EXTRACTION MULTI-FORMATS ({workers} worker(s)) ===", flush=True)
@@ -526,9 +483,7 @@ class DocumentExtractionRunner:
         os.makedirs(self.config.transcriptions_dir, exist_ok=True)
         already_extracted: Set[str] = self.load_tracking_set(self.config.extraction_tracking_file)
         sms_processed: Set[str] = self.load_tracking_set(self.config.sms_tracking_file)
-        discovered_phones: Set[str] = set()
-        discovered_emails: Set[str] = set()
-
+        discovered_phones, discovered_emails = set(), set()
         files: List[str] = self.collect_source_files()
         total: int = len(files)
         print(f"Inventaire : {total} fichier(s) candidat(s).", flush=True)

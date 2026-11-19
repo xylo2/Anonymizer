@@ -11,9 +11,11 @@
    * **Sur Android** : appuyez sur **⋮** (en haut à droite) > **Plus** > **Exporter la discussion**.
    * **Sur iPhone** : appuyez sur le nom du contact ou du groupe en haut > faites défiler vers le bas > **Exporter la discussion**.
 3. Choisissez le mode d'export :
-   * **Joindre les médias** *(recommandé)* : génère une archive **`.zip`** contenant `_chat.txt` ainsi que les documents PDF, images et notes vocales joints. Tout est extrait automatiquement.
-   * **Sans média** : génère uniquement un fichier texte **`.txt`**.
-4. Déposez le fichier **`.zip`** ou **`.txt`** directement dans **`fichiers sources/`**.
+   * **Joindre les médias** : génère une archive `.zip` contenant `_chat.txt` ainsi que les documents PDF, images et notes vocales joints.
+   * **Sans média** : génère uniquement un fichier texte `.txt`.
+4. **Dézippez manuellement l'archive `.zip`** dans un sous-dossier dédié (ex. `fichiers sources/WhatsApp_Claire/`), puis lancez l'extraction : la discussion et tous les médias extraits seront traités automatiquement.
+
+> **Important :** Les archives `.zip` non décompressées sont ignorées par l'application avec un avertissement.
 
 ---
 

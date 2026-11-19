@@ -95,7 +95,11 @@ class TestGoogleChatPipeline(unittest.TestCase):
         with open(os.path.join(chat_dir, "user_info.json"), "w", encoding="utf-8") as f_ui:
             json.dump({"user": {"email": "jean.dupont@exemple.fr"}}, f_ui)
 
+        with open(os.path.join(chat_dir, "piece_jointe_inutile.jpg"), "wb") as f_img:
+            f_img.write(b"\xff\xd8\xff\xe0fake_jpeg")
+
         config = PipelineConfig(self.ini_path)
+        self.assertTrue(config.ignore_google_chat_images)
         DocAnonymizerPipelineRunner(config=config, prevent_sleep=False).run_all()
 
         may_txt: str = os.path.join(
@@ -106,6 +110,7 @@ class TestGoogleChatPipeline(unittest.TestCase):
         )
         self.assertTrue(os.path.exists(may_txt))
         self.assertTrue(os.path.exists(june_txt))
+        self.assertFalse(os.path.exists(os.path.join(config.transcriptions_dir, "2024-05", "Images")))
 
         result_files = [
             os.path.join(rp, fn)
