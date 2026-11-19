@@ -17,7 +17,7 @@ class DocumentTextUtils:
     """
 
     REGEX_EMAIL: Pattern[str] = re.compile(
-        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
+        r"(?<![:\d])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
     )
     REGEX_PHONE: Pattern[str] = re.compile(
         r"(?:\+33\s*(?:\(0\)\s*)?|0033\s*(?:\(0\)\s*)?|(?<![\d.])0(?![.,]\d))[1-9]"
@@ -93,12 +93,11 @@ class DocumentTextUtils:
     REGEX_BIRTH_DATE: Pattern[str] = re.compile(
         r"(?i)\b((?:n[ée](?:[\(（]e[\)）]|e)?(?:\s+le)?(?:/rang)?|date\s+de\s+naissance|naissance|ddn|"
         r"enfant|fils|fille|b[ée]b[ée]|nourrisson|patient|patiente)\s*(?:du|le)?\s*[:=\-]?\s*)"
-        r"(?:\d{1,2}[/\-.]\d{1,2}[/\-.]|\d{1,2}\s+[a-zéû]+\s+|(?:0[1-9]|[12]\d|3[01])(?:0[1-9]|1[0-2]|0s))((?:19|20)\d{2}|\d{2})\b"
+        r"(?:\d{1,2}[/\-.]\d{1,2}[/\-.]|\d{1,2}\s+[a-zéû]+\s+|(?:0[1-9]|\d|3)(?:0[1-9]|1[0-2]|0s))((?:19|20)\d{2}|\d{2})\b"
     )
     REGEX_GLUED_PERSON_BIRTH_DATE: Pattern[str] = re.compile(
-        r"((?:Aurélie\s+S\.|S\.,?\s*AURELIE|AURELIE)\s*)"
-        r"(?:0[1-9]|[12]\d|3[01])[/\-.](?:0[1-9]|1[0-2])[/\-.]((?:19|20)\d{2})\b",
-        re.IGNORECASE,
+        r"((?:[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç]+\s+[A-Z]\.|[A-Z]{3,15}\s*,?\s*[A-Z]{3,15})\s*)"
+        r"(?:0[1-9]|\d|3)[/\-.](?:0[1-9]|1[0-2])[/\-.]((?:19|20)\d{2})\b"
     )
     REGEX_FACILITIES_AND_ZONES: Pattern[str] = re.compile(
         r"\b(?:CHU|Clinique|Polyclinique|H[ôo]pital|Centre\s+[Hh]ospitalier|"
@@ -113,15 +112,15 @@ class DocumentTextUtils:
     )
 
     _STREET_TYPES_NO_NUM: str = (
-        r"(?:rue|rve|avenue|av\.|boulevard|bd\.?|bld\.?|all[ée]e|all\.?|impasse|imp\.?|"
+        r"(?:rue|rve|avenue|av\.|boulevard|bd\.?|bld\.?|impasse|imp\.?|"
         r"chemin|chem\.?|route|rte\.?|quai|square|sq\.?|cours|passage|"
         r"sentier|faubourg|fbg\.?|r[ée]sidence|r[ée]s\.?|lotissement|hameau|"
-        r"lieu-dit|lieudit|esplanade|terrasse|parvis|promenade|foss[ée]s|vente)"
+        r"lieu-dit|lieudit|esplanade|terrasse|parvis|promenade|foss[ée]s)"
     )
-    _STREET_TYPES_WITH_NUM: str = rf"(?:{_STREET_TYPES_NO_NUM}|r\.?|place|pl\.?|voie|cr\.?)"
+    _STREET_TYPES_WITH_NUM: str = rf"(?:{_STREET_TYPES_NO_NUM}|all[ée]e|all\.?|r\.?|place|pl\.?|voie|cr\.?)"
 
     REGEX_STREET_ADDRESS: Pattern[str] = re.compile(
-        rf"(?i)\b(?:\d{{1,4}}[ \t]*(?:bis|ter|quater)?[ \t]*[,]?[ \t]*{_STREET_TYPES_WITH_NUM}(?:(?![a-zà-ÿ0-9])|(?=[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]))"
+        rf"(?i)(?<!:)\b(?:\d{{1,4}}[ \t]*(?:bis|ter|quater)?[ \t]*[,]?[ \t]*{_STREET_TYPES_WITH_NUM}(?:(?![a-zà-ÿ0-9])|(?=[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]))"
         rf"|{_STREET_TYPES_NO_NUM}(?:(?![a-zà-ÿ0-9])|(?=(?:de|du|des|d)[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])))[ \t]*"
         rf"(?:de[ \t]*la[ \t]*|des[ \t]*|du[ \t]*|de[ \t]*|d'|l')?[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
         rf"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç0-9'\- \t]{{2,42}}"
@@ -436,7 +435,6 @@ class DocumentTextUtils:
                 if base_key in {"DTSTART", "DTEND", "SUMMARY", "LOCATION", "DESCRIPTION"}:
                     cur[base_key] = val_part.replace(r"\n", "\n").replace(r"\,", ",")
         return "\n---\n".join(events)
-
     @staticmethod
     def safe_parse_xml_fromstring(xml_content: str) -> ET.Element:
         """Parse une chaîne XML en bloquant toute déclaration DOCTYPE/ENTITY (XXE)."""

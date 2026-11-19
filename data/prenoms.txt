@@ -191,6 +191,7 @@ tony
 alphonse
 william
 anatole
+lahm
 marie
 nathalie
 isabelle
@@ -461,6 +462,7 @@ liyaas
 llysa
 lolie
 lorène
+lorraine
 lou
 lucile
 lucine
@@ -608,6 +610,7 @@ louis-marie
 charles-henri
 marc-antoine
 luc-andre
+aude
 cassie
 charméla
 charoufa

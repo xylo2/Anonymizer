@@ -1,5 +1,6 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise (bibliothèque standard uniquement)
 
+import os
 import time
 from typing import List, Tuple
 from common.core_utils import SharedCoreUtils
@@ -8,18 +9,16 @@ from google_contacts_parser.config_manager import ContactsConfig
 from google_contacts_parser.csv_reader import GoogleContactsReader
 from google_contacts_parser.deduplicator import ContactsDeduplicator
 from google_contacts_parser.first_name_suggester import MissingFirstNamesSuggester
-from google_contacts_parser.inverter import ContactsInverter
 from google_contacts_parser.output_writer import ContactsOutputWriter
 
 
 class ContactsPipelineRunner:
     """
     Ordonnance l'exécution séquentielle des étapes de traitement des contacts :
-    1. Extraction et indexation depuis les fichiers CSV Google Contacts.
+    1. Extraction et indexation depuis les fichiers CSV Google Contacts / Outlook.
     2. Anonymisation des noms de famille et résolution des homonymes.
-    3. Dédoublonnage exact ou équivalent et fusion des clés communes.
-    4. Inversion gauche/droite et tri alphabétique par la nouvelle partie gauche.
-    5. Génération d'un fichier de suggestions pour les prénoms absents de prenoms.txt.
+    3. Dédoublonnage et écriture directe au format unifié Identifiant_Brut = Alias.
+    4. Génération d'un fichier de suggestions pour les prénoms absents de prenoms.txt.
     """
 
     def __init__(self, config: ContactsConfig) -> None:
@@ -36,7 +35,7 @@ class ContactsPipelineRunner:
 
         :return: Tuple (nombre_correspondances, liste_fichiers_csv).
         """
-        print("=== [1/4] EXTRACTION DES CONTACTS CSV ===")
+        print("=== [1/3] EXTRACTION DES CONTACTS CSV ===")
         csv_files: List[str] = self.config.get_csv_files()
         if not csv_files:
             raise FileNotFoundError(
@@ -64,39 +63,41 @@ class ContactsPipelineRunner:
 
         :return: Nombre de lignes écrites dans le fichier anonymisé.
         """
-        print("=== [2/4] ANONYMISATION DES CONTACTS ===")
+        print("=== [2/3] ANONYMISATION DES CONTACTS ===")
         anonymizer: ContactsAnonymizer = ContactsAnonymizer(config=self.config)
         count: int = anonymizer.process()
         print(f"[OK] {count} ligne(s) anonymisée(s) -> '{self.config.anonymized_output_file}'.\n")
         return count
-    def _run_deduplication(self) -> Tuple[int, int, int]:
+    def _run_deduplication_and_export(self) -> Tuple[int, int, int]:
         """
-        Exécute la troisième étape : suppression des doublons et fusion des clés communes.
+        Exécute la troisième étape : suppression des doublons et écriture directe
+        au format unifié Identifiant_Brut = Alias dans contacts.txt.
 
         :return: Tuple (lignes_lues, lignes_écrites, clés_fusionnées).
         """
-        print("=== [3/4] DÉDOUBLONNAGE ET FUSION ===")
+        print("=== [3/3] DÉDOUBLONNAGE ET EXPORT UNIFIÉ ===")
         deduplicator: ContactsDeduplicator = ContactsDeduplicator(config=self.config)
         read_count, written_count, merged_count = deduplicator.process()
         removed_count: int = read_count - written_count
+
+        if os.path.exists(self.config.deduplicated_output_file):
+            with open(self.config.deduplicated_output_file, "r", encoding="utf-8") as f_in:
+                lines: List[str] = sorted(
+                    (ln.strip() for ln in f_in if ln.strip()),
+                    key=lambda s: s.lower(),
+                )
+            SharedCoreUtils.atomic_write_text(
+                target_path=self.config.inverted_output_file,
+                content="\n".join(lines) + ("\n" if lines else ""),
+                encoding="utf-8",
+            )
+
         print(
-            f"[OK] {read_count} ligne(s) -> {written_count} ligne(s) dédoublonnée(s) "
+            f"[OK] {read_count} ligne(s) -> {written_count} ligne(s) unifiée(s) "
             f"({removed_count} doublon(s) réduit(s), {merged_count} clé(s) fusionnée(s)) "
-            f"-> '{self.config.deduplicated_output_file}'.\n"
+            f"-> '{self.config.inverted_output_file}'.\n"
         )
         return read_count, written_count, merged_count
-
-    def _run_inversion(self) -> int:
-        """
-        Exécute la quatrième étape : inversion gauche/droite et tri alphabétique.
-
-        :return: Nombre de lignes écrites dans le fichier inversé final.
-        """
-        print("=== [4/4] INVERSION ET TRI ALPHABÉTIQUE ===")
-        inverter: ContactsInverter = ContactsInverter(config=self.config)
-        count: int = inverter.process()
-        print(f"[OK] {count} ligne(s) inversée(s) et triée(s) -> '{self.config.inverted_output_file}'.\n")
-        return count
 
     def _run_first_name_suggestions(self, csv_files: List[str]) -> int:
         """
@@ -124,8 +125,7 @@ class ContactsPipelineRunner:
         start_time: float = time.perf_counter()
         _, csv_files = self._run_extraction()
         self._run_anonymization()
-        self._run_deduplication()
-        self._run_inversion()
+        self._run_deduplication_and_export()
         self._run_first_name_suggestions(csv_files=csv_files)
         elapsed_str: str = SharedCoreUtils.format_duration(
             time.perf_counter() - start_time

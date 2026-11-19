@@ -187,6 +187,9 @@ class DocumentAnonymizationRunner:
         _ = digest
         self.dynamic_tokens[key] = token
         return token
+    CASE_SENSITIVE_LOCATIONS = frozenset({
+        "rots", "ifs", "boulon", "clin", "orge", "aire", "sens", "nice", "pau", "auch",
+    })
 
     def _compile_patterns(self) -> None:
         """Compile les expressions régulières optimisées sans traverser les sauts de ligne."""
@@ -216,6 +219,14 @@ class DocumentAnonymizationRunner:
                 re.IGNORECASE,
             )
 
+        all_dates: List[str] = list(self.config.masked_birth_dates) + sorted(
+            self.rules.extra_sensitive_dates
+        )
+        if all_dates:
+            self.config.custom_birth_date_pattern = (
+                PipelineConfig._compile_custom_dates_pattern(all_dates)
+            )
+
         titles_pat: str = (
             r"(?:Dr\.?|Docteur|Pr\.?|Professeur|Me\.?|Ma[îi]tre|Mme\.?|Madame|"
             r"Mlle\.?|Mademoiselle|M\.|Mr\.?|Monsieur|Famille)"
@@ -237,20 +248,34 @@ class DocumentAnonymizationRunner:
         safe_locs: List[str] = sorted(
             loc
             for loc in self.config.masked_locations
-            if len(loc) >= 4
+            if len(loc) >= 3
             and loc not in self.rules.COMMON_WORD_COLLISIONS
             and loc not in self.config.excluded_words
         )
         if safe_locs:
-            loc_trie: str = DocumentTextUtils.build_ocr_tolerant_trie_regex(safe_locs)
-            if loc_trie:
+            ci_locs: List[str] = [
+                loc for loc in safe_locs if loc not in self.CASE_SENSITIVE_LOCATIONS
+            ]
+            cs_locs: List[str] = [
+                loc for loc in safe_locs if loc in self.CASE_SENSITIVE_LOCATIONS
+            ]
+            loc_branches: List[str] = []
+            if ci_locs:
+                ci_trie: str = DocumentTextUtils.build_ocr_tolerant_trie_regex(ci_locs)
+                if ci_trie:
+                    loc_branches.append(f"(?i:{ci_trie})")
+            for cs_word in cs_locs:
+                cap_form: str = re.escape(cs_word.capitalize())
+                up_form: str = re.escape(cs_word.upper())
+                loc_branches.append(f"(?:{cap_form}|{up_form})")
+            if loc_branches:
                 self.locations_regex = re.compile(
-                    rf"(?<![A-Za-zÀ-ÿ0-9_])(?:{loc_trie})(?![A-Za-zÀ-ÿ0-9_])",
-                    re.IGNORECASE,
+                    rf"(?<![A-Za-zÀ-ÿ0-9_])(?:{'|'.join(loc_branches)})(?![A-Za-zÀ-ÿ0-9_])"
                 )
         self.regex_compiled = True
+
     def _replace_fast_target(self, match: re.Match) -> str:
-        """Remplace une cible reconnue en ignorant les vrais toponymes composés (Saint-Laurent-...)."""
+        """Remplace une cible reconnue en ignorant les vrais toponymes composés."""
         matched_text: str = match.group(0)
         full_str: str = match.string
         start_idx: int = match.start()
@@ -274,7 +299,6 @@ class DocumentAnonymizationRunner:
             if re.sub(r"[\s\-'\u2019]+", "", k_norm) == compact:
                 return val_alias
         return matched_text
-
     def _is_known_first_name(self, token: str) -> bool:
         """Vérifie si un jeton est un prénom connu (simple ou composé type Jean-Eudes)."""
         norm: str = DocumentTextUtils.normalize_word(token)
@@ -319,7 +343,7 @@ class DocumentAnonymizationRunner:
         return f"{title} {last[:1].upper()}."
 
     def _replace_auto_first_last(self, match: re.Match) -> str:
-        """Abrège 'Charlotte Lemaitre' ou 'Jean-Eudes Lemoine' sans avaler le mot précédent."""
+        """Abrège 'Charlotte Lemaitre' ou 'Jean-Eudes Lemoine'."""
         firsts: str = match.group(1)
         last: str = match.group(2)
         norm_last: str = DocumentTextUtils.normalize_word(last)
@@ -361,6 +385,21 @@ class DocumentAnonymizationRunner:
             return f"{last_upper[:1].upper()}. {first}"
         return match.group(0)
 
+    def _replace_email_with_alias(self, match: re.Match) -> str:
+        """Remplace une adresse e-mail par son alias connu ou génère EMAIL_XXX."""
+        raw_mail: str = match.group(0)
+        norm_mail: str = DocumentTextUtils.normalize_identifier(raw_mail)
+        if norm_mail in self.rules.email_to_alias:
+            return self.rules.email_to_alias[norm_mail]
+        return self._get_or_create_token(raw_mail, "EMAIL")
+
+    def _replace_phone_with_alias(self, match: re.Match) -> str:
+        """Remplace un numéro de téléphone par son alias connu ou génère TEL_XXX."""
+        raw_tel: str = match.group(0)
+        norm_tel: str = DocumentTextUtils._normalize_fr_phone(raw_tel)
+        if norm_tel and norm_tel in self.rules.target_phones:
+            return self.rules.target_phones[norm_tel]
+        return self._get_or_create_token(raw_tel, "TEL")
     def anonymize_text(self, text: str) -> str:
         """Applique l'ensemble des passes d'anonymisation sur un texte."""
         if not text:
@@ -375,8 +414,22 @@ class DocumentAnonymizationRunner:
                 res = self.fast_replacer_regex.sub(self._replace_fast_target, res)
             return res
 
+        css_stash: List[str] = []
+
+        def _stash_css(m_css: re.Match) -> str:
+            idx: int = len(css_stash)
+            css_stash.append(m_css.group(0))
+            return f"__CSS_ATTR_{idx}__"
+
         res = re.sub(
-            r"\b(MME|MR|DR|PR|MLLE)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç]{2,})",
+            r'\b(?:style|class|width|height|cellpadding|cellspacing|border)\s*=\s*"[^"]*"',
+            _stash_css,
+            res,
+            flags=re.IGNORECASE,
+        )
+
+        res = re.sub(
+            r"\b(MME|MR|DR|PR|MLLE|ENFANT|Enfant)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç]{2,})",
             r"\1 \2",
             res,
         )
@@ -440,12 +493,12 @@ class DocumentAnonymizationRunner:
         if self.config.mask_urls:
             res = DocumentTextUtils.REGEX_URL.sub("[URL_MASQUEE]", res)
 
-        res = DocumentTextUtils.REGEX_EMAIL.sub(
-            lambda m: self._get_or_create_token(m.group(0), "EMAIL"), res
-        )
-        res = DocumentTextUtils.REGEX_PHONE.sub(
-            lambda m: self._get_or_create_token(m.group(0), "TEL"), res
-        )
+        res = DocumentTextUtils.REGEX_EMAIL.sub(self._replace_email_with_alias, res)
+        res = DocumentTextUtils.REGEX_PHONE.sub(self._replace_phone_with_alias, res)
+
+        for idx, original_css in enumerate(css_stash):
+            res = res.replace(f"__CSS_ATTR_{idx}__", original_css)
+
         return res
     def flush_batch(self) -> None:
         """Écrit le lot en cours sur disque dans batch_XX/, met à jour l'audit et l'état JSON."""

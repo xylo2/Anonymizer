@@ -99,9 +99,8 @@ class TestWorkflowsAndSecurity(unittest.TestCase):
     def test_cli_entrypoints_indexed_pairs_and_residual_audit(self) -> None:
         """
         Vérifie l'exécution réelle des points d'entrée CLI run_contacts.py
-        et run_documents.py, le pré-remplissage des paires indexées dans le
-        rapport d'audit, la suggestion des prénoms absents et la protection des
-        mots courants ('fiers').
+        et run_documents.py, la résolution d'alias téléphonique et la
+        protection des mots courants ('fiers').
         """
         csv_file = os.path.join(self.tmp_dir, "export_contacts", "contacts.csv")
         with open(csv_file, "w", encoding="utf-8", newline="") as f_csv:
@@ -163,7 +162,8 @@ class TestWorkflowsAndSecurity(unittest.TestCase):
         self.assertIn("très fiers", lot_text)
         self.assertNotIn("très [LIEU_MASQUE]", lot_text)
         self.assertIn("0.008219178", lot_text)
-        self.assertIn("TEL_001", lot_text)
+        self.assertIn("téléphone Jean D.", lot_text)
+        self.assertNotIn("06 12 34 56 78", lot_text)
 
         audit_report = os.path.join(self.tmp_dir, "residual_names_audit.txt")
         with open(audit_report, "r", encoding="utf-8") as f_aud:

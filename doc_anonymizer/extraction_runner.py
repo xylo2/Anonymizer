@@ -1,5 +1,6 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
+import hashlib
 import os
 import threading
 from typing import Dict, List, Optional, Set, Tuple
@@ -40,6 +41,7 @@ class DocumentExtractionRunner:
             config=config
         )
         self.teams_extractor: TeamsChatExtractor = TeamsChatExtractor(config=config)
+        self._seen_content_hashes: Set[str] = set()
 
     def get_worker_count(self) -> int:
         """Retourne le nombre de threads parallèles d'extraction (1 à 4)."""
@@ -86,7 +88,8 @@ class DocumentExtractionRunner:
                 if d not in self.config.ignored_dirs and not d.startswith(".")
             ]
             for fname in sorted(files):
-                if fname.startswith("."):
+                low_fn: str = fname.lower()
+                if fname.startswith(".") or low_fn.startswith(("anonymise_", "anonymized_")):
                     continue
                 full_p: str = os.path.normpath(os.path.join(root_p, fname))
                 if full_p not in excluded:
@@ -114,6 +117,11 @@ class DocumentExtractionRunner:
                     right: str = right_p.strip()
                     if not left or not right:
                         continue
+                    if "@" in right and "@" not in left:
+                        left, right = right, left
+                    elif DocumentTextUtils._normalize_fr_phone(right) and not DocumentTextUtils._normalize_fr_phone(left):
+                        left, right = right, left
+
                     if "@" in left:
                         norm_m: str = DocumentTextUtils.normalize_identifier(left)
                         if norm_m:
@@ -132,12 +140,16 @@ class DocumentExtractionRunner:
         discovered_phones: Set[str],
         discovered_emails: Set[str],
     ) -> List[str]:
-        """Écrit les transcriptions découpées par période AAAA-MM et collecte les identifiants."""
+        """Écrit les transcriptions découpées par période AAAA-MM sans doublon de contenu."""
         written: List[str] = []
         safe_stem: str = DocumentTextUtils.sanitize_filename(stem_name)
         for period, content in sorted(buckets.items()):
             if not content or not content.strip():
                 continue
+            digest: str = hashlib.sha256(content.strip().encode("utf-8", errors="ignore")).hexdigest()
+            if digest in self._seen_content_hashes:
+                continue
+            self._seen_content_hashes.add(digest)
             for m_mail in DocumentTextUtils.REGEX_EMAIL.finditer(content):
                 discovered_emails.add(m_mail.group(0).lower())
             for m_tel in DocumentTextUtils.REGEX_PHONE.finditer(content):
@@ -177,6 +189,8 @@ class DocumentExtractionRunner:
             return []
         fname: str = os.path.basename(norm_src)
         low_name: str = fname.lower()
+        if low_name.startswith(("anonymise_", "anonymized_")):
+            return []
         stem_raw, ext = os.path.splitext(fname)
         ext = ext.lower()
 

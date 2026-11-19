@@ -67,7 +67,8 @@ class TestContactsPipeline(unittest.TestCase):
     def test_full_contacts_pipeline_homonyms_and_dedup(self) -> None:
         """
         Exécute le pipeline complet sur un CSV contenant des homonymes,
-        une société, un nom à collision lexicale et l'export noms_famille_contacts.txt.
+        une société, un nom à collision lexicale et l'export contact_surnames.txt
+        au format unifié Identifiant_Brut = Alias.
         """
         with tempfile.TemporaryDirectory(prefix="test_contacts_") as tmp_dir:
             export_dir: str = os.path.join(tmp_dir, "export_contacts")
@@ -121,10 +122,10 @@ class TestContactsPipeline(unittest.TestCase):
             with open(config.inverted_output_file, "r", encoding="utf-8") as f_out:
                 content: str = f_out.read()
 
-            self.assertIn("Jean D.=0601020304", content)
-            self.assertIn("Jean Du.=jean.durand@exemple.fr", content)
-            self.assertIn("Jean Du-2=jean.dumont@exemple.fr", content)
-            self.assertIn("Cabinet Alpha (Alpha Conseil)=contact@alpha-conseil.fr", content)
+            self.assertIn("0601020304=Jean D.", content)
+            self.assertIn("jean.durand@exemple.fr=Jean Du.", content)
+            self.assertIn("jean.dumont@exemple.fr=Jean Du-2", content)
+            self.assertIn("contact@alpha-conseil.fr=Cabinet Alpha (Alpha Conseil)", content)
 
             self.assertTrue(os.path.exists(config.surnames_output_file))
             with open(config.surnames_output_file, "r", encoding="utf-8") as f_sur:

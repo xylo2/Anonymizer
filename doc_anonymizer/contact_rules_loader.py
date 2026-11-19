@@ -9,11 +9,12 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 
 class ContactRulesLoader:
     """
-    Charge et fusionne les règles de remplacement issues de :
-    - contacts.txt (index principal généré depuis Google Contacts),
+    Charge et fusionne les règles de remplacement au format unifié
+    Identifiant_Brut = Alias depuis :
+    - contacts.txt (index principal généré depuis Google Contacts / Outlook),
     - discovered_email_contacts.txt (e-mails découverts automatiquement),
     - discovered_chat_contacts.txt (expéditeurs/participants des chats),
-    - manual_contacts.txt (exceptions manuelles prioritaires).
+    - manual_contacts.txt (exceptions manuelles prioritaires et dates sensibles).
     """
 
     COMMON_WORD_COLLISIONS = frozenset({
@@ -44,6 +45,7 @@ class ContactRulesLoader:
         "car", "or", "ni", "donc", "mais", "ou", "et", "si", "que", "qui",
         "quoi", "dont", "quand", "comment", "pourquoi", "combien",
         "merci", "bonjour", "bonsoir", "salut", "pardon", "desole",
+        "orne", "chou", "maire", "mairie", "amis", "ami", "amie",
     })
 
     def __init__(self, config: PipelineConfig, manual_only: bool = False) -> None:
@@ -62,7 +64,7 @@ class ContactRulesLoader:
         self.last_name_display: Dict[str, str] = {}
         self.alias_words: Set[str] = set()
         self.full_targets: Set[str] = set()
-
+        self.extra_sensitive_dates: Set[str] = set()
     def _ensure_manual_contacts_file(self) -> None:
         """Crée un fichier manual_contacts.txt vide avec en-tête s'il n'existe pas."""
         manual_path: str = self.config.manual_contacts_file
@@ -104,6 +106,9 @@ class ContactRulesLoader:
         al: str = alias.strip()
         if not kw or not al or kw == al:
             return
+        if re.fullmatch(r"\d{1,2}[/\-.]\d{1,2}[/\-.](?:19|20)\d{2}", kw):
+            self.extra_sensitive_dates.add(kw)
+            return
         norm: str = DocumentTextUtils.normalize_word(kw)
         if not norm:
             return
@@ -117,7 +122,7 @@ class ContactRulesLoader:
             self.auto_name_rules[kw] = al
 
     def _load_file_rules(self, file_path: str, is_manual: bool = False) -> None:
-        """Lit un fichier clé = valeur et alimente les tables de correspondance."""
+        """Lit un fichier Identifiant_Brut = Alias (avec compatibilité ascendante)."""
         if not file_path or not os.path.exists(file_path):
             return
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -130,6 +135,11 @@ class ContactRulesLoader:
                 right: str = right_p.strip()
                 if not left or not right:
                     continue
+
+                if "@" in right and "@" not in left:
+                    left, right = right, left
+                elif DocumentTextUtils._normalize_fr_phone(right) and not DocumentTextUtils._normalize_fr_phone(left):
+                    left, right = right, left
 
                 if "@" in left:
                     norm_mail: str = DocumentTextUtils.normalize_identifier(left)
@@ -148,13 +158,9 @@ class ContactRulesLoader:
                     continue
 
                 self._register_rule(left, right, is_manual=is_manual)
-    def load_all(self) -> bool:
-        """
-        Charge l'ensemble des fichiers de contacts (auto, e-mails découverts,
-        chats découverts et manuels).
 
-        :return: True si le chargement a réussi, False si contacts.txt est introuvable.
-        """
+    def load_all(self) -> bool:
+        """Charge l'ensemble des fichiers de contacts (auto, découverts et manuels)."""
         if self.manual_only:
             self._ensure_manual_contacts_file()
             self._load_file_rules(self.config.manual_contacts_file, is_manual=True)
@@ -198,7 +204,7 @@ class ContactRulesLoader:
 
     @staticmethod
     def is_one_edit_away(word_a: str, word_b: str) -> bool:
-        """Indique si deux mots diffèrent d'au plus une opération d'édition (Levenshtein <= 1)."""
+        """Indique si deux mots diffèrent d'au plus une opération d'édition."""
         a: str = DocumentTextUtils.normalize_word(word_a)
         b: str = DocumentTextUtils.normalize_word(word_b)
         if a == b:

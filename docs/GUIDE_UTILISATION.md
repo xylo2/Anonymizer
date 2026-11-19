@@ -19,20 +19,18 @@ Ce projet extrait le texte de documents hétérogènes (PDF natifs ou scannés, 
 
 ---
 
-## 2. Architecture des fichiers de contacts (`output_contacts/`)
+## 2. Architecture unifiée des fichiers de contacts (`output_contacts/`)
 
-Le pipeline s'appuie sur **trois fichiers de règles complémentaires** regroupés dans **`output_contacts/`** :
+Le pipeline s'appuie sur **quatre fichiers de règles complémentaires** au format unifié **`Identifiant_Brut = Alias`** regroupés dans **`output_contacts/`** :
 
-1. **`output_contacts/contacts.txt`** *(généré automatiquement)* : produit par `python run_contacts.py` depuis vos exports CSV. Les étapes intermédiaires sont conservées dans `output_contacts/.intermediaires/`.
-2. **`output_contacts/contacts_emails_decouverts.txt`** *(généré automatiquement)* : alimenté après chaque extraction à partir du tampon `audits/tous_emails_trouves.txt`.
-3. **`output_contacts/contacts_manuels.txt`** *(géré par vous, jamais écrasé)* : créé automatiquement au premier lancement. Ajoutez-y vos règles personnalisées au format `Prénom Nom = Alias` (ou `Prénom Nom = ` pour utiliser `--complete-manual`).
-
----
-
+1. **`output_contacts/contacts.txt`** *(généré automatiquement)* : produit par `python run_contacts.py` depuis vos exports CSV (ex. `camille.dupont@exemple.fr=Camille D.`). Les étapes intermédiaires sont conservées dans `output_contacts/.intermediates/`.
+2. **`output_contacts/discovered_email_contacts.txt`** *(généré automatiquement)* : alimenté après chaque extraction depuis les en-têtes de courriels.
+3. **`output_contacts/discovered_chat_contacts.txt`** *(généré automatiquement)* : alimenté à partir des participants détectés dans les messageries instantanées.
+4. **`output_contacts/manual_contacts.txt`** *(géré par vous, jamais écrasé)* : créé automatiquement au premier lancement. Ajoutez-y vos règles personnalisées au format `Prénom Nom = Alias` (ou `Prénom Nom = ` pour utiliser `--complete-manual`), vos variantes OCR collées (`DUPONTCAMILLE = Camille D.`) ainsi que les dates sensibles (`14/07/1985 = [DATE_MASQUEE]`).
 ## 3. Exécution des pipelines depuis la racine
 
 ```bash
-# Étape A : Générer l'index automatique des contacts
+# Étape A : Générer l'index unifié des contacts (Identifiant_Brut = Alias)
 python run_contacts.py
 
 # Étape B : Extraire et anonymiser les documents au fil de l'eau
@@ -44,7 +42,7 @@ python run_documents.py --anonymize-only --reset-results
 ```
 
 * Les transcriptions brutes sont enregistrées dans `extracted_texts/AAAA-MM/<Catégorie>/` (suivies par `.extraction_state.txt` et `.sms_state.txt`).
-* Les lots anonymisés sont écrits dans `anonymized_results/lot_XX/anonymise_partie_XXX.txt` (suivis par `.anonymization_state.json`).
+* Les lots anonymisés sont écrits dans `anonymized_results/batch_XX/anonymized_part_XXX.txt` (suivies par `.anonymization_state.json`).
 
 ---
 
@@ -52,8 +50,8 @@ python run_documents.py --anonymize-only --reset-results
 
 À chaque lot écrit dans **`anonymized_results/`**, les rapports sont mis à jour dans **`audits/`** avec filtrage strict des référentiels situés dans **`data/`** (`mots_exclus.txt`, `collisions_noms.txt`, `villes_masquees.txt`, `prenoms.txt`) :
 
-* **`audits/audit_noms_residuels.txt`** *(rapport détaillé)* : regroupe les paires `Nom Prénom` et `Prénom Nom` sous une entrée canonique classée par priorité (`5+ occurrences`, `2 à 4 occurrences`, `1 occurrence`), avec suggestion phonétique `(Proche de '...')`.
-* **`audits/audit_noms_residuels_copier.txt`** *(rapport épuré)* : contient uniquement les lignes au format `Prénom Nom = ` prêtes à coller dans `output_contacts/contacts_manuels.txt`.
+* **`audits/residual_names_audit.txt`** *(rapport détaillé)* : regroupe les paires `Nom Prénom` et `Prénom Nom` sous une entrée canonique classée par priorité (`5+ occurrences`, `2 à 4 occurrences`, `1 occurrence`), avec suggestion phonétique `(Proche de '...')`.
+* **`audits/residual_names_copy.txt`** *(rapport épuré)* : contient uniquement les lignes au format `Prénom Nom = ` prêtes à coller dans `output_contacts/manual_contacts.txt`.
 * **`audits/extraction_report.txt`** : liste les éventuels fichiers illisibles ou archives `.zip` ignorées lors de l'extraction.
 
 ---
@@ -61,7 +59,7 @@ python run_documents.py --anonymize-only --reset-results
 ## 5. Compléter et appliquer les contacts manuels
 
 ```bash
-# Prévisualiser ou compléter les lignes vides dans output_contacts/contacts_manuels.txt
+# Prévisualiser ou compléter les lignes vides dans output_contacts/manual_contacts.txt
 python run_documents.py --complete-manual --dry-run
 python run_documents.py --complete-manual
 
