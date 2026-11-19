@@ -9,13 +9,13 @@ Ce projet extrait le texte de documents hétérogènes (PDF natifs ou scannés, 
 ## 1. Préparation des données et méthodologies d'export
 
 1. **[Contacts, Courriels & SMS](exports/CONTACTS_ET_EMAILS.md)** :
-   * Déposez les CSV **Google Contacts** ou **Microsoft Outlook** dans **`export_contacts/`**.
-   * Déposez les archives **Gmail (`.mbox`)**, courriels **`.eml`** et sauvegardes **SMS Android (`.xml`)** dans **`fichiers sources/`**.
+   * Déposez les CSV **Google Contacts** ou **Microsoft Outlook** dans **`input_contacts/`**.
+   * Déposez les archives **Gmail (`.mbox`)**, courriels **`.eml`** et sauvegardes **SMS Android (`.xml`)** dans **`input_documents/`**.
 2. **[Messageries Professionnelles (Google Chat & Microsoft Teams)](exports/MESSAGERIES_PRO.md)** :
-   * Déposez le dossier **`Google Chat/Groups/`** (`messages.json`) dans **`fichiers sources/`**.
-   * Déposez les exports personnels **Microsoft Teams (`messages.json`)** ou les transcriptions **`.vtt`** dans **`fichiers sources/`**.
+   * Déposez le dossier **`Google Chat/Groups/`** (`messages.json`) dans **`input_documents/`**.
+   * Déposez les exports personnels **Microsoft Teams (`messages.json`)** ou les transcriptions **`.vtt`** dans **`input_documents/`**.
 3. **[Messageries Personnelles (WhatsApp, Messenger & Signal)](exports/MESSAGERIES_PERSO.md)** :
-   * Dézippez manuellement vos archives **WhatsApp**, puis déposez le dossier obtenu (ou `.txt`), les dossiers **Messenger (`messages/inbox/`)** et exports **Signal (`.json`)** dans **`fichiers sources/`**.
+   * Dézippez manuellement vos archives **WhatsApp**, puis déposez le dossier obtenu (ou `.txt`), les dossiers **Messenger (`messages/inbox/`)** et exports **Signal (`.json`)** dans **`input_documents/`**.
 
 ---
 
@@ -23,7 +23,7 @@ Ce projet extrait le texte de documents hétérogènes (PDF natifs ou scannés, 
 
 Le pipeline s'appuie sur **trois fichiers de règles complémentaires** regroupés dans **`output_contacts/`** :
 
-1. **`output_contacts/contacts.txt`** *(généré automatiquement)* : produit par `python lancer_contacts.py` depuis vos exports CSV. Les étapes intermédiaires sont conservées dans `output_contacts/.intermediaires/`.
+1. **`output_contacts/contacts.txt`** *(généré automatiquement)* : produit par `python run_contacts.py` depuis vos exports CSV. Les étapes intermédiaires sont conservées dans `output_contacts/.intermediaires/`.
 2. **`output_contacts/contacts_emails_decouverts.txt`** *(généré automatiquement)* : alimenté après chaque extraction à partir du tampon `audits/tous_emails_trouves.txt`.
 3. **`output_contacts/contacts_manuels.txt`** *(géré par vous, jamais écrasé)* : créé automatiquement au premier lancement. Ajoutez-y vos règles personnalisées au format `Prénom Nom = Alias` (ou `Prénom Nom = ` pour utiliser `--complete-manual`).
 
@@ -33,21 +33,21 @@ Le pipeline s'appuie sur **trois fichiers de règles complémentaires** regroup�
 
 ```bash
 # Étape A : Générer l'index automatique des contacts
-python lancer_contacts.py
+python run_contacts.py
 
 # Étape B : Extraire et anonymiser les documents au fil de l'eau
-python lancer_documents.py
+python run_documents.py
 
-# Étape C : Exécuter uniquement l'anonymisation complète depuis transcriptions/
-python lancer_documents.py --anonymize-only
-python lancer_documents.py --anonymize-only --reset-results
+# Étape C : Exécuter uniquement l'anonymisation complète depuis extracted_texts/
+python run_documents.py --anonymize-only
+python run_documents.py --anonymize-only --reset-results
 ```
 
 ---
 
 ## 4. Exploitation des rapports d'audit (`audits/`)
 
-À chaque lot écrit, deux fichiers d'audit sont mis à jour dans **`audits/`** avec filtrage strict des référentiels situés dans **`data/`** (`mots_exclus.txt`, `collisions_noms.txt`, `villes_masquees.txt`, `prenoms.txt`) :
+À chaque lot écrit dans **`anonymized_results/`**, deux fichiers d'audit sont mis à jour dans **`audits/`** avec filtrage strict des référentiels situés dans **`data/`** (`mots_exclus.txt`, `collisions_noms.txt`, `villes_masquees.txt`, `prenoms.txt`) :
 
 * **`audits/audit_noms_residuels.txt`** *(rapport détaillé)* : regroupe les paires `Nom Prénom` et `Prénom Nom` sous une entrée canonique classée par priorité (`5+ occurrences`, `2 à 4 occurrences`, `1 occurrence`), avec suggestion phonétique `(Proche de '...')`.
 * **`audits/audit_noms_residuels_copier.txt`** *(rapport épuré)* : contient uniquement les lignes au format `Prénom Nom = ` prêtes à coller dans `output_contacts/contacts_manuels.txt`.
@@ -58,11 +58,11 @@ python lancer_documents.py --anonymize-only --reset-results
 
 ```bash
 # Prévisualiser ou compléter les lignes vides dans output_contacts/contacts_manuels.txt
-python lancer_documents.py --complete-manual --dry-run
-python lancer_documents.py --complete-manual
+python run_documents.py --complete-manual --dry-run
+python run_documents.py --complete-manual
 
-# Appliquer sur place sur les lots existants
-python lancer_documents.py --complete-manual --manual-only
+# Appliquer sur place sur les lots existants dans anonymized_results/
+python run_documents.py --complete-manual --manual-only
 ```
 
 ---

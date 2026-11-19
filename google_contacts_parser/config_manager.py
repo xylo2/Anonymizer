@@ -23,7 +23,7 @@ class ContactsConfig:
         self._base_dir: str = os.path.dirname(self.config_path)
         self._parser: configparser.ConfigParser = configparser.ConfigParser()
 
-        self.csv_directory: str = os.path.join(self._base_dir, "export_contacts")
+        self.csv_directory: str = os.path.join(self._base_dir, "input_contacts")
         self.csv_prefixes: List[str] = ["contacts", "autres contacts"]
         self.first_names_file: str = os.path.join(self._base_dir, "data", "prenoms.txt")
         self.suggested_first_names_file: str = os.path.join(

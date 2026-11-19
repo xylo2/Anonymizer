@@ -30,13 +30,13 @@ class PipelineConfig:
 
         self.root_dir: str = self._resolve_path("paths", "root_dir", ".")
         self.sources_dir: str = self._resolve_path(
-            "paths", "sources_dir", "fichiers sources"
+            "paths", "sources_dir", "input_documents"
         )
         self.transcriptions_dir: str = self._resolve_path(
-            "paths", "transcriptions_dir", "transcriptions"
+            "paths", "transcriptions_dir", "extracted_texts"
         )
         self.results_dir: str = self._resolve_path(
-            "paths", "results_dir", "resultats_anonymisation"
+            "paths", "results_dir", "anonymized_results"
         )
         self.contacts_file: str = self._resolve_path(
             "paths", "contacts_file", "output_contacts/contacts.txt"

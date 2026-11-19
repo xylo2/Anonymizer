@@ -1,6 +1,8 @@
 # ==============================================================================
 # FICHIERS & DOSSIERS VOLUMINEUX GÉNÉRÉS PAR LE PIPELINE (ACCÉLÈRE PYCHARM/GIT)
 # ==============================================================================
+extracted_texts/
+anonymized_results/
 transcriptions/
 resultats_anonymisation/
 .whisper_cache/
@@ -8,6 +10,10 @@ resultats_anonymisation/
 # ==============================================================================
 # DONNÉES PERSONNELLES, SOURCES & FICHIERS DE CONTACTS SENSIBLES
 # ==============================================================================
+input_documents/
+input_contacts/
+output_contacts/
+audits/
 fichiers sources/
 export_contacts/
 contacts.txt
@@ -30,6 +36,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.part[0-9]*
+.coverage
+.coverage.*
+htmlcov/
 venv/
 .venv/
 env/

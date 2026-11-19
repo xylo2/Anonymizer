@@ -20,13 +20,13 @@ pip install -r requirements.txt
 ### 2. Exécution des pipelines
 
 ```bash
-# Étape 1 : Générer output_contacts/contacts.txt depuis export_contacts/*.csv
+# Étape 1 : Générer output_contacts/contacts.txt depuis input_contacts/*.csv
 python run_contacts.py
 
-# Étape 2 : Extraire fichiers sources/ et produire les lots anonymisés dans resultats_anonymisation/
+# Étape 2 : Extraire input_documents/ et produire les lots anonymisés dans anonymized_results/
 python run_documents.py
 
-# Variante : Lancer uniquement l'anonymisation complète depuis transcriptions/ (sans extraction)
+# Variante : Lancer uniquement l'anonymisation complète depuis extracted_texts/ (sans extraction)
 python run_documents.py --anonymize-only
 python run_documents.py --anonymize-only --reset-results
 ```
@@ -45,11 +45,14 @@ python run_documents.py --manual-only
 
 ## Organisation des dossiers
 
+* **`input_contacts/`** : dépôt des fichiers CSV Google Contacts / Outlook.
+* **`input_documents/`** : dépôt des documents et dossiers décompressés à traiter.
+* **`extracted_texts/`** : transcriptions brutes extraites, classées par mois (`AAAA-MM/<Catégorie>/`).
+* **`anonymized_results/`** : lots finaux anonymisés (`lot_XX/anonymise_partie_XXX.txt`).
 * **`data/`** : référentiels lexicaux (`prenoms.txt`, `villes_masquees.txt`, `collisions_noms.txt`, `mots_exclus.txt`).
 * **`output_contacts/`** : annuaire généré (`contacts.txt`), règles manuelles (`contacts_manuels.txt`), contacts découverts (`contacts_emails_decouverts.txt`) et fichiers intermédiaires (`.intermediaires/`).
 * **`audits/`** : rapports d'audit (`audit_noms_residuels.txt`, `audit_noms_residuels_copier.txt`) et tampons d'identifiants.
-* **`docs/`** : documentation complète et guides d'export.
-* **`tools/`** : utilitaires CLI (`complete_manual_contacts.py`, `restore_transcription_names.py`, `sync_contacts.py`, `generate_pdf_guide.py`).
+* **`docs/`** & **`tools/`** : documentation complète et utilitaires CLI.
 
 ---
 

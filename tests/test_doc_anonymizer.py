@@ -197,7 +197,7 @@ class TestDocAnonymizer(unittest.TestCase):
             )
             runner = DocumentAnonymizationRunner(config)
 
-            doc_dir = os.path.join(tmp_dir, "transcriptions", "2024-05", "Documents")
+            doc_dir = os.path.join(tmp_dir, "extracted_texts", "2024-05", "Documents")
             os.makedirs(doc_dir, exist_ok=True)
             sample_file = os.path.join(doc_dir, "note_reunion.txt")
 
@@ -225,7 +225,7 @@ class TestDocAnonymizer(unittest.TestCase):
 
             lot_file = os.path.join(
                 tmp_dir,
-                "resultats_anonymisation",
+                "anonymized_results",
                 "lot_01",
                 "anonymise_partie_001.txt",
             )
