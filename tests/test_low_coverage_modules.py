@@ -12,14 +12,14 @@ from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.office_extractors import OfficeAndDocumentExtractor
 from doc_anonymizer.power_manager import SystemSleepInhibitor
 from google_contacts_parser.geo_data import FrenchGeoCatalog
-from tools.completer_contacts_manuels import ManualContactsAutoCompleter
+from tools.complete_manual_contacts import ManualContactsAutoCompleter
 from tools.generate_pdf_guide import MarkdownPdfConverter
 
 
 class TestLowCoverageModules(unittest.TestCase):
     """
     Cible les 6 modules sous les 70 % de couverture : power_manager,
-    office_extractors, completer_contacts_manuels, core_utils, geo_data
+    office_extractors, complete_manual_contacts, core_utils, geo_data
     et generate_pdf_guide.
     """
 
@@ -51,7 +51,7 @@ class TestLowCoverageModules(unittest.TestCase):
         et les primitives SharedCoreUtils (prevent_sleep, load_locations_set, atomic_write).
         """
         fake_kernel32 = MagicMock()
-        fake_kernel32.SetThreadExecutionState.side_effect = [0, 1, 1]
+        fake_kernel32.SetThreadExecutionState.side_effect = [0, 1]
         with patch.object(os, "name", "nt"), patch(
             "ctypes.windll", create=True
         ) as mock_windll:

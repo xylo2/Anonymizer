@@ -11,7 +11,7 @@ from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.extraction_runner import DocumentExtractionRunner
 from doc_anonymizer.office_extractors import OfficeAndDocumentExtractor
 from doc_anonymizer.teams_chat_extractor import TeamsChatExtractor
-import lancer_documents
+import run_documents
 
 
 class TestSecurityAndGraphEdgeCases(unittest.TestCase):
@@ -137,7 +137,7 @@ class TestSecurityAndGraphEdgeCases(unittest.TestCase):
         with open(os.path.join(trans_dir, "mail_test.txt"), "w", encoding="utf-8") as f_tr:
             f_tr.write("Message de Claire Bernard (claire.bernard@exemple.fr).\n")
 
-        rc: int = lancer_documents.main(
+        rc: int = run_documents.main(
             ["-c", self.ini_path, "--anonymize-only", "--allow-sleep"]
         )
         self.assertEqual(rc, 0)

@@ -118,7 +118,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
 
     if args.complete_manual:
-        from tools.completer_contacts_manuels import (
+        from tools.complete_manual_contacts import (
             ManualContactsAutoCompleter,
         )
 

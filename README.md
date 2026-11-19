@@ -17,36 +17,28 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 2. Préparation des exports sources
-
-Déposez vos fichiers CSV dans **`export_contacts/`** et vos autres documents/dossiers décompressés dans **`fichiers sources/`** en suivant les guides pas-à-pas dédiés :
-
-* **[Export Contacts, Courriels & SMS](docs/exports/CONTACTS_ET_EMAILS.md)** : Google Contacts, Microsoft Outlook/365, Gmail (`.mbox`), `.eml` et SMS/MMS Android (`.xml`).
-* **[Export Messageries Professionnelles](docs/exports/MESSAGERIES_PRO.md)** : Google Chat (`messages.json`) et Microsoft Teams (`messages.json` & transcriptions `.vtt`).
-* **[Export Messageries Personnelles](docs/exports/MESSAGERIES_PERSO.md)** : WhatsApp (archive `.zip` **dézippée manuellement** ou `.txt`), Messenger (`.json` / `.html`) et Signal (`.json`).
-
-### 3. Exécution des pipelines
+### 2. Exécution des pipelines
 
 ```bash
 # Étape 1 : Générer output_contacts/contacts.txt depuis export_contacts/*.csv
-python lancer_contacts.py
+python run_contacts.py
 
 # Étape 2 : Extraire fichiers sources/ et produire les lots anonymisés dans resultats_anonymisation/
-python lancer_documents.py
+python run_documents.py
 
 # Variante : Lancer uniquement l'anonymisation complète depuis transcriptions/ (sans extraction)
-python lancer_documents.py --anonymize-only
-python lancer_documents.py --anonymize-only --reset-results
+python run_documents.py --anonymize-only
+python run_documents.py --anonymize-only --reset-results
 ```
 
-### 4. Boucle d'audit et règles manuelles
+### 3. Boucle d'audit et règles manuelles
 
 ```bash
 # Compléter automatiquement les lignes 'Prénom Nom = ' ajoutées dans output_contacts/contacts_manuels.txt
-python lancer_documents.py --complete-manual
+python run_documents.py --complete-manual
 
 # Réappliquer uniquement output_contacts/contacts_manuels.txt sur les lots existants
-python lancer_documents.py --manual-only
+python run_documents.py --manual-only
 ```
 
 ---
@@ -57,6 +49,7 @@ python lancer_documents.py --manual-only
 * **`output_contacts/`** : annuaire généré (`contacts.txt`), règles manuelles (`contacts_manuels.txt`), contacts découverts (`contacts_emails_decouverts.txt`) et fichiers intermédiaires (`.intermediaires/`).
 * **`audits/`** : rapports d'audit (`audit_noms_residuels.txt`, `audit_noms_residuels_copier.txt`) et tampons d'identifiants.
 * **`docs/`** : documentation complète et guides d'export.
+* **`tools/`** : utilitaires CLI (`complete_manual_contacts.py`, `restore_transcription_names.py`, `sync_contacts.py`, `generate_pdf_guide.py`).
 
 ---
 

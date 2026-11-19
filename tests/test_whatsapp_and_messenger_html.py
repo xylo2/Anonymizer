@@ -10,7 +10,7 @@ from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.pipeline_runner import DocAnonymizerPipelineRunner
 
 
-class TestWhatsAppZipAndMessengerHtml(unittest.TestCase):
+class TestWhatsAppAndMessengerHtml(unittest.TestCase):
     """
     Valide que les archives .zip sont ignorées avec demande de décompression manuelle,
     tandis qu'un dossier WhatsApp dézippé (_chat.txt + PDF) et un HTML Messenger
@@ -19,7 +19,7 @@ class TestWhatsAppZipAndMessengerHtml(unittest.TestCase):
 
     def setUp(self) -> None:
         """Prépare un répertoire temporaire isolé."""
-        self.test_dir: str = tempfile.mkdtemp(prefix="test_wazip_fbhtml_")
+        self.test_dir: str = tempfile.mkdtemp(prefix="test_wa_fbhtml_")
         self.ini_path: str = os.path.join(self.test_dir, "config.ini")
         with open(self.ini_path, "w", encoding="utf-8") as f:
             f.write(

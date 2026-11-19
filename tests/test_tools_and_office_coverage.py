@@ -10,16 +10,14 @@ from pptx import Presentation
 import pymupdf
 from doc_anonymizer.anonymization_runner import DocumentAnonymizationRunner
 from doc_anonymizer.config_manager import PipelineConfig
-from doc_anonymizer.manual_contacts_importer import (
-    ManualContactsAutoCompleter as AuditManualImporter,
-)
+from doc_anonymizer.manual_contacts_importer import AuditManualContactsImporter
 from doc_anonymizer.office_extractors import OfficeAndDocumentExtractor
 from google_contacts_parser.config_manager import ContactsConfig
 from google_contacts_parser.deduplicator import ContactsDeduplicator
-import lancer_documents
-from tools.completer_contacts_manuels import ManualContactsAutoCompleter
+import run_documents
+from tools.complete_manual_contacts import ManualContactsAutoCompleter
 from tools.generate_pdf_guide import MarkdownPdfConverter
-from tools.restaurer_noms_transcriptions import TranscriptionNameRestorer
+from tools.restore_transcription_names import TranscriptionNameRestorer
 from tools.sync_contacts import ContactsSynchronizer
 
 
@@ -156,7 +154,7 @@ class TestToolsAndOfficeCoverage(unittest.TestCase):
                 "Zéphyrin Valmont = A_MASQUER   # [  4x] doc1.txt\n"
                 "Occasionnel Un = A_MASQUER   # [  1x] doc2.txt\n"
             )
-        importer = AuditManualImporter(
+        importer = AuditManualContactsImporter(
             self.config, runner2.rules, min_occurrences=3
         )
         imported: int = importer.import_high_confidence_from_audit()
@@ -199,7 +197,7 @@ class TestToolsAndOfficeCoverage(unittest.TestCase):
         with open(self.config.manual_contacts_file, "a", encoding="utf-8") as f_m:
             f_m.write("Aurélien Duval = \n")
 
-        rc_cli: int = lancer_documents.main(
+        rc_cli: int = run_documents.main(
             ["-c", self.ini_path, "--complete-manual", "--dry-run"]
         )
         self.assertEqual(rc_cli, 0)

@@ -8,7 +8,7 @@ from doc_anonymizer.contact_rules_loader import ContactRulesLoader
 from doc_anonymizer.text_utils import DocumentTextUtils
 
 
-class ManualContactsAutoCompleter:
+class AuditManualContactsImporter:
     """
     Analyse les détections haute confiance de l'audit des noms résiduels
     et les importe automatiquement dans contacts_manuels.txt sans doublon.
@@ -65,6 +65,7 @@ class ManualContactsAutoCompleter:
             ):
                 return False
         return True
+
     def _format_default_alias(self, name: str) -> str:
         """Génère un alias 'Prénom I.' par défaut si l'audit indique A_MASQUER."""
         tokens: List[str] = [t for t in name.split() if t]
