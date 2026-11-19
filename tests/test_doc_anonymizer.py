@@ -18,18 +18,37 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 
 class TestDocAnonymizer(unittest.TestCase):
     """
-    Valide les expressions régulières de masquage (NIR, IBAN, adresses, codes d'accès),
-    la tolérance OCR, les titres avec prénom, les collisions externes et l'audit.
+    Valide les expressions régulières de masquage (NIR, IBAN, adresses, codes d'accès,
+    CNI 12 chiffres, transactions, réunions, dates de naissance et établissements),
+    la tolérance OCR, les titres avec prénom et l'audit.
     """
 
     def test_sensitive_regex_patterns(self) -> None:
         """
-        Vérifie la détection des numéros NIR, IBAN, adresses sans numéro,
-        digicodes, références administratives et SMS.
+        Vérifie la détection des numéros NIR, IBAN, CNI 12 chiffres, transactions,
+        réunions, dates de naissance, établissements et SMS.
         """
         self.assertIsNotNone(DocumentTextUtils.REGEX_SSN.search("NIR : 1 90 01 75 001 002 03"))
         self.assertIsNotNone(
             DocumentTextUtils.REGEX_IBAN.search("FR76 3000 1007 9412 3456 7890 185")
+        )
+        self.assertIsNotNone(
+            DocumentTextUtils.REGEX_ISOLATED_12_DIGITS.search("Titre n° 123456789012 valide")
+        )
+        self.assertIsNotNone(
+            DocumentTextUtils.REGEX_ID_DOC_DATES.search("Délivrée le 15/04/2018 et valable jusqu'au 14/04/2033")
+        )
+        self.assertIsNotNone(
+            DocumentTextUtils.REGEX_BANK_TX_AND_CARDS.search("Carte terminant par 4921, transaction n° TX987654, don de 50 euros")
+        )
+        self.assertIsNotNone(
+            DocumentTextUtils.REGEX_MEETING_IDS.search("ID de réunion : 845 1234 5678, code secret : 948271")
+        )
+        self.assertIsNotNone(
+            DocumentTextUtils.REGEX_BIRTH_DATE.search("Née le 14/07/2015 à Lyon")
+        )
+        self.assertIsNotNone(
+            DocumentTextUtils.REGEX_FACILITIES_AND_ZONES.search("Admission au CHU Côte de Nacre et Gare de Lyon")
         )
         self.assertIsNotNone(
             DocumentTextUtils.REGEX_STREET_ADDRESS.search("Habite au 14 bis rue de la Paix")
@@ -82,8 +101,8 @@ class TestDocAnonymizer(unittest.TestCase):
         self.assertFalse(ContactRulesLoader.is_one_edit_away("dupont", "martin"))
     def test_anonymization_ocr_glued_and_auto_pairs(self) -> None:
         """
-        Vérifie le masquage des noms collés OCR, des titres avec prénom,
-        des noms de famille extraits des contacts, des codes d'accès et du mojibake.
+        Vérifie le masquage complet : noms collés OCR, titres avec prénom,
+        CNI 12 chiffres, dates de naissance (année seule), établissements, transactions et réunions.
         """
         with tempfile.TemporaryDirectory(prefix="test_doc_anon_") as tmp_dir:
             with open(os.path.join(tmp_dir, "prenoms.txt"), "w", encoding="utf-8") as f_fn:
@@ -115,7 +134,10 @@ class TestDocAnonymizer(unittest.TestCase):
                     "Réunion avec Jean Dupont, Docteur Evelyne Moreau et Jean De La Tour.\n"
                     "Famille Valm\ufffdnt suivie par Delacroix, adresse Rue de la Paix.\n"
                     "En-tête OCR collé : MMEMERCIERALICE habitant 12 rue des Lilas.\n"
-                    "Déplacement prévu à B0ULON et 1FS.\n"
+                    "Déplacement prévu à B0ULON et 1FS, rendez-vous Clinique Saint-Martin.\n"
+                    "Enfant née le 02/05/2013, titre 987654321098 délivrée le 10/03/2020.\n"
+                    "Carte terminant par 4921, transaction n° VTD88412, don de 40 euros.\n"
+                    "Visio ID de réunion : 912 3456 7890, code secret : 554433.\n"
                     "Saisie par Charlotte LEFEBVRE et audition de BERNARD Nadia.\n"
                     "Digicode 1985 et dossier sinistre n° 999888777.\n"
                     "MRZ : IDFRA0000000000<<<<<<<<<<<<<<<\n"
@@ -150,6 +172,18 @@ class TestDocAnonymizer(unittest.TestCase):
             self.assertIn("Jean D.", res_txt)
             self.assertIn("Docteur Evelyne M.", res_txt)
             self.assertIn("Famille V. suivie par D.", res_txt)
+            self.assertNotIn("Saint-Martin", res_txt)
+            self.assertIn("[ETABLISSEMENT_LIEU_MASQUE]", res_txt)
+            self.assertIn("née le [JOUR_MOIS_MASQUES]/2013", res_txt)
+            self.assertNotIn("02/05", res_txt)
+            self.assertIn("[ID_CNI_PERMIS_MASQUE]", res_txt)
+            self.assertNotIn("987654321098", res_txt)
+            self.assertIn("délivrée le [DATE_TITRE_MASQUEE]", res_txt)
+            self.assertIn("[REF_BANCAIRE_TX_MASQUEE]", res_txt)
+            self.assertNotIn("4921", res_txt)
+            self.assertNotIn("VTD88412", res_txt)
+            self.assertIn("[ID_REUNION_MASQUE]", res_txt)
+            self.assertNotIn("554433", res_txt)
             self.assertIn("[CODE_ACCES_MASQUE]", res_txt)
             self.assertIn("[REF_ADMIN_MASQUEE]", res_txt)
             self.assertNotIn("999888777", res_txt)

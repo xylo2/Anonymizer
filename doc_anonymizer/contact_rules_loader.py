@@ -309,7 +309,7 @@ class ContactRulesLoader:
             self.combined_keyword_pattern = re.compile(rf"(?<![A-Za-zÀ-ÿ]){kw_regex}(?![A-Za-zÀ-ÿ])", re.IGNORECASE)
 
         all_locs: Set[str] = self._expand_saint_locations()
-        if len(all_locs) <= 2000:
+        if len(all_locs) <= 15000:
             glued_map: Dict[str, str] = dict(self.glued_to_alias)
             for loc in all_locs:
                 compact_loc: str = self.normalize_ocr_key(loc)

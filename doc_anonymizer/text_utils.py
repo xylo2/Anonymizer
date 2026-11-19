@@ -55,6 +55,24 @@ class DocumentTextUtils:
         r"|\d{6}X{4,8}\d{4}"
         r")\b"
     )
+    REGEX_ISOLATED_12_DIGITS: Pattern[str] = re.compile(
+        r"(?<!\d)\d{12}(?!\d)"
+    )
+    REGEX_ID_DOC_DATES: Pattern[str] = re.compile(
+        r"(?i)\b((?:d[ée]livr[ée]e?\s+le|valable\s+jusqu'au|expiration)\s*[:=\-]?\s*)"
+        r"\d{1,2}[/\-.]\d{1,2}[/\-.](?:19|20)\d{2}\b"
+    )
+    REGEX_BANK_TX_AND_CARDS: Pattern[str] = re.compile(
+        r"(?i)\b(?:"
+        r"(?:carte\s*(?:bancaire|cb)?|cb|terminant\s+par|fin\s+de\s+carte)\s*[:#*\-xX\s]{0,12}\d{4}"
+        r"|(?:autorisation|transaction|commande|suivi|colis|re[çc]u\s*fiscal)\s*(?:n[°o])?\s*[:#=\-]?\s*[A-Z0-9\-]{5,22}"
+        r"|(?:don|versement)\s+(?:de\s+)?\d+(?:[.,]\d{1,2})?\s*(?:€|euros?)"
+        r")\b"
+    )
+    REGEX_MEETING_IDS: Pattern[str] = re.compile(
+        r"(?i)\b(?:id\s*(?:de\s*)?(?:la\s*)?r[ée]union|meeting\s*id|code\s*secret|passcode)"
+        r"\s*[:#=\-]?\s*(?:\d[\d\s]{7,14}|[A-Za-z0-9]{4,12})\b"
+    )
     REGEX_ACCESS_CODES: Pattern[str] = re.compile(
         r"(?i)\b(?:digicode|code\s*(?:d'acc[èe]s|immeuble|portail|retrait|colis|locker)|"
         r"mot\s*de\s*passe|mdp)\s*[:=\-]?\s*[A-Za-z0-9#*]{3,20}\b"
@@ -62,6 +80,17 @@ class DocumentTextUtils:
     REGEX_ADMIN_REFS: Pattern[str] = re.compile(
         r"(?i)\b(?:dossier\s+sinistre|sinistre|dossier|affaire|rg|siret|siren|permis|cni)\s*"
         r"(?:n[°o]\s*[:=\-]?\s*|[:=\-]\s*|\s+)(?=[A-Z0-9/\-\s]*\d)[A-Z0-9/\-\s]{5,22}\b"
+    )
+    REGEX_BIRTH_DATE: Pattern[str] = re.compile(
+        r"(?i)\b((?:n[ée]e?\s+le|date\s+de\s+naissance|ddn)\s*[:=\-]?\s*)"
+        r"(?:\d{1,2}[/\-.]\d{1,2}[/\-.]|\d{1,2}\s+[a-zéû]+\s+)((?:19|20)\d{2})\b"
+    )
+    REGEX_FACILITIES_AND_ZONES: Pattern[str] = re.compile(
+        r"\b(?:CHU|Clinique|Polyclinique|H[ôo]pital|Centre\s+[Hh]ospitalier|"
+        r"Centre\s+[Cc]ommercial|ZAC|Gare\s+de|Porte\s+de|Rives\s+de)\s+"
+        r"(?:de\s+la\s+|des\s+|du\s+|de\s+|d'|l')?"
+        r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+"
+        r"(?:[\s\-]+(?:de|du|des|la|le|les|l'|sur|en|[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+)){0,4}\b"
     )
     REGEX_URL: Pattern[str] = re.compile(
         r"(?:https?://|www\.)[^\s<>\"'\)\]]+", re.IGNORECASE

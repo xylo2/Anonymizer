@@ -300,14 +300,20 @@ class DocumentAnonymizationRunner:
             text = DocumentTextUtils.REGEX_FRANCE_TRAVAIL.sub("[ID_FRANCE_TRAVAIL_MASQUE]", text)
             text = DocumentTextUtils.REGEX_CAF_ALLOCATAIRE.sub("[NUM_ALLOCATAIRE_MASQUE]", text)
             text = DocumentTextUtils.REGEX_OFFICIAL_MEDICAL_ID.sub("[ID_ADMIN_MASQUE]", text)
+            text = DocumentTextUtils.REGEX_BANK_TX_AND_CARDS.sub("[REF_BANCAIRE_TX_MASQUEE]", text)
+            text = DocumentTextUtils.REGEX_MEETING_IDS.sub("[ID_REUNION_MASQUE]", text)
             text = DocumentTextUtils.REGEX_ACCESS_CODES.sub("[CODE_ACCES_MASQUE]", text)
             text = DocumentTextUtils.REGEX_ADMIN_REFS.sub("[REF_ADMIN_MASQUEE]", text)
+            text = DocumentTextUtils.REGEX_ID_DOC_DATES.sub(r"\1[DATE_TITRE_MASQUEE]", text)
+        text = DocumentTextUtils.REGEX_BIRTH_DATE.sub(r"\1[JOUR_MOIS_MASQUES]/\2", text)
         text = DocumentTextUtils.REGEX_EMAIL.sub(
             lambda m: self.audit.pseudonymize_id(m.group(0), "EMAIL"), text
         )
         text = DocumentTextUtils.REGEX_PHONE.sub(
             lambda m: self.audit.pseudonymize_id(m.group(0), "TEL"), text
         )
+        if self.config.mask_financial_and_admin_ids:
+            text = DocumentTextUtils.REGEX_ISOLATED_12_DIGITS.sub("[ID_CNI_PERMIS_MASQUE]", text)
         if self.config.mask_urls:
             text = DocumentTextUtils.REGEX_URL.sub("[URL_MASQUEE]", text)
 
@@ -316,6 +322,7 @@ class DocumentAnonymizationRunner:
         if self.config.mask_addresses:
             text = DocumentTextUtils.REGEX_POSTAL_CITY.sub("[LIEU_MASQUE]", text)
             text = DocumentTextUtils.REGEX_STREET_ADDRESS.sub("[ADRESSE_MASQUEE]", text)
+            text = DocumentTextUtils.REGEX_FACILITIES_AND_ZONES.sub("[ETABLISSEMENT_LIEU_MASQUE]", text)
 
         if self.rules.combined_glued_pattern is not None:
             text = self.rules.combined_glued_pattern.sub(
