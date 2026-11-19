@@ -10,7 +10,7 @@ from google_contacts_parser.geo_data import FrenchGeoCatalog
 class ContactsConfig:
     """
     Charge et expose de manière typée la configuration du pipeline de contacts
-    depuis le fichier config.ini unifié.
+    depuis le fichier config.ini unifié et villes_masquees.txt.
     """
 
     def __init__(self, config_path: str = "config.ini") -> None:
@@ -26,6 +26,10 @@ class ContactsConfig:
         self.csv_directory: str = os.path.join(self._base_dir, "export_contacts")
         self.csv_prefixes: List[str] = ["contacts", "autres contacts"]
         self.first_names_file: str = os.path.join(self._base_dir, "prenoms.txt")
+        self.suggested_first_names_file: str = os.path.join(
+            self._base_dir, "prenoms_suggeres.txt"
+        )
+        self.locations_file: str = os.path.join(self._base_dir, "villes_masquees.txt")
         self.output_file: str = os.path.join(self._base_dir, "contacts_indexes.txt")
         self.anonymized_output_file: str = os.path.join(self._base_dir, "contacts_anonymises.txt")
         self.deduplicated_output_file: str = os.path.join(self._base_dir, "contacts_dedoublonnes.txt")
@@ -44,6 +48,9 @@ class ContactsConfig:
         self.domain_aliases: Dict[str, str] = {}
 
         self._load()
+        self.extra_locations.update(
+            SharedCoreUtils.load_locations_set(self.locations_file)
+        )
 
         base_locs: Set[str] = self._collect_geo_catalog_locations()
         self.all_excluded_locations_norm: Set[str] = {
@@ -61,7 +68,6 @@ class ContactsConfig:
             for kw in self.company_keywords
             if kw.strip()
         }
-
     @staticmethod
     def _collect_geo_catalog_locations() -> Set[str]:
         """
@@ -116,6 +122,12 @@ class ContactsConfig:
                 self.csv_prefixes = [p.lower() for p in self._parse_csv_list(f["csv_prefixes"])]
             if "first_names_file" in f:
                 self.first_names_file = self._resolve_path(f["first_names_file"])
+            if "suggested_first_names_file" in f:
+                self.suggested_first_names_file = self._resolve_path(
+                    f["suggested_first_names_file"]
+                )
+            if "locations_file" in f:
+                self.locations_file = self._resolve_path(f["locations_file"])
             if "output_file" in f:
                 self.output_file = self._resolve_path(f["output_file"])
             if "anonymized_output_file" in f:

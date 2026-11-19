@@ -42,6 +42,10 @@ class AuditAndStateManager:
         "NUM_FISCAL", "PERSONNAGE_",
     )
 
+    COMPOUND_PLACE_PARTICLES: FrozenSet[str] = frozenset({
+        "de", "du", "des", "d", "sur", "sous", "en", "les", "la", "le", "aux", "au",
+    })
+
     COMMON_FRENCH_STOPWORDS: FrozenSet[str] = frozenset({
         "le", "la", "les", "un", "une", "des", "du", "de", "au", "aux",
         "ce", "cet", "cette", "ces", "mon", "ton", "son", "ma", "ta", "sa",
@@ -73,10 +77,20 @@ class AuditAndStateManager:
         "banque", "assurance", "mutuelle", "caisse", "allocations", "impots",
         "article", "chapitre", "section", "titre", "point", "liste", "tableau",
         "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
+        "lun", "mar", "mer", "jeu", "ven", "sam", "dim",
         "janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet",
         "aout", "septembre", "octobre", "novembre", "decembre", "janv", "fevr",
         "avr", "juil", "sept", "oct", "nov", "dec", "nord", "sud", "est",
         "ouest", "saint", "sainte", "rue", "avenue", "boulevard", "place",
+        "delivery", "carte", "recap", "parking", "nouveau", "arbitrage",
+        "backlog", "daily", "coord", "donne", "enf", "finalement", "origine",
+        "passe", "signature", "signez", "tome", "visualiser", "voici",
+        "apparemment", "besoin", "bises", "coordination", "dessins", "dsn",
+        "demo", "demonstration", "developpement", "epic", "examens", "fax",
+        "fourmi", "gazette", "genre", "gestion", "lorsque", "mascarade",
+        "mondial", "plein", "preparation", "puree", "quant", "respire",
+        "retour", "reorganisation", "reunions", "taper", "trancher", "union",
+        "unite", "appart",
     })
     AMBIGUOUS_FIRST_NAMES: FrozenSet[str] = frozenset({
         "aime", "aimee", "ange", "aube", "aurore", "blanc", "blanche",
@@ -136,8 +150,8 @@ class AuditAndStateManager:
         self, display_name: str
     ) -> Optional[Tuple[str, str]]:
         """
-        Recherche si le nom candidat (ou son nom de famille) est proche
-        orthographiquement ou phonétiquement d'un nom connu dans contacts.
+        Recherche si le nom de famille candidat est proche orthographiquement
+        d'un vrai nom de famille connu, sans jamais suggérer sur un prénom seul.
 
         :param display_name: Libellé candidat détecté par l'audit.
         :return: Tuple (alias_suggéré, nom_famille_proche) ou None.
@@ -147,8 +161,11 @@ class AuditAndStateManager:
 
         tokens: List[str] = display_name.strip().split()
         candidate_last: str = tokens[-1] if tokens else display_name.strip()
+        if self.rules.is_first_name(candidate_last):
+            return None
+
         norm_cand: str = DocumentTextUtils.normalize_word(candidate_last)
-        if len(norm_cand) < 4:
+        if len(norm_cand) < 5 or norm_cand in self.COMMON_FRENCH_STOPWORDS:
             return None
 
         cand_phon: str = self._phonetic_french_key(norm_cand)
@@ -156,27 +173,30 @@ class AuditAndStateManager:
         best_known: str = ""
 
         for known_last in self.rules.last_name_to_aliases.keys():
-            if len(known_last) < 4 or known_last == norm_cand:
+            if len(known_last) < 5 or known_last == norm_cand:
+                continue
+            if abs(len(known_last) - len(norm_cand)) > 2:
                 continue
             ratio: float = SequenceMatcher(
                 None, norm_cand, known_last
             ).ratio()
             known_phon: str = self._phonetic_french_key(known_last)
-            if cand_phon and cand_phon == known_phon:
-                ratio = max(ratio, 0.85)
+            if cand_phon and cand_phon == known_phon and ratio >= 0.65:
+                ratio = min(1.0, ratio + 0.15)
             if ratio > best_score:
                 best_score = ratio
                 best_known = known_last
 
-        if best_score >= 0.72 and best_known:
-            aliases: List[str] = sorted(
-                self.rules.last_name_to_aliases[best_known]
+        if best_score >= 0.78 and best_known:
+            disp_known: str = self.rules.last_name_display.get(
+                best_known, best_known.capitalize()
             )
-            if len(aliases) == 1:
-                disp_known: str = self.rules.last_name_display.get(
-                    best_known, best_known.capitalize()
-                )
-                return next(iter(aliases)), disp_known
+            if len(tokens) >= 2:
+                first_disp: str = self._format_first_name_case(next(iter(tokens)))
+                suggested: str = f"{first_disp} {disp_known[:1].upper()}."
+            else:
+                suggested = f"{disp_known[:1].upper()}."
+            return suggested, disp_known
         return None
     @staticmethod
     def _format_first_name_case(token: str) -> str:
@@ -217,6 +237,28 @@ class AuditAndStateManager:
             self.canonical_labels[norm_id] = display_label
         return norm_id, self.canonical_labels[norm_id]
 
+    def _is_truncated_place_fragment(self, cleaned: str) -> bool:
+        """
+        Détecte un fragment de toponyme composé tronqué (ex: 'Saint-Martin-De').
+
+        :param cleaned: Mot ou composé brut à évaluer.
+        :return: True si le jeton est un fragment géographique incomplet.
+        """
+        if "-" not in cleaned:
+            return False
+        hyphen_parts: List[str] = [
+            DocumentTextUtils.normalize_word(p)
+            for p in cleaned.split("-")
+            if p.strip()
+        ]
+        if not hyphen_parts:
+            return True
+        if hyphen_parts[-1] in self.COMPOUND_PLACE_PARTICLES:
+            return True
+        if next(iter(hyphen_parts)) in {"saint", "sainte", "st", "ste"}:
+            return True
+        return False
+
     def _is_valid_word(self, word: str) -> bool:
         """
         Vérifie qu'un mot candidat est un nom propre plausible et non un
@@ -225,10 +267,12 @@ class AuditAndStateManager:
         :param word: Mot brut à évaluer.
         :return: True si le mot est éligible pour l'audit.
         """
-        cleaned: str = word.strip()
+        cleaned: str = word.strip().strip("-")
         if len(cleaned) < 2 or cleaned.upper().startswith(self.MASKED_PREFIXES):
             return False
         if any(ch.isdigit() for ch in cleaned):
+            return False
+        if self._is_truncated_place_fragment(cleaned):
             return False
         norm: str = DocumentTextUtils.normalize_word(cleaned)
         if len(norm) < 2:
@@ -279,10 +323,11 @@ class AuditAndStateManager:
             nk not in self.rules.full_targets
             and ni not in self.rules.full_targets
         )
+
     def _is_entry_still_valid(self, display_name: str) -> bool:
         """
         Vérifie si une entrée déjà présente dans l'état JSON reste valide
-        après application des nouveaux filtres anti-faux positifs.
+        en écartant notamment tout prénom seul.
 
         :param display_name: Libellé enregistré dans l'état.
         :return: True si l'entrée doit être conservée.
@@ -296,11 +341,11 @@ class AuditAndStateManager:
             norm: str = DocumentTextUtils.normalize_word(tok)
             return (
                 self._is_valid_word(tok)
+                and not self.rules.is_first_name(tok)
                 and len(norm) >= 3
                 and norm not in self.rules.full_targets
             )
         return False
-
     def load(self) -> None:
         """Restaure, filtre et fusionne l'état JSON depuis le disque s'il existe."""
         os.makedirs(self.config.results_dir, exist_ok=True)
@@ -366,8 +411,9 @@ class AuditAndStateManager:
             )
             self.counters[category] += 1
         return self.auto_cache[digest]
+
     def scan_residual_names(self, text: str, display_path: str) -> None:
-        """Détecte et regroupe les noms propres résiduels sous forme canonique."""
+        """Détecte et regroupe les noms propres résiduels sans retenir de prénom seul."""
         for m in self.PAIR_PATTERN.finditer(text):
             p1, p2 = m.group(1), m.group(2)
             if not self._is_plausible_pair(p1, p2):
@@ -381,6 +427,7 @@ class AuditAndStateManager:
             norm_name: str = DocumentTextUtils.normalize_word(name)
             if (
                 self._is_valid_word(name)
+                and not self.rules.is_first_name(name)
                 and len(norm_name) >= 3
                 and norm_name not in self.rules.full_targets
             ):
@@ -438,7 +485,7 @@ class AuditAndStateManager:
         sep_sub: str = "-" * 78
         report_lines: List[str] = [
             f"# {sep_main}\n",
-            f"# RAPPORT D'AUDIT DES NOMS PROPRES RÉSIDUELS\n",
+            "# RAPPORT D'AUDIT DES NOMS PROPRES RÉSIDUELS\n",
             f"# Fichiers analysés : {len(self.already_processed)} | "
             f"Noms détectés : {len(results)} | "
             f"Seuil min : {self.config.min_audit_occurrences}x\n",

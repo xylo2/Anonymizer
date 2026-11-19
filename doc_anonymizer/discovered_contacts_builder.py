@@ -10,9 +10,15 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 class DiscoveredEmailContactsBuilder:
     """
     Génère et enrichit le fichier contacts_emails_decouverts.txt à partir
-    de tous_emails_trouves.txt pour compléter contacts.txt et
-    contacts_manuels.txt sans doublon, puis purge tous_emails_trouves.txt.
+    de tous_emails_trouves.txt (adresses et noms d'affichage MIME) pour compléter
+    contacts.txt et contacts_manuels.txt sans doublon.
     """
+
+    TECHNICAL_EMAIL_SUFFIXES: Tuple[str, ...] = (
+        "@://google.com",
+        "@bot.://google.com",
+        "://google.com",
+    )
 
     def __init__(self, config: PipelineConfig) -> None:
         """
@@ -21,6 +27,23 @@ class DiscoveredEmailContactsBuilder:
         :param config: Instance de PipelineConfig.
         """
         self.config: PipelineConfig = config
+
+    @classmethod
+    def is_valid_discoverable_email(cls, email: str) -> bool:
+        """
+        Vérifie qu'une adresse e-mail n'est ni un identifiant technique RCS
+        ni une chaîne corrompue contenant '=' ou plusieurs '@'.
+
+        :param email: Adresse e-mail normalisée.
+        :return: True si l'adresse est exploitable comme règle de contact.
+        """
+        low: str = email.strip().lower()
+        if not low or "=" in low or low.count("@") != 1:
+            return False
+        local_p, domain_p = low.split("@", 1)
+        if not local_p or "." not in domain_p:
+            return False
+        return not any(low.endswith(suf) for suf in cls.TECHNICAL_EMAIL_SUFFIXES)
 
     def _collect_existing_targets(self) -> Set[str]:
         """
@@ -39,7 +62,7 @@ class DiscoveredEmailContactsBuilder:
             with open(path, "r", encoding="utf-8") as f:
                 for raw_line in f:
                     line: str = raw_line.strip()
-                    if not line or line.startswith("#"):
+                    if not line or line.startswith("#") or line.count("=") > 1:
                         continue
                     for sep in ("=", ";", ","):
                         if sep in line:
@@ -63,8 +86,8 @@ class DiscoveredEmailContactsBuilder:
 
     def _load_existing_discovered(self) -> Dict[str, str]:
         """
-        Charge les règles déjà générées dans contacts_emails_decouverts.txt
-        afin de préserver les alias existants entre deux exécutions.
+        Charge les règles valides déjà générées dans contacts_emails_decouverts.txt
+        en écartant toute ancienne ligne technique corrompue.
 
         :return: Dictionnaire cible -> alias existant.
         """
@@ -75,15 +98,46 @@ class DiscoveredEmailContactsBuilder:
         with open(disc_path, "r", encoding="utf-8") as f:
             for raw_line in f:
                 line: str = raw_line.strip()
-                if not line or line.startswith("#") or "=" not in line:
+                if (
+                    not line
+                    or line.startswith("#")
+                    or line.count("=") != 1
+                ):
                     continue
                 left_p, right_p = line.split("=", 1)
                 target, alias, _ = DocumentTextUtils.resolve_contact_pair(
                     left_p, right_p
                 )
-                if target and alias:
-                    existing[target] = alias
+                if not target or not alias:
+                    continue
+                if "@" in target and not self.is_valid_discoverable_email(target):
+                    continue
+                existing[target] = alias
         return existing
+    def _validate_display_name(self, raw_disp: str) -> Optional[str]:
+        """
+        Vérifie si un nom d'affichage MIME contient un prénom connu et un nom valide.
+
+        :param raw_disp: Libellé brut issu d'un en-tête From/To.
+        :return: 'Prénom Nom' normalisé ou None.
+        """
+        tokens: List[str] = [t for t in raw_disp.strip().split() if t]
+        if len(tokens) != 2:
+            return None
+        t1, t2 = tokens
+        if any(ch.isdigit() for ch in t1 + t2):
+            return None
+        n1: str = DocumentTextUtils.normalize_word(t1)
+        n2: str = DocumentTextUtils.normalize_word(t2)
+        if n1 in self.config.masked_locations or n2 in self.config.masked_locations:
+            return None
+        is_fn1: bool = n1 in self.config.known_first_names
+        is_fn2: bool = n2 in self.config.known_first_names
+        if is_fn1 and not is_fn2 and len(n2) >= 3:
+            return f"{t1.capitalize()} {t2.capitalize()}"
+        if is_fn2 and not is_fn1 and len(n1) >= 3:
+            return f"{t2.capitalize()} {t1.capitalize()}"
+        return None
 
     def _infer_full_name_from_email(self, email: str) -> Optional[str]:
         """
@@ -117,6 +171,7 @@ class DiscoveredEmailContactsBuilder:
         if is_fn_2 and not is_fn_1:
             return f"{second_tok.capitalize()} {first_tok.capitalize()}"
         return None
+
     def _next_alias_index(self, existing_rules: Dict[str, str]) -> int:
         """
         Détermine le prochain numéro disponible pour les alias Contact_Mail_XXX.
@@ -148,8 +203,7 @@ class DiscoveredEmailContactsBuilder:
     def build_or_update(self) -> Tuple[int, int]:
         """
         Lit tous_emails_trouves.txt, complète contacts_emails_decouverts.txt
-        avec les adresses et noms déduits absents des deux autres fichiers,
-        puis purge tous_emails_trouves.txt de façon atomique.
+        avec les adresses valides et noms déduits, puis purge tous_emails_trouves.txt.
 
         :return: Tuple (nouvelles_regles_ajoutees, total_regles_fichier).
         """
@@ -167,49 +221,48 @@ class DiscoveredEmailContactsBuilder:
             for k in discovered_rules.keys()
         }
 
+        email_to_display: Dict[str, str] = {}
+        with open(emails_path, "r", encoding="utf-8") as f_mail:
+            for raw_ln in f_mail:
+                ln: str = raw_ln.strip()
+                if "@" not in ln:
+                    continue
+                if "|" in ln:
+                    raw_em, raw_disp = ln.split("|", 1)
+                    norm_em: str = DocumentTextUtils.normalize_identifier(raw_em)
+                    valid_disp: Optional[str] = self._validate_display_name(raw_disp)
+                    if self.is_valid_discoverable_email(norm_em):
+                        email_to_display.setdefault(norm_em, valid_disp or "")
+                        if valid_disp and not email_to_display[norm_em]:
+                            email_to_display[norm_em] = valid_disp
+                else:
+                    norm_em = DocumentTextUtils.normalize_identifier(ln)
+                    if self.is_valid_discoverable_email(norm_em):
+                        email_to_display.setdefault(norm_em, "")
+
         next_idx: int = self._next_alias_index(discovered_rules)
         added_count: int = 0
 
-        with open(emails_path, "r", encoding="utf-8") as f_mail:
-            raw_emails: List[str] = [
-                DocumentTextUtils.normalize_identifier(ln)
-                for ln in f_mail
-                if "@" in ln
-            ]
+        for email, header_name in sorted(email_to_display.items()):
+            alias: str = ""
+            if email not in covered_targets and email not in existing_norm_keys:
+                alias = f"Contact_Mail_{next_idx:03d}"
+                next_idx += 1
+                discovered_rules[email] = alias
+                existing_norm_keys.add(email)
+                added_count += 1
+            else:
+                alias = discovered_rules.get(email, "")
 
-        for email in sorted(set(raw_emails)):
-            if (
-                not email
-                or email in covered_targets
-                or email in existing_norm_keys
-            ):
-                continue
-
-            alias: str = f"Contact_Mail_{next_idx:03d}"
-            next_idx += 1
-
-            discovered_rules[email] = alias
-            existing_norm_keys.add(email)
-            added_count += 1
-
-            inferred_name: Optional[str] = self._infer_full_name_from_email(
-                email
-            )
-            if inferred_name:
-                norm_name: str = DocumentTextUtils.normalize_word(
-                    inferred_name
-                )
-                if (
-                    norm_name not in covered_targets
-                    and norm_name not in existing_norm_keys
-                ):
+            inferred_name: Optional[str] = header_name or self._infer_full_name_from_email(email)
+            if inferred_name and alias:
+                norm_name: str = DocumentTextUtils.normalize_word(inferred_name)
+                if norm_name not in covered_targets and norm_name not in existing_norm_keys:
                     discovered_rules[inferred_name] = alias
                     existing_norm_keys.add(norm_name)
                     added_count += 1
 
-        if added_count > 0 or not os.path.exists(
-            self.config.discovered_contacts_file
-        ):
+        if added_count > 0 or os.path.exists(self.config.discovered_contacts_file):
             out_path: str = self.config.discovered_contacts_file
             sorted_items: List[Tuple[str, str]] = sorted(
                 discovered_rules.items(),
@@ -225,5 +278,4 @@ class DiscoveredEmailContactsBuilder:
             DocumentTextUtils.atomic_write_text(out_path, "".join(out_lines))
 
         DocumentTextUtils.atomic_write_text(emails_path, "")
-
         return added_count, len(discovered_rules)

@@ -12,7 +12,7 @@ class PipelineConfig:
     """
     Charge et expose de manière typée les paramètres techniques d'extraction
     et d'anonymisation depuis le fichier config.ini unifié, en partageant
-    prenoms.txt, le catalogue géographique français et les index de contacts.
+    prenoms.txt, villes_masquees.txt, mots_exclus.txt et les index de contacts.
     """
 
     DEFAULT_PLACEHOLDER_SALT: str = "cle_secrete_a_modifier_987"
@@ -27,17 +27,15 @@ class PipelineConfig:
     })
 
     def __init__(self, config_path: str = "config.ini") -> None:
-        """
-        Initialise les valeurs par défaut puis charge le fichier INI.
-
-        :param config_path: Chemin vers le fichier config.ini.
-        """
+        """Initialise les valeurs par défaut puis charge le fichier INI."""
         self.config_path: str = os.path.abspath(config_path)
         self._base_dir: str = os.path.dirname(self.config_path)
         self._parser: configparser.ConfigParser = configparser.ConfigParser()
 
         self.root_dir: str = self._base_dir
         self.first_names_file: str = os.path.join(self._base_dir, "prenoms.txt")
+        self.locations_file: str = os.path.join(self._base_dir, "villes_masquees.txt")
+        self.excluded_words_file: str = os.path.join(self._base_dir, "mots_exclus.txt")
         self.contacts_file: str = os.path.join(self._base_dir, "contacts.txt")
         self.manual_contacts_file: str = os.path.join(self._base_dir, "contacts_manuels.txt")
         self.discovered_contacts_file: str = os.path.join(self._base_dir, "contacts_emails_decouverts.txt")
@@ -50,7 +48,6 @@ class PipelineConfig:
         self.results_dir: str = os.path.join(self._base_dir, "resultats_anonymisation")
         self.audit_report_file: str = os.path.join(self._base_dir, "audit_noms_residuels.txt")
         self.audit_copy_file: str = os.path.join(self._base_dir, "audit_noms_residuels_copier.txt")
-
         self.enable_ocr: bool = True
         self.enable_audio: bool = True
         self.whisper_model: str = "base"
@@ -61,7 +58,6 @@ class PipelineConfig:
             "transcriptions", "resultats_anonymisation",
             "venv", ".venv", ".git", "__pycache__", "common", "tools", "tests",
         }
-
         self.main_character_name: str = "Personnage_Principal"
         self.file_prefix: str = "anonymise_"
         self.secret_salt: str = self.DEFAULT_PLACEHOLDER_SALT
@@ -79,20 +75,28 @@ class PipelineConfig:
 
         self._load_french_geo_catalog()
         self._load()
-        self._expand_location_variants()
+        self.load_external_lists()
         self._ensure_strong_secret_salt()
-        self.known_first_names.update(
-            SharedCoreUtils.load_first_names_set(self.first_names_file)
-        )
 
         self.sms_tracking_file: str = os.path.join(self.transcriptions_dir, ".sms_numeros_traites.txt")
         self.extraction_tracking_file: str = os.path.join(self.transcriptions_dir, ".fichiers_extraits.txt")
         self.resume_state_file: str = os.path.join(self.results_dir, ".etat_anonymisation.json")
+
+    def load_external_lists(self) -> None:
+        """Charge ou recharge les listes externes (villes, mots exclus, prénoms)."""
+        self.masked_locations.update(
+            SharedCoreUtils.load_locations_set(self.locations_file)
+        )
+        self.excluded_words.update(
+            SharedCoreUtils.load_words_set(self.excluded_words_file)
+        )
+        self._expand_location_variants()
+        self.known_first_names.update(
+            SharedCoreUtils.load_first_names_set(self.first_names_file)
+        )
+
     def _load_french_geo_catalog(self) -> None:
-        """
-        Charge les régions, départements et grandes villes de France depuis FrenchGeoCatalog,
-        en écartant les homonymes de noms communs français (ex: 'réunion', 'centre', 'cher').
-        """
+        """Charge les départements, régions et grandes villes depuis FrenchGeoCatalog."""
         for attr_name in dir(FrenchGeoCatalog):
             if attr_name.startswith("_"):
                 continue
@@ -105,9 +109,7 @@ class PipelineConfig:
                             self.masked_locations.add(norm_loc)
 
     def _expand_location_variants(self) -> None:
-        """
-        Ajoute les variantes avec espaces à la place des tirets pour les villes composées.
-        """
+        """Ajoute les variantes avec espaces à la place des tirets pour les villes composées."""
         expanded: Set[str] = set()
         for loc in self.masked_locations:
             if "-" in loc:
@@ -115,9 +117,7 @@ class PipelineConfig:
         self.masked_locations.update(expanded)
 
     def _ensure_strong_secret_salt(self) -> None:
-        """
-        Génère et persiste un sel cryptographique aléatoire de 256 bits dans .secret_salt.
-        """
+        """Génère et persiste un sel cryptographique aléatoire de 256 bits dans .secret_salt."""
         if self.secret_salt and self.secret_salt != self.DEFAULT_PLACEHOLDER_SALT:
             return
         salt_file: str = os.path.join(self._base_dir, ".secret_salt")
@@ -136,14 +136,8 @@ class PipelineConfig:
             SharedCoreUtils.atomic_write_text(salt_file, f"{generated}\n")
         except OSError:
             pass
-
     def _resolve_path(self, raw_path: str) -> str:
-        """
-        Résout un chemin relativement au dossier contenant config.ini.
-
-        :param raw_path: Chemin lu dans le fichier INI.
-        :return: Chemin absolu normalisé.
-        """
+        """Résout un chemin relativement au dossier contenant config.ini."""
         cleaned: str = raw_path.strip()
         if os.path.isabs(cleaned):
             return os.path.normpath(cleaned)
@@ -151,17 +145,11 @@ class PipelineConfig:
 
     @staticmethod
     def _parse_csv_set(raw_value: str) -> Set[str]:
-        """
-        Convertit une chaîne séparée par des virgules en ensemble nettoyé.
-
-        :param raw_value: Chaîne brute issue du fichier INI.
-        :return: Ensemble des éléments non vides.
-        """
+        """Convertit une chaîne séparée par des virgules en ensemble nettoyé."""
         return {item.strip() for item in raw_value.split(",") if item.strip()}
+
     def _load(self) -> None:
-        """
-        Lit les sections partagées et spécifiques de config.ini.
-        """
+        """Lit les sections partagées et spécifiques de config.ini."""
         if not os.path.exists(self.config_path):
             return
 
@@ -170,6 +158,8 @@ class PipelineConfig:
             files_sec = self._parser["files"]
             path_keys = {
                 "first_names_file": "first_names_file",
+                "locations_file": "locations_file",
+                "excluded_words_file": "excluded_words_file",
                 "output_file": "indexed_contacts_file",
                 "anonymized_output_file": "anonymized_contacts_file",
                 "inverted_output_file": "contacts_file",
@@ -192,7 +182,8 @@ class PipelineConfig:
         if "paths" in self._parser:
             paths_sec = self._parser["paths"]
             for key in (
-                "root_dir", "contacts_file", "manual_contacts_file",
+                "root_dir", "locations_file", "excluded_words_file",
+                "contacts_file", "manual_contacts_file",
                 "discovered_contacts_file", "all_sms_numbers_file",
                 "all_emails_file", "sources_dir", "transcriptions_dir",
                 "results_dir", "audit_report_file", "audit_copy_file",
@@ -243,7 +234,7 @@ class PipelineConfig:
                     for w in self._parse_csv_set(anon_doc_sec["known_first_names"])
                 )
             if "excluded_words" in anon_doc_sec:
-                self.excluded_words = {
+                self.excluded_words.update(
                     SharedCoreUtils.normalize_token(w)
                     for w in self._parse_csv_set(anon_doc_sec["excluded_words"])
-                }
+                )

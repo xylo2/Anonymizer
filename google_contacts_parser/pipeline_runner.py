@@ -2,36 +2,39 @@
 
 import time
 from typing import List, Tuple
+from common.core_utils import SharedCoreUtils
 from google_contacts_parser.anonymizer import ContactsAnonymizer
 from google_contacts_parser.config_manager import ContactsConfig
 from google_contacts_parser.csv_reader import GoogleContactsReader
 from google_contacts_parser.deduplicator import ContactsDeduplicator
+from google_contacts_parser.first_name_suggester import MissingFirstNamesSuggester
 from google_contacts_parser.inverter import ContactsInverter
 from google_contacts_parser.output_writer import ContactsOutputWriter
 
 
 class ContactsPipelineRunner:
     """
-    Ordonnance l'exécution séquentielle des quatre étapes de traitement des contacts :
+    Ordonnance l'exécution séquentielle des étapes de traitement des contacts :
     1. Extraction et indexation depuis les fichiers CSV Google Contacts.
     2. Anonymisation des noms de famille et résolution des homonymes.
     3. Dédoublonnage exact ou équivalent et fusion des clés communes.
     4. Inversion gauche/droite et tri alphabétique par la nouvelle partie gauche.
+    5. Génération d'un fichier de suggestions pour les prénoms absents de prenoms.txt.
     """
 
     def __init__(self, config: ContactsConfig) -> None:
         """
-        Initialise l'ordonnanceur avec la configuration partagée par les quatre modules.
+        Initialise l'ordonnanceur avec la configuration partagée par les modules.
 
         :param config: Instance de ContactsConfig contenant tous les chemins et règles.
         """
         self.config: ContactsConfig = config
 
-    def _run_extraction(self) -> int:
+    def _run_extraction(self) -> Tuple[int, List[str]]:
         """
         Exécute la première étape : lecture des CSV détectés et écriture du fichier indexé.
 
-        :return: Nombre de correspondances extraites.
+        :return: Tuple (nombre_correspondances, liste_fichiers_csv).
         """
         print("=== [1/4] EXTRACTION DES CONTACTS CSV ===")
         csv_files: List[str] = self.config.get_csv_files()
@@ -53,7 +56,7 @@ class ContactsPipelineRunner:
             f"[OK] {len(all_entries)} correspondance(s) extraite(s) depuis {len(csv_files)} fichier(s) "
             f"-> '{self.config.output_file}'.\n"
         )
-        return len(all_entries)
+        return len(all_entries), csv_files
 
     def _run_anonymization(self) -> int:
         """
@@ -66,7 +69,6 @@ class ContactsPipelineRunner:
         count: int = anonymizer.process()
         print(f"[OK] {count} ligne(s) anonymisée(s) -> '{self.config.anonymized_output_file}'.\n")
         return count
-
     def _run_deduplication(self) -> Tuple[int, int, int]:
         """
         Exécute la troisième étape : suppression des doublons et fusion des clés communes.
@@ -96,14 +98,36 @@ class ContactsPipelineRunner:
         print(f"[OK] {count} ligne(s) inversée(s) et triée(s) -> '{self.config.inverted_output_file}'.\n")
         return count
 
+    def _run_first_name_suggestions(self, csv_files: List[str]) -> int:
+        """
+        Détecte les prénoms présents dans les CSV mais absents de prenoms.txt.
+
+        :param csv_files: Liste des fichiers CSV analysés.
+        :return: Nombre de prénoms suggérés.
+        """
+        suggester: MissingFirstNamesSuggester = MissingFirstNamesSuggester(
+            config=self.config
+        )
+        count: int = suggester.generate_suggestions_file(csv_files=csv_files)
+        if count > 0:
+            print(
+                f"[SUGGESTIONS PRÉNOMS] {count} prénom(s) absent(s) de "
+                f"'{self.config.first_names_file}' enregistré(s) dans "
+                f"'{self.config.suggested_first_names_file}'.\n"
+            )
+        return count
+
     def run_all(self) -> None:
         """
-        Enchaîne les quatre étapes du pipeline de bout en bout et affiche la durée totale.
+        Enchaîne les étapes du pipeline de bout en bout et affiche la durée totale.
         """
         start_time: float = time.perf_counter()
-        self._run_extraction()
+        _, csv_files = self._run_extraction()
         self._run_anonymization()
         self._run_deduplication()
         self._run_inversion()
-        elapsed: float = time.perf_counter() - start_time
-        print(f"Pipeline complet terminé avec succès en {elapsed:.2f}s.")
+        self._run_first_name_suggestions(csv_files=csv_files)
+        elapsed_str: str = SharedCoreUtils.format_duration(
+            time.perf_counter() - start_time
+        )
+        print(f"Pipeline complet terminé avec succès en {elapsed_str}.")

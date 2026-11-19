@@ -1,0 +1,155 @@
+# LISTE DES VILLES, COMMUNES ET LIEUX-DITS SUPPLÉMENTAIRES À MASQUER
+# Une entrée par ligne (ou séparée par des virgules). Les commentaires '#' sont ignorés.
+
+# --- Calvados & Normandie ---
+amaye-sur-orne
+amaye sur orne
+amaye sur o.
+authie
+baron-sur-odon
+bavent
+boulon
+bretteville-l'orgueilleuse
+bretteville-sur-laize
+caean
+caen
+caennaises
+carpiquet
+cauvicourt
+cingal
+clinchamps
+clinchamps-sur-orne
+coen
+colombelles
+cormelles-le-royal
+evrecy
+feuguerolles-bully
+fleury-sur-orne
+fontenay
+fontenay-le-marmion
+fresney
+fresney-le-puceux
+fresney le puceux
+giberville
+grentheville
+grimbosq
+herouville
+hfs
+ifs
+laize
+laize-clinchamp
+laize-clinchamps
+le bas breuil
+le champ mirey
+le hom
+le mesnil-esnard
+le pont du coudray
+lessay
+louvigny
+maisoncelles-sur-ajon
+mal pas
+mac pas
+may-sur-orne
+may sur orne
+may sur o.
+mezidon
+mezidon-canon
+mondeville
+mont-saint-aignan
+rocquancourt
+rots
+saint-andre
+saint-andre-sur-orne
+saint-contest
+saint-germain-le-vasson
+saint g. le vasson
+saint-laurent-de-condel
+saint laurent de condel
+st laurent de c.
+saint-martin-de-fontenay
+saint-martin-de-may
+saint-martin-de-sallen
+sainte-honorine-du-fay
+st honorine du fay
+thury
+thury-harcourt
+thury harcourt
+thury-harcourt-le-hom
+tourville-sur-odon
+vendeuvre
+verson
+villers
+# --- Région parisienne ---
+asniere
+asnieres
+austerlitz
+bagnolet
+becon
+becon-les-bruyeres
+bellevue
+billancourt
+boulogne
+butte-aux-cailles
+chatillon
+chaville
+clairefontaine
+gallieni
+invalides
+issy-val de seine
+la defense
+levallois
+levallois-perret
+marly-chanteloup
+marly-le-roi
+meudon
+miromesnil
+montparnasse
+plaisir grignon
+porte de la chapelle
+puteaux
+rambouillet
+rungis
+saint-cloud
+saint-lazare
+saint-quentin-en-yvelines
+sat lazare
+sevres
+sonchamp
+val-fleury
+velizy
+villiers-le-bel
+
+# --- Loiret & Centre-Val de Loire ---
+aubrais
+boigny
+boigny-sur-bionne
+chanteau
+checy
+fleury
+fleury-les-aubrais
+neuville-aux-bois
+nogent-le-rotrou
+orleans
+rebrechien
+saint-hilaire-saint-mesmin
+saint-jean-de-braye
+saint j. de braye
+trainou
+vennecy
+vierzon
+
+# --- Autres villes & territoires ---
+algerie
+bourg-saint-andeol
+cancale
+dol-de-bretagne
+kouba
+lareunion
+londres
+madagascar
+oust
+ouste
+perigord
+san francisco
+sarlat
+saint-montan

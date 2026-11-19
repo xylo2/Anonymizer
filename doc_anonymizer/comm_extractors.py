@@ -159,11 +159,12 @@ class CommunicationExtractor:
         self, file_path: str, allowed_emails: Set[str], discovered_emails: Set[str]
     ) -> Tuple[Dict[str, List[str]], Optional[str]]:
         """
-        Extrait en streaming les e-mails d'un fichier .mbox ou .eml.
+        Extrait en streaming les e-mails d'un fichier .mbox ou .eml et collecte
+        les couples Nom d'affichage + e-mail pour enrichissement automatique.
 
         :param file_path: Chemin vers le fichier .mbox ou .eml.
         :param allowed_emails: Ensemble des e-mails filtrés depuis contacts.txt.
-        :param discovered_emails: Collecteur global des e-mails rencontrés.
+        :param discovered_emails: Collecteur global des e-mails et noms rencontrés.
         :return: Tuple (dictionnaire_par_mois, message_erreur).
         """
         file_name: str = os.path.basename(file_path)
@@ -187,13 +188,19 @@ class CommunicationExtractor:
                 if not is_eml and scanned_count % 500 == 0:
                     print(f"    ... {file_name} : {scanned_count} e-mail(s) ({matched_count} retenu(s)) ...", flush=True)
 
-                raw_headers: List[str] = [str(msg.get(h) or "") for h in ("From", "To", "Cc", "Bcc", "Reply-To")]
-                msg_emails: Set[str] = {
-                    DocumentTextUtils.normalize_identifier(addr)
-                    for _, addr in getaddresses(raw_headers)
-                    if addr and "@" in addr
-                }
-                discovered_emails.update(msg_emails)
+                raw_headers: List[str] = [self.decode_mime_header(msg.get(h)) for h in ("From", "To", "Cc", "Bcc", "Reply-To")]
+                msg_emails: Set[str] = set()
+                for disp_raw, addr in getaddresses(raw_headers):
+                    if not addr or "@" not in addr:
+                        continue
+                    norm_addr: str = DocumentTextUtils.normalize_identifier(addr)
+                    msg_emails.add(norm_addr)
+                    clean_disp: str = re.sub(r"[\r\n=|]+", " ", disp_raw).strip().strip('"').strip()
+                    if clean_disp and "@" not in clean_disp and len(clean_disp.split()) >= 2:
+                        discovered_emails.add(f"{norm_addr}|{clean_disp}")
+                    else:
+                        discovered_emails.add(norm_addr)
+
                 if allowed_emails and not (msg_emails & allowed_emails):
                     continue
 

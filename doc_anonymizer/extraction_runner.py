@@ -6,6 +6,7 @@ import re
 import threading
 import time
 from typing import Dict, List, Optional, Set, Tuple
+from common.core_utils import SharedCoreUtils
 from doc_anonymizer.comm_extractors import CommunicationExtractor
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.office_extractors import OfficeAndDocumentExtractor
@@ -164,6 +165,9 @@ class DocumentExtractionRunner:
 
         collected: List[str] = []
         excluded_files: Set[str] = {
+            os.path.basename(self.config.first_names_file),
+            os.path.basename(self.config.locations_file),
+            os.path.basename(self.config.excluded_words_file),
             os.path.basename(self.config.contacts_file),
             os.path.basename(self.config.manual_contacts_file),
             os.path.basename(self.config.discovered_contacts_file),
@@ -243,7 +247,7 @@ class DocumentExtractionRunner:
                 self.extraction_errors.extend(xml_errors)
             if sms_by_month:
                 for period, entries in sorted(sms_by_month.items()):
-                    entries.sort(key=lambda item: item[0])
+                    entries.sort(key=lambda item: item)
                     merged_sms: str = "".join(block for _, block in entries)
                     generated_paths.append(self._write_transcription_block(period, category, raw_stem, merged_sms))
                 with self._io_lock:
@@ -258,7 +262,6 @@ class DocumentExtractionRunner:
         with self._io_lock:
             if norm_rel in already_extracted:
                 return []
-
         if ext in {".mbox", ".eml"}:
             local_mail_disc: Set[str] = set()
             emails_by_month, err = self.comm_extractor.extract_emails(file_path, allowed_emails, local_mail_disc)
@@ -277,6 +280,7 @@ class DocumentExtractionRunner:
                     self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
                     already_extracted.add(norm_rel)
             return generated_paths
+
         extractors_map = {
             ".pdf": lambda p: self.doc_extractor.extract_pdf(p, file_name),
             ".txt": self.doc_extractor.extract_text_or_markdown,
@@ -315,7 +319,6 @@ class DocumentExtractionRunner:
             self.append_tracking_entry(self.config.extraction_tracking_file, norm_rel)
             already_extracted.add(norm_rel)
         return [out_p]
-
     def load_all_filter_contacts(self) -> Tuple[Optional[Dict[str, str]], Optional[Set[str]]]:
         """
         Fusionne les téléphones et e-mails des trois fichiers de contacts.
@@ -408,4 +411,5 @@ class DocumentExtractionRunner:
             raise
 
         self.finalize_reports(discovered_phones, discovered_emails)
-        print(f"\nExtraction terminée : {processed_count} fichier(s) en {time.time() - start_time:.1f}s.", flush=True)
+        elapsed_str: str = SharedCoreUtils.format_duration(time.time() - start_time)
+        print(f"\nExtraction terminée : {processed_count} fichier(s) en {elapsed_str}.", flush=True)

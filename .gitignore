@@ -1,4 +1,15 @@
-# Fichiers contenant des données personnelles ou sensibles
+# ==============================================================================
+# FICHIERS & DOSSIERS VOLUMINEUX GÉNÉRÉS PAR LE PIPELINE (ACCÉLÈRE PYCHARM/GIT)
+# ==============================================================================
+transcriptions/
+resultats_anonymisation/
+.whisper_cache/
+
+# ==============================================================================
+# DONNÉES PERSONNELLES, SOURCES & FICHIERS DE CONTACTS SENSIBLES
+# ==============================================================================
+fichiers sources/
+export_contacts/
 contacts.txt
 contacts_indexes.txt
 contacts_anonymises.txt
@@ -9,21 +20,26 @@ tous_numeros_sms.txt
 tous_emails_trouves.txt
 audit_noms_residuels.txt
 audit_noms_residuels_copier.txt
+prenoms_suggeres.txt
 .secret_salt
 
-# Versions PDF générées depuis la documentation Markdown
-*.pdf
-
-# Répertoires de données et caches locaux
-export_contacts/
-fichiers sources/
-transcriptions/
-resultats_anonymisation/
-.whisper_cache/
+# ==============================================================================
+# ENVIRONNEMENT PYTHON, CACHE & IDE
+# ==============================================================================
 __pycache__/
-*.pyc
-.venv/
+*.py[cod]
+*$py.class
+*.part[0-9]*
 venv/
+.venv/
+env/
+.idea/
+.vscode/
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+Thumbs.db
 /.project
 /.pydevproject
 /config.ini
+/contacts_manuels.txt (ajouts OCR à coller à la fin du fichier)

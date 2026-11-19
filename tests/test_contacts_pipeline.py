@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+from typing import List
 
 ROOT_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
@@ -18,12 +19,13 @@ from google_contacts_parser.text_utils import ContactTextUtils
 class TestContactsPipeline(unittest.TestCase):
     """
     Valide le socle commun, les règles de détection d'entités,
-    la résolution d'homonymes et le pipeline complet de contacts.
+    la résolution d'homonymes, les suggestions de prénoms et le pipeline complet.
     """
 
-    def test_shared_normalization(self) -> None:
+    def test_shared_normalization_and_duration(self) -> None:
         """
-        Vérifie la normalisation des téléphones français et des alias e-mails.
+        Vérifie la normalisation des téléphones français, des alias e-mails
+        et le formatage humain des durées en secondes, minutes et heures.
         """
         self.assertEqual(SharedCoreUtils.normalize_identifier("+33 6 12 34 56 78"), "0612345678")
         self.assertEqual(SharedCoreUtils.normalize_identifier("0033612345678"), "0612345678")
@@ -31,6 +33,9 @@ class TestContactsPipeline(unittest.TestCase):
             SharedCoreUtils.normalize_email_alias("Jean.Dupont+impots@Gmail.com"),
             "jean.dupont@gmail.com",
         )
+        self.assertEqual(SharedCoreUtils.format_duration(42.34), "42.3s")
+        self.assertEqual(SharedCoreUtils.format_duration(169.1), "2 min 49s")
+        self.assertEqual(SharedCoreUtils.format_duration(3912.0), "1 h 05 min 12s")
 
     def test_entity_and_location_rules(self) -> None:
         """
@@ -62,7 +67,7 @@ class TestContactsPipeline(unittest.TestCase):
     def test_full_contacts_pipeline_homonyms_and_dedup(self) -> None:
         """
         Exécute le pipeline complet sur un CSV contenant des homonymes,
-        une société et un doublon d'e-mail avec alias '+'.
+        une société, un doublon avec alias '+' et des prénoms à suggérer.
         """
         with tempfile.TemporaryDirectory(prefix="test_contacts_") as tmp_dir:
             export_dir: str = os.path.join(tmp_dir, "export_contacts")
@@ -81,6 +86,8 @@ class TestContactsPipeline(unittest.TestCase):
                     "Jean,Dumont,jean.dumont@exemple.fr,06 09 10 11 12\n"
                     "Jean,Dupont,jean.dupont+pro@exemple.fr,\n"
                     "Cabinet Alpha,,contact@alpha-conseil.fr,\n"
+                    "Gaspard,Moreau,gaspard.moreau@exemple.fr,\n"
+                    "Zélie-Anne,Bernard,zelie@exemple.fr,\n"
                 )
 
             cfg_path: str = os.path.join(tmp_dir, "config.ini")
@@ -90,6 +97,7 @@ class TestContactsPipeline(unittest.TestCase):
                     "csv_directory = export_contacts\n"
                     "csv_prefixes = contacts\n"
                     "first_names_file = prenoms.txt\n"
+                    "suggested_first_names_file = prenoms_suggeres.txt\n"
                     "output_file = contacts_indexes.txt\n"
                     "anonymized_output_file = contacts_anonymises.txt\n"
                     "deduplicated_output_file = contacts_dedoublonnes.txt\n"
@@ -113,6 +121,15 @@ class TestContactsPipeline(unittest.TestCase):
             self.assertIn("Jean Du.=jean.durand@exemple.fr", content)
             self.assertIn("Jean Du-2=jean.dumont@exemple.fr", content)
             self.assertIn("Cabinet Alpha (Alpha Conseil)=contact@alpha-conseil.fr", content)
+
+            self.assertTrue(os.path.exists(config.suggested_first_names_file))
+            with open(config.suggested_first_names_file, "r", encoding="utf-8") as f_sug:
+                sug_lines: List[str] = [
+                    ln.strip()
+                    for ln in f_sug
+                    if ln.strip() and not ln.strip().startswith("#")
+                ]
+            self.assertEqual(sug_lines, ["anne", "gaspard", "zélie"])
 
 
 if __name__ == "__main__":

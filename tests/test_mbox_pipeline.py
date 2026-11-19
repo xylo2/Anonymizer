@@ -18,7 +18,7 @@ from doc_anonymizer.pipeline_runner import DocAnonymizerPipelineRunner
 class MboxPipelineTester:
     """
     Exécute un test d'intégration isolé sur un fichier .mbox factice afin de
-    valider l'extraction, la découverte d'e-mails, la purge du tampon,
+    valider l'extraction, la découverte d'e-mails et noms d'affichage MIME,
     le masquage des URLs/téléphones et la seconde passe d'anonymisation.
     """
 
@@ -41,7 +41,7 @@ class MboxPipelineTester:
         """
         os.makedirs(self.sources_dir, exist_ok=True)
         with open(self.first_names_path, "w", encoding="utf-8") as f_fn:
-            f_fn.write("jean\nsophie\n")
+            f_fn.write("jean\nsophie\nmarc\n")
         with open(self.contacts_path, "w", encoding="utf-8") as f_ct:
             f_ct.write("jean.dupont@exemple.fr = Jean D.\n")
         with open(self.config_path, "w", encoding="utf-8") as f_cfg:
@@ -55,16 +55,16 @@ class MboxPipelineTester:
                 "[extraction]\nenable_ocr = false\nenable_audio = false\n"
                 "[anonymization]\nmain_character_name = Personnage_Principal\nmask_urls = true\n"
             )
-
         mbox = mailbox.mbox(self.mbox_path)
         try:
             msg = EmailMessage()
             msg["From"] = "Jean Dupont <jean.dupont@exemple.fr>"
             msg["To"] = "Sophie Leroy <sophie.leroy@cabinet-exemple.fr>"
+            msg["Cc"] = "Marc Delacroix <accueil@cabinet-exemple.fr>"
             msg["Date"] = "Wed, 15 May 2024 10:30:00 +0200"
             msg["Subject"] = "Suivi dossier"
             msg.set_content(
-                "Bonjour Sophie Leroy,\n"
+                "Bonjour Sophie Leroy et Marc Delacroix,\n"
                 "Veuillez consulter https://cabinet-exemple.fr "
                 "ou me joindre au +33 6 12 34 56 78.\n"
                 "Cordialement, Jean Dupont."
@@ -86,8 +86,10 @@ class MboxPipelineTester:
         assert os.path.exists(config.discovered_contacts_file)
         with open(config.discovered_contacts_file, "r", encoding="utf-8") as f_disc:
             disc_content: str = f_disc.read()
-        assert "sophie.leroy@cabinet-exemple.fr = Contact_Mail_001" in disc_content
-        assert "Sophie Leroy = Contact_Mail_001" in disc_content
+        assert "accueil@cabinet-exemple.fr = Contact_Mail_001" in disc_content
+        assert "Marc Delacroix = Contact_Mail_001" in disc_content
+        assert "sophie.leroy@cabinet-exemple.fr = Contact_Mail_002" in disc_content
+        assert "Sophie Leroy = Contact_Mail_002" in disc_content
 
         result_files: List[str] = [
             os.path.join(rp, fn)
@@ -98,7 +100,9 @@ class MboxPipelineTester:
         assert result_files
         merged: str = "\n".join(open(p, "r", encoding="utf-8").read() for p in result_files)
         assert "Sophie Leroy" not in merged
+        assert "Marc Delacroix" not in merged
         assert "Contact_Mail_001" in merged
+        assert "Contact_Mail_002" in merged
         assert "[URL_MASQUEE]" in merged
         assert "TEL_001" in merged
         print("\n[SUCCÈS] Toutes les vérifications .mbox ont réussi !", flush=True)

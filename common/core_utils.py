@@ -10,9 +10,30 @@ from typing import Set
 class SharedCoreUtils:
     """
     Centralise les utilitaires partagés entre google_contacts_parser et doc_anonymizer :
-    normalisation Unicode, identifiants (téléphones/e-mails), écriture atomique
-    et résolution des chemins de configuration.
+    normalisation Unicode, identifiants (téléphones/e-mails), formatage des durées,
+    écriture atomique et résolution des chemins de configuration.
     """
+
+    @staticmethod
+    def format_duration(seconds: float) -> str:
+        """
+        Formate une durée en secondes sous forme lisible par un humain
+        (ex: '42.3s', '2 min 49s', '1 h 05 min 12s').
+
+        :param seconds: Durée écoulée en secondes.
+        :return: Chaîne formatée lisible.
+        """
+        safe_sec: float = max(0.0, float(seconds))
+        if safe_sec < 60.0:
+            return f"{safe_sec:.1f}s"
+
+        total_seconds: int = int(round(safe_sec))
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+
+        if hours > 0:
+            return f"{hours} h {minutes:02d} min {secs:02d}s"
+        return f"{minutes} min {secs:02d}s"
 
     @staticmethod
     def strip_accents(text: str) -> str:
@@ -165,3 +186,49 @@ class SharedCoreUtils:
                     if norm:
                         names.add(norm)
         return names
+
+    @classmethod
+    def load_locations_set(cls, file_path: str) -> Set[str]:
+        """
+        Charge les villes et communes supplémentaires depuis un fichier texte
+        (une entrée par ligne ou séparée par des virgules, commentaires '#' ignorés).
+
+        :param file_path: Chemin vers villes_masquees.txt.
+        :return: Ensemble des noms de lieux normalisés sans accents.
+        """
+        locations: Set[str] = set()
+        if not os.path.exists(file_path):
+            return locations
+        with open(file_path, "r", encoding="utf-8") as f_in:
+            for raw_line in f_in:
+                cleaned: str = raw_line.strip()
+                if not cleaned or cleaned.startswith("#"):
+                    continue
+                for item in cleaned.split(","):
+                    norm: str = cls.normalize_token(item)
+                    if len(norm) >= 3:
+                        locations.add(norm)
+        return locations
+
+    @classmethod
+    def load_words_set(cls, file_path: str) -> Set[str]:
+        """
+        Charge une liste de mots exclus depuis un fichier texte
+        (un mot par ligne ou séparé par des virgules, commentaires '#' ignorés).
+
+        :param file_path: Chemin vers mots_exclus.txt.
+        :return: Ensemble des mots normalisés sans accents.
+        """
+        words: Set[str] = set()
+        if not os.path.exists(file_path):
+            return words
+        with open(file_path, "r", encoding="utf-8") as f_in:
+            for raw_line in f_in:
+                cleaned: str = raw_line.strip()
+                if not cleaned or cleaned.startswith("#"):
+                    continue
+                for item in cleaned.split(","):
+                    norm: str = cls.normalize_token(item)
+                    if norm:
+                        words.add(norm)
+        return words

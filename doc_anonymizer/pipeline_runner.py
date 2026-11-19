@@ -6,6 +6,7 @@ import shutil
 import threading
 import time
 from typing import List, Set
+from common.core_utils import SharedCoreUtils
 from doc_anonymizer.anonymization_runner import DocumentAnonymizationRunner
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.discovered_contacts_builder import (
@@ -137,6 +138,7 @@ class DocAnonymizerPipelineRunner:
         self._anonymize_pending_transcriptions(second_anonymizer)
         second_anonymizer.finalize(pass_start)
         return True
+
     def run_all(self) -> None:
         """
         Exécute le rattrapage des transcriptions, l'extraction parallèle et
@@ -219,5 +221,5 @@ class DocAnonymizerPipelineRunner:
                 anonymizer.flush_batch()
                 raise
 
-        elapsed: float = time.perf_counter() - start_time
-        print(f"\nPipeline parallèle terminé en {elapsed:.1f}s.", flush=True)
+        elapsed_str: str = SharedCoreUtils.format_duration(time.perf_counter() - start_time)
+        print(f"\nPipeline parallèle terminé en {elapsed_str}.", flush=True)
