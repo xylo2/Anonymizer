@@ -26,9 +26,9 @@ class TestDocAnonymizer(unittest.TestCase):
         """
         Vérifie la détection des numéros NIR, IBAN, adresses postales et SMS.
         """
-        self.assertIsNotNone(DocumentTextUtils.REGEX_SSN.search("NIR : 1 85 05 75 123 456 78"))
+        self.assertIsNotNone(DocumentTextUtils.REGEX_SSN.search("NIR : 1 90 01 75 001 002 03"))
         self.assertIsNotNone(
-            DocumentTextUtils.REGEX_IBAN.search("FR76 3000 6000 0112 3456 7890 189")
+            DocumentTextUtils.REGEX_IBAN.search("FR76 3000 1007 9412 3456 7890 185")
         )
         self.assertIsNotNone(
             DocumentTextUtils.REGEX_STREET_ADDRESS.search("Habite au 14 bis rue de la Paix")
@@ -37,8 +37,8 @@ class TestDocAnonymizer(unittest.TestCase):
             DocumentTextUtils.REGEX_POSTAL_CITY.search("75001 Paris")
         )
 
-        group_addrs = DocumentTextUtils.split_sms_addresses("+33611223344~0655667788+33699887766")
-        self.assertEqual(group_addrs, ["0611223344", "0655667788", "0699887766"])
+        group_addrs = DocumentTextUtils.split_sms_addresses("+33600000001~0600000002+33600000003")
+        self.assertEqual(group_addrs, ["0600000001", "0600000002", "0600000003"])
 
     def test_period_detection_priority(self) -> None:
         """
@@ -64,12 +64,12 @@ class TestDocAnonymizer(unittest.TestCase):
         )
         self.assertTrue(
             DiscoveredEmailContactsBuilder.is_valid_discoverable_email(
-                "alice.pares@sept-lieues.com"
+                "alice.martin@exemple-fictif.fr"
             )
         )
         self.assertTrue(ContactRulesLoader.is_one_edit_away("barriere", "barrere"))
-        self.assertTrue(ContactRulesLoader.is_one_edit_away("lubrano", "lubrono"))
-        self.assertFalse(ContactRulesLoader.is_one_edit_away("dupont", "durand"))
+        self.assertTrue(ContactRulesLoader.is_one_edit_away("durand", "durond"))
+        self.assertFalse(ContactRulesLoader.is_one_edit_away("dupont", "martin"))
     def test_anonymization_ocr_glued_and_auto_pairs(self) -> None:
         """
         Vérifie le masquage des noms collés OCR, des confusions chiffres/lettres,
@@ -77,7 +77,7 @@ class TestDocAnonymizer(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory(prefix="test_doc_anon_") as tmp_dir:
             with open(os.path.join(tmp_dir, "prenoms.txt"), "w", encoding="utf-8") as f_fn:
-                f_fn.write("jean\nsophie\nluc\ncédric\nmartin\naurélie\ncharlotte\nnassiba\ngabrielle\nphilippe\n")
+                f_fn.write("jean\nsophie\nluc\ncédric\nmartin\nalice\ncharlotte\nnadia\ngabrielle\nphilippe\n")
 
             with open(os.path.join(tmp_dir, "villes_masquees.txt"), "w", encoding="utf-8") as f_loc:
                 f_loc.write("boulon\nifs\nfresney-le-puceux\nboigny-sur-bionne\nsainte-honorine-du-fay\n")
@@ -85,12 +85,12 @@ class TestDocAnonymizer(unittest.TestCase):
             with open(os.path.join(tmp_dir, "contacts.txt"), "w", encoding="utf-8") as f_ct:
                 f_ct.write(
                     "Jean Dupont = Jean D.\n"
-                    "Aurélie Sobréro = Aurélie S.\n"
+                    "Alice Mercier = Alice M.\n"
                     "Cédric Martin = Cédric M.\n"
                     "Jean De La Tour = Jean D. L. T.\n"
                     "Paul Grand = Paul G.\n"
-                    "Elicap = Elicap\n"
-                    "L'Observatoire du pain (opinionvalley) = L'Observatoire du pain (opinionvalley)\n"
+                    "SocieteFictive = SocieteFictive\n"
+                    "Agence du Nord (domaine-fictif) = Agence du Nord (domaine-fictif)\n"
                 )
 
             trans_dir: str = os.path.join(tmp_dir, "transcriptions", "2024-05", "Documents")
@@ -99,14 +99,14 @@ class TestDocAnonymizer(unittest.TestCase):
             with open(sample_txt, "w", encoding="utf-8") as f_txt:
                 f_txt.write(
                     "Réunion avec Jean Dupont, M. Martin et Jean De La Tour.\n"
-                    "En-tête OCR collé : MMESOBREROAURELIE habitant 12 rue des Lilas 14220 B0ULON et 1FS.\n"
+                    "En-tête OCR collé : MMEMERCIERALICE habitant 12 rue des Lilas 14220 B0ULON et 1FS.\n"
                     "Mot de passe collé : 3005fresneylepuceux à Boigny-sur-Bionne et St Honorine du Fay.\n"
-                    "Saisie par Charlotte HIVET et audition de ASMANE Nassiba.\n"
-                    "Agenda ICS : RDV avec Philippe Foret\\, médecin Ramata DIA.\n"
-                    "Liste MIME : \"chollier@exemple.fr Chollier\" et colis Vinted (vaubyessard).\n"
-                    "MRZ : IDFRALM0V4FLX47<<<<<<<<<<<<<<<\n"
+                    "Saisie par Charlotte LEFEBVRE et audition de BERNARD Nadia.\n"
+                    "Agenda ICS : RDV avec Philippe Lambert\\, médecin Nadia LAURENT.\n"
+                    "Liste MIME : \"valois@exemple.fr Valois\" et colis Vinted (pseudo_test_123).\n"
+                    "MRZ : IDFRA0000000000<<<<<<<<<<<<<<<\n"
                     "Texte courant à préserver : une grande fenêtre et un grand merci à Paul Grand.\n"
-                    "NIR:185057512345678 et IBAN FR7630006000011234567890189.\n"
+                    "NIR:190017500100203 et IBAN FR7630001007941234567890185.\n"
                     "Mention phonétique : Luc Dubunt et Sophie Moreau.\n"
                 )
             cfg_path: str = os.path.join(tmp_dir, "config.ini")
@@ -134,18 +134,18 @@ class TestDocAnonymizer(unittest.TestCase):
             self.assertIn("Jean D.", res_txt)
             self.assertIn("Cédric M.", res_txt)
             self.assertIn("Jean D. L. T.", res_txt)
-            self.assertIn("Charlotte H.", res_txt)
-            self.assertIn("A. Nassiba", res_txt)
-            self.assertIn("Philippe F.,", res_txt)
-            self.assertIn("Ramata D.", res_txt)
-            self.assertIn('"EMAIL_001 C."', res_txt)
+            self.assertIn("Charlotte L.", res_txt)
+            self.assertIn("B. Nadia", res_txt)
+            self.assertIn("Philippe L.,", res_txt)
+            self.assertIn("Nadia L.", res_txt)
+            self.assertIn('"EMAIL_001 V."', res_txt)
             self.assertIn("Vinted ([PSEUDO_MASQUE])", res_txt)
             self.assertIn("[MRZ_IDENTITE_MASQUEE]", res_txt)
             self.assertIn("une grande fenêtre et un grand merci à Paul G.", res_txt)
             self.assertNotIn("St Honorine du Fay", res_txt)
-            self.assertNotIn("SOBRERO", res_txt)
-            self.assertNotIn("HIVET", res_txt)
-            self.assertNotIn("ASMANE", res_txt)
+            self.assertNotIn("MERCIER", res_txt)
+            self.assertNotIn("LEFEBVRE", res_txt)
+            self.assertNotIn("BERNARD", res_txt)
             self.assertNotIn("B0ULON", res_txt)
             self.assertNotIn("1FS", res_txt)
             self.assertNotIn("fresneylepuceux", res_txt)
@@ -163,7 +163,7 @@ class TestDocAnonymizer(unittest.TestCase):
             with open(config.audit_report_file, "r", encoding="utf-8") as f_aud:
                 audit_txt: str = f_aud.read()
             self.assertRegex(audit_txt, r"Dubunt\s+=\s+D\.\s+#\s+\[\s*1x\]\s+\(Proche de 'Dupont'\)")
-            self.assertNotIn("Elicap", audit_txt)
+            self.assertNotIn("SocieteFictive", audit_txt)
             self.assertNotIn("Saint-Martin-De", audit_txt)
             self.assertNotIn("Gabrielle", audit_txt)
 

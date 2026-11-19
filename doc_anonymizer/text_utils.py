@@ -1,300 +1,437 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
-import datetime
+from datetime import datetime
 import html
 import os
 import re
-from typing import Dict, FrozenSet, List, Optional, Pattern, Set, Tuple
-from common.core_utils import SharedCoreUtils
+import tempfile
+from typing import Any, Dict, List, Optional, Pattern, Set, Tuple
+import unicodedata
+import xml.etree.ElementTree as ET
 
 
 class DocumentTextUtils:
     """
-    Regroupe les expressions régulières de données sensibles, les outils
-    de normalisation de texte et la construction d'arbres préfixes (Trie)
-    tolérants aux variantes typographiques, OCR et encodages corrompus.
+    Fournit les utilitaires de normalisation linguistique, de détection
+    d'entités sensibles, d'extraction sécurisée (HTML/ICS/XML) et de
+    construction d'arbres préfixes (Trie) tolérants aux erreurs OCR.
     """
 
-    REGEX_SSN: Pattern[str] = re.compile(
-        r"(?<![0-9])\s*\d\s*\d{2}\s*(?:0[1-9]|1[0-2]|[2-9]\d)\s*"
-        r"(?:0[1-9]|[1-8]\d|9[0-5]|2[ABab]|9\d)\s*"
-        r"\d{3}\s*\d{3}(?:\s*\d{2})?(?![0-9])"
-    )
-    REGEX_IBAN: Pattern[str] = re.compile(
-        r"\b[A-Z]{2}[0-9]{2}(?:[\s\-]?[A-Z0-9]{4}){3,7}(?:[\s\-]?[A-Z0-9]{1,3})?\b"
-    )
-    REGEX_BIC: Pattern[str] = re.compile(
-        r"\b(?:BIC|SWIFT)\s*[:\-]?\s*[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b",
-        re.IGNORECASE,
-    )
-    REGEX_FISCAL_ID: Pattern[str] = re.compile(
-        r"\b(?:num[eé]ro\s+fiscal|n°\s*fiscal|spi)\s*[:\-]?\s*[0-9]{2}\s*[0-9]{2}\s*[0-9]{3}\s*[0-9]{3}\s*[0-9]{3}\b",
-        re.IGNORECASE,
-    )
-    REGEX_FRANCE_TRAVAIL: Pattern[str] = re.compile(
-        r"\b(?:identifiant|n°\s*allocataire|allocataire|p[oô]le\s*emploi|france\s*travail)\s*[:\-]?\s*[0-9]{7}[A-Z]\b",
-        re.IGNORECASE,
-    )
-    REGEX_CAF_ALLOCATAIRE: Pattern[str] = re.compile(
-        r"\b(?:allocataire|n°\s*caf|dossier\s*caf)\s*[:\-]?\s*[0-9]{7,8}\b",
-        re.IGNORECASE,
-    )
     REGEX_EMAIL: Pattern[str] = re.compile(
-        r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
     )
     REGEX_PHONE: Pattern[str] = re.compile(
-        r"(?:(?:\+|00)\s*33[\s.\-\u00a0()]*0?|0)[1-9](?:[\s.\-\u00a0()]*\d{2}){4}\b"
+        r"(?<!\d)(?:\+33\s*(?:\(0\)\s*)?|0033\s*(?:\(0\)\s*)?|0)[1-9]"
+        r"(?:[\s.\-]?\d{2,3}){3,4}(?!\d)"
     )
-    REGEX_URL: Pattern[str] = re.compile(
-        r"(?:https?://|www\.)[^\s\x3c\x3e\"'\]\)]+",
+    REGEX_SSN: Pattern[str] = re.compile(
+        r"(?<!\d)(?:1|2)\s?\d{2}\s?(?:0[1-9]|1[0-2]|2[0-9]|[3-9]\d)\s?"
+        r"(?:\d{2}|2[AB])\s?\d{3}\s?\d{3}(?:\s?\d{2})?(?!\d)",
         re.IGNORECASE,
     )
-    REGEX_STREET_ADDRESS: Pattern[str] = re.compile(
-        r"\b(?:"
-        r"\d{1,4}(?:\s*(?:bis|ter|quater|[a-z]))?[\s,]+(?:rue|avenue|av\.?|boulevard|bd\.?|all[eé]e|impasse|imp\.?|place|pl\.?|chemin|route|rte\.?|voie|passage|square|quai|cours|faubourg|lieu[\s\-]dit|lotissement)\s+(?:de\s+la\s+|des\s+|du\s+|de\s+|d'|l')?[A-Za-zÀ-ÿ0-9'\- ]{2,40}"
-        r"|(?:rue|avenue|av\.?|boulevard|bd\.?|all[eé]e|impasse|imp\.?|place|pl\.?|chemin|route|rte\.?|square|quai|cours|faubourg|lieu[\s\-]dit|lotissement)\s+(?:de\s+la\s+|des\s+|du\s+|de\s+|d'|l')?[A-ZÀ-Ÿ][A-Za-zÀ-ÿ0-9'\- ]{2,35}"
+    REGEX_IBAN: Pattern[str] = re.compile(
+        r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,3})?\b"
+    )
+    REGEX_BIC: Pattern[str] = re.compile(
+        r"\b[A-Z]{4}FR[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b"
+    )
+    REGEX_FISCAL_ID: Pattern[str] = re.compile(
+        r"(?i)\b(?:n[°o]?\s*fiscal|spi|revenu\s+fiscal)[^\d\n]{0,15}\d{13}\b"
+    )
+    REGEX_FRANCE_TRAVAIL: Pattern[str] = re.compile(
+        r"(?i)\b(?:identifiant|p[ôo]le\s*emploi|france\s*travail)[^\w\n]{0,20}\d{7}[A-Z]\b"
+    )
+    REGEX_CAF_ALLOCATAIRE: Pattern[str] = re.compile(
+        r"(?i)\b(?:allocataire|caf)[^\d\n]{0,15}\d{7,8}\b"
+    )
+    REGEX_OFFICIAL_MEDICAL_ID: Pattern[str] = re.compile(
+        r"(?i)\b(?:"
+        r"ipp\s*[:#-]?\s*\d{6,10}"
+        r"|(?:n[°o]\s*(?:rpps|am|finess|sinistre|dossier|ordre|électeur|electeur)"
+        r"|cartenationale\s*d'identiten[°o])\s*[:#-]?\s*[A-Z0-9]{7,15}"
+        r"(?:\s+\d{2}\s+\d\s+[A-Z0-9]{2}\s+\d)?"
+        r"|cni\s*[:#-]?\s*[A-Z0-9]{9,12}"
+        r"|[A-Z]{2}\d[A-Z0-9]{6}"
+        r"|\d{6}X{4,8}\d{4}"
         r")\b"
     )
-    REGEX_POSTAL_CITY: Pattern[str] = re.compile(
-        r"\b(?:0[1-9]|[1-8]\d|9[0-5]|9\d)\d{3}\s+[A-ZÀ-Ÿ][A-Za-zÀ-ÿ'\- ]{2,35}\b"
+    REGEX_URL: Pattern[str] = re.compile(
+        r"(?:https?://|www\.)[^\s<>\"'\)\]]+", re.IGNORECASE
     )
-    MOJIBAKE_SEQ: str = r"(?:ï¿½|\ufffd)"
-    ACCENT_GROUPS: Dict[str, str] = {
-        "a": rf"(?:[aàâä@4]|{MOJIBAKE_SEQ})",
-        "e": rf"(?:[eéèêë]|{MOJIBAKE_SEQ})",
-        "i": rf"(?:[iîï1l]|{MOJIBAKE_SEQ})",
-        "o": rf"(?:[oôö0]|{MOJIBAKE_SEQ})",
-        "u": rf"(?:[uùûü]|{MOJIBAKE_SEQ})",
-        "c": rf"(?:[cç]|{MOJIBAKE_SEQ})",
-        "n": "[nñ]",
-        "y": "[yÿ]",
-        "s": "[s5]",
-        "b": "[b8]",
-        "g": "[g6]",
-    }
 
-    ORG_GENERIC_WORDS: FrozenSet[str] = frozenset({
-        "cabinet", "mairie", "association", "laboratoire", "pharmacie",
-        "clinique", "hopital", "centre", "direction", "service",
-        "secretariat", "accueil", "presse", "agence", "atelier",
-        "restaurant", "hotel", "garage", "ecole", "college", "lycee",
-        "universite", "tribunal", "prefecture", "banque", "assurance",
+    _STREET_TYPES: str = (
+        r"(?:rue|avenue|av\.?|boulevard|bd\.?|bld\.?|all[ée]e|all\.?|impasse|imp\.?|"
+        r"place|pl\.?|chemin|chem\.?|route|rte\.?|quai|square|sq\.?|cours|passage|"
+        r"sentier|voie|faubourg|fbg\.?|r[ée]sidence|r[ée]s\.?|lotissement|hameau|"
+        r"lieu-dit|lieudit|esplanade|terrasse|parvis|promenade|foss[ée]s)"
+    )
+
+    REGEX_STREET_ADDRESS: Pattern[str] = re.compile(
+        rf"(?i)\b\d{{1,4}}(?:\s*(?:bis|ter|quater))?\s*[,]?\s*{_STREET_TYPES}\b"
+        rf"[^\n,;()\[\]{{}}]{{2,50}}"
+    )
+
+    REGEX_POSTAL_CITY: Pattern[str] = re.compile(
+        r"(?<!\d)\b(?:0[1-9]|[1-8]\d|9[0-8])\d{3}\s*"
+        r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+"
+        r"(?:[\s\-]+(?:sur|sous|en|de|du|des|la|le|les|l'|st|ste|saint|sainte|"
+        r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+)){0,5}\b"
+    )
+    ORG_GENERIC_WORDS = frozenset({
+        "france", "travail", "pole", "emploi", "caf", "cpam", "urssaf",
+        "caisse", "primaire", "assurance", "maladie", "mutuelle", "banque",
+        "postale", "credit", "agricole", "mutuel", "lyonnais", "societe",
+        "generale", "bnp", "paribas", "epargne", "poste",
+        "service", "services", "client", "clients", "contact", "contacts",
+        "direction", "departement", "region", "mairie", "commune", "ville",
+        "prefecture", "ministere", "academie", "rectorat", "ecole", "college",
+        "lycee", "universite", "institut", "centre", "hopital", "clinique",
+        "chu", "cabinet", "laboratoire", "pharmacie", "association", "groupe",
+        "agence", "bureau", "atelier", "ateliers", "entreprise", "sarl",
+        "sas", "eurl", "sa", "sci", "scp", "selarl", "syndicat", "comite",
+        "conseil", "ordre", "tribunal", "cour", "justice", "police",
+        "gendarmerie", "pompiers", "samu", "smur", "ars", "has", "ansm",
+        "cnam", "carsat", "msa", "rsi", "cipav", "agirc", "arrco",
+        "retraite", "prevoyance", "sante", "social", "sociale", "medico",
+        "medical", "medicale", "paramedical", "infirmier", "infirmiere",
+        "medecin", "docteur", "professeur", "chirurgien", "dentiste",
+        "kinesitherapeute", "osteopathe", "psychologue", "psychiatre",
+        "orthophoniste", "podologue", "sage", "femme", "aide", "soignant",
+        "soignante", "auxiliaire", "puericulture", "creche", "halte",
+        "garderie", "loisirs", "vacances", "animation", "culture", "sport",
+        "musique", "danse", "theatre", "cinema", "bibliotheque", "mediatheque",
+        "musee", "office", "tourisme", "syndicat", "initiative", "parc",
+        "jardin", "foret", "nature", "environnement", "energie", "eau",
+        "electricite", "gaz", "telephone", "internet", "mobile", "fibre",
+        "orange", "sfr", "bouygues", "free", "edf", "engie", "veolia",
+        "suez", "sncf", "ratp", "transilien", "ter", "tgv", "ouigo",
+        "air", "bus", "tram", "metro", "velo", "auto", "moto", "garage",
+        "controle", "technique", "dekra", "norisko", "securitest",
+        "maif", "macif", "matmut", "gmf", "mma", "axa", "allianz",
+        "generali", "groupama", "gan", "swiss", "life", "amazon", "cdiscount",
+        "fnac", "darty", "boulanger", "ikea", "conforama", "but", "castorama",
+        "leroy", "merlin", "bricorama", "bricomarche", "weldom", "point",
+        "gedimat", "kiloutou", "loxam", "carrefour", "leclerc", "auchan",
+        "intermarche", "super", "hyper", "monoprix", "franprix", "lidl",
+        "aldi", "netto", "leader", "price", "picard", "biocoop", "naturalia",
+        "vie", "grand", "frais", "decathlon", "intersport", "go",
+        "courir", "foot", "locker", "kiabi", "gem", "gemo", "chaussea",
+        "besson", "eram", "andre", "minelli", "san", "marina", "bata",
+        "halle", "vetements", "chaussures", "vinted", "leboncoin", "rakuten",
+        "ebay", "paypal", "paylib", "lydia", "sumup", "mondial", "relay",
+        "colissimo", "chronopost", "dpd", "gls", "ups", "dhl", "fedex",
+        "tnt", "relais", "colis", "pickup", "drive", "livraison", "commande",
+        "facture", "devis", "avoir", "remboursement", "paiement", "virement",
+        "prelevement", "cheque", "especes", "carte", "bancaire", "visa",
+        "mastercard", "compte", "livret", "epargne", "pret", "impots",
+        "tresor", "public", "finances", "publiques", "net", "entreprises",
+        "infogreffe", "verif", "pappers", "kompass", "pages", "jaunes",
+        "blanches", "google", "microsoft", "apple", "samsung", "android",
+        "ios", "windows", "mac", "linux", "ubuntu", "debian", "java",
+        "python", "javascript", "html", "css", "sql", "json", "xml",
+        "rest", "api", "web", "site", "blog", "forum", "mail", "email",
+        "courriel", "message", "sms", "mms", "appel", "visio", "teams",
+        "zoom", "skype", "whatsapp", "telegram", "signal", "messenger",
+        "facebook", "instagram", "twitter", "linkedin", "viadeo", "youtube",
+        "tiktok", "snapchat", "pinterest", "reddit", "discord", "twitch",
+        "spotify", "deezer", "netflix", "canal", "plus", "prime", "video",
+        "disney", "molotov", "salto", "ocs", "bein", "rmc", "bfm", "lci",
+        "cnews", "tf1", "m6", "arte", "w9", "tmc", "tfx", "nrj12",
     })
-    MONTH_NAMES_TO_NUM: Dict[str, str] = {
+    MOJIBAKE_REPLACEMENTS: Tuple[Tuple[str, str], ...] = (
+        ("Ã©", "é"), ("Ã¨", "è"), ("Ãª", "ê"), ("Ã«", "ë"),
+        ("Ã ", "à"), ("Ã¢", "â"), ("Ã¤", "ä"),
+        ("Ã®", "î"), ("Ã¯", "ï"),
+        ("Ã´", "ô"), ("Ã¶", "ö"),
+        ("Ã¹", "ù"), ("Ã»", "û"), ("Ã¼", "ü"),
+        ("Ã§", "ç"),
+        ("Ã‰", "É"), ("Ãˆ", "È"), ("ÃŠ", "Ê"), ("Ã‹", "Ë"),
+        ("Ã€", "À"), ("Ã‚", "Â"), ("Ã„", "Ä"),
+        ("ÃŽ", "Î"), ("Ã\x8f", "Ï"),
+        ("Ã”", "Ô"), ("Ã–", "Ö"),
+        ("Ã™", "Ù"), ("Ã›", "Û"), ("Ãœ", "Ü"),
+        ("Ã‡", "Ç"),
+        ("â€™", "'"), ("â€œ", '"'), ("â€\x9d", '"'),
+        ("â€“", "-"), ("â€”", "-"), ("â€¦", "..."),
+        ("Â ", " "), ("Â«", "«"), ("Â»", "»"),
+    )
+
+    FRENCH_MONTHS: Dict[str, str] = {
         "janvier": "01", "janv": "01", "jan": "01",
-        "fevrier": "02", "fevr": "02", "feb": "02",
+        "fevrier": "02", "février": "02", "fevr": "02", "févr": "02", "feb": "02",
         "mars": "03", "mar": "03",
         "avril": "04", "avr": "04", "apr": "04",
         "mai": "05", "may": "05",
         "juin": "06", "jun": "06",
         "juillet": "07", "juil": "07", "jul": "07",
-        "aout": "08", "aug": "08",
+        "aout": "08", "août": "08", "aug": "08",
         "septembre": "09", "sept": "09", "sep": "09",
         "octobre": "10", "oct": "10",
         "novembre": "11", "nov": "11",
-        "decembre": "12", "dec": "12",
+        "decembre": "12", "décembre": "12", "dec": "12", "déc": "12",
     }
 
-    @staticmethod
-    def repair_mojibake(text: str) -> str:
-        """Corrige les séquences UTF-8 décodées en Latin-1/CP1252."""
-        if "Ã" not in text and "Â" not in text:
+    @classmethod
+    def repair_mojibake(cls, text: str) -> str:
+        """Corrige les séquences UTF-8 mal décodées en Latin-1/Windows-1252."""
+        if "Ã" not in text and "â€" not in text and "Â" not in text:
             return text
-        for enc in ("cp1252", "latin-1"):
-            try:
-                fixed: str = text.encode(enc).decode("utf-8")
-                return fixed
-            except (UnicodeEncodeError, UnicodeDecodeError):
-                continue
-        return (
-            text.replace("Ã©", "é").replace("Ã¨", "è").replace("Ãª", "ê")
-            .replace("Ã ", "à").replace("Ã¢", "â").replace("Ã´", "ô")
-            .replace("Ã®", "î").replace("Ã¯", "ï").replace("Ã»", "û")
-            .replace("Ã§", "ç").replace("Ã‰", "É").replace("Ãˆ", "È")
-        )
-
-    @classmethod
-    def normalize_word(cls, text: str) -> str:
-        """Normalise un mot après réparation des problèmes d'encodage."""
-        repaired: str = cls.repair_mojibake(text)
-        cleaned: str = repaired.replace("ï¿½", "e").replace("\ufffd", "e")
-        return SharedCoreUtils.normalize_token(cleaned)
-
-    @classmethod
-    def normalize_identifier(cls, value: str) -> str:
-        """Normalise un numéro de téléphone ou une adresse e-mail."""
-        return SharedCoreUtils.normalize_identifier(value, lowercase_email=True)
+        repaired: str = text
+        for bad, good in cls.MOJIBAKE_REPLACEMENTS:
+            if bad in repaired:
+                repaired = repaired.replace(bad, good)
+        return repaired
 
     @staticmethod
-    def is_contact_identifier(value: str) -> bool:
-        """Indique si la chaîne correspond à un e-mail ou un téléphone."""
-        v: str = value.strip()
-        if "@" in v:
-            return True
-        digits: str = re.sub(r"[\s.\-\u00a0()+]", "", v)
-        return len(digits) >= 7 and digits.isdigit()
+    def normalize_word(word: str) -> str:
+        """Normalise un mot en minuscules sans accents ni ponctuation périphérique."""
+        nfkd: str = unicodedata.normalize("NFKD", word.strip().lower())
+        no_acc: str = "".join(c for c in nfkd if not unicodedata.combining(c))
+        return re.sub(r"^[^\w]+|[^\w]+$", "", no_acc)
+
+    @staticmethod
+    def sanitize_filename(name: str) -> str:
+        """Nettoie un nom de fichier pour Windows/Linux en conservant l'extension."""
+        cleaned: str = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip()
+        return cleaned or "document_sans_nom"
+
+    @staticmethod
+    def atomic_write_text(target_path: str, content: str) -> None:
+        """Écrit un fichier texte de façon atomique via fichier temporaire."""
+        parent_dir: str = os.path.dirname(os.path.abspath(target_path))
+        os.makedirs(parent_dir, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=parent_dir, prefix=".tmp_anon_", suffix=".txt"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f_out:
+                f_out.write(content)
+            os.replace(tmp_path, target_path)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
+    @staticmethod
+    def _normalize_fr_phone(raw_val: str) -> str:
+        """Normalise un numéro français au format canonique '0XXXXXXXXX'."""
+        digits: str = re.sub(r"[\s.\-()]+", "", raw_val.strip())
+        if digits.startswith("+33") and len(digits) == 12 and digits[3:].isdigit():
+            return "0" + digits[3:]
+        if digits.startswith("0033") and len(digits) == 13 and digits[4:].isdigit():
+            return "0" + digits[4:]
+        if digits.startswith("0") and len(digits) == 10 and digits.isdigit():
+            return digits
+        return ""
+
     @classmethod
-    def split_sms_addresses(cls, raw_addr: str) -> List[str]:
-        """Découpe et normalise les destinataires multiples d'un SMS/MMS."""
-        if not raw_addr:
+    def normalize_identifier(cls, raw_val: str) -> str:
+        """Normalise un e-mail (sans +alias) ou un numéro de téléphone français."""
+        cleaned: str = raw_val.strip()
+        if not cleaned:
+            return ""
+        if "@" in cleaned:
+            return re.sub(r"\+[^@]+(?=@)", "", cleaned.lower()).strip()
+        norm_phone: str = cls._normalize_fr_phone(cleaned)
+        return norm_phone if norm_phone else cleaned.lower()
+
+    @classmethod
+    def load_filter_contacts(cls, file_path: str) -> Tuple[Dict[str, str], Set[str]]:
+        """Charge les numéros de téléphone et adresses e-mail depuis un fichier de contacts."""
+        target_phones: Dict[str, str] = {}
+        allowed_emails: Set[str] = set()
+        if not file_path or not os.path.exists(file_path):
+            return target_phones, allowed_emails
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            for raw_line in f:
+                line: str = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                left_p, right_p = line.split("=", 1)
+                left: str = left_p.strip()
+                right: str = right_p.strip()
+                if not left or not right:
+                    continue
+                if "@" in left:
+                    norm_mail: str = cls.normalize_identifier(left)
+                    if norm_mail:
+                        allowed_emails.add(norm_mail)
+                else:
+                    norm_phone: str = cls._normalize_fr_phone(left)
+                    if norm_phone:
+                        target_phones[norm_phone] = right
+        return target_phones, allowed_emails
+
+    @classmethod
+    def detect_period_in_text(cls, text: str) -> Optional[str]:
+        """Détecte une période AAAA-MM dans un nom de fichier ou un texte."""
+        if not text:
+            return None
+        m_iso = re.search(r"(?<!\d)(19\d{2}|20\d{2})[-_/.](0[1-9]|1[0-2])(?!\d)", text)
+        if m_iso:
+            return f"{m_iso.group(1)}-{m_iso.group(2)}"
+        m_fr = re.search(r"(?<!\d)(?:0?[1-9]|\d|3)[/\-.](0[1-9]|1[0-2])[/\-.](19\d{2}|20\d{2})(?!\d)", text)
+        if m_fr:
+            return f"{m_fr.group(3)}-{m_fr.group(1)}"
+        m_compact = re.search(r"(?<!\d)(19\d{2}|20\d{2})(0[1-9]|1[0-2])(?:0[1-9]|\d|3)(?!\d)", text)
+        if m_compact:
+            return f"{m_compact.group(1)}-{m_compact.group(2)}"
+        m_word = re.search(
+            r"(?i)(?<![A-Za-zÀ-ÿ])([a-zéû]{3,10})\.?\s+(19\d{2}|20\d{2})(?!\d)",
+            text,
+        )
+        if m_word:
+            month_num = cls.FRENCH_MONTHS.get(m_word.group(1).lower())
+            if month_num:
+                return f"{m_word.group(2)}-{month_num}"
+        return None
+    @classmethod
+    def split_sms_addresses(cls, raw_address: str) -> List[str]:
+        """Découpe les adresses multiples d'un SMS/MMS et normalise les numéros FR."""
+        if not raw_address:
             return []
-        prepared: str = re.sub(r"(?<=\d)(?=\+33|0033)", "~", raw_addr)
-        result: List[str] = []
-        for part in re.split(r"[~,;\s]+", prepared):
-            cleaned: str = part.strip()
-            if not cleaned or cleaned.lower().endswith("://google.com"):
-                continue
-            norm: str = cls.normalize_identifier(cleaned)
-            if norm and norm not in result:
-                result.append(norm)
-        return result
+        parts: List[str] = []
+        for chunk in re.split(r"[~;,]+", raw_address):
+            sub_chunks = re.split(r"(?<=\d)(?=(?:\+33|0033|0[1-9]\d{8}))", chunk.strip())
+            for sc in sub_chunks:
+                val = sc.strip()
+                if not val:
+                    continue
+                norm_fr = cls._normalize_fr_phone(val)
+                parts.append(norm_fr if norm_fr else val)
+        return parts
+
+    @staticmethod
+    def format_epoch_ms(epoch_ms: str) -> str:
+        """Convertit un timestamp Unix en millisecondes en date lisible."""
+        try:
+            ts_sec: float = float(epoch_ms) / 1000.0
+            return datetime.fromtimestamp(ts_sec).strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError, OSError):
+            return str(epoch_ms)
+
+    @classmethod
+    def html_to_plain_text(cls, raw_html: str) -> str:
+        """Supprime les balises script/style et convertit le HTML en texte propre."""
+        if not raw_html:
+            return ""
+        cleaned: str = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", " ", raw_html)
+        cleaned = re.sub(r"(?i)<br\s*/?>", "\n", cleaned)
+        cleaned = re.sub(r"(?i)</(?:p|div|li|tr|h[1-6])>", "\n", cleaned)
+        cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+        cleaned = html.unescape(cleaned)
+        lines: List[str] = [re.sub(r"[ \t]+", " ", ln).strip() for ln in cleaned.splitlines()]
+        return "\n".join(ln for ln in lines if ln)
+
+    @classmethod
+    def strip_html_tags(cls, raw_html: str) -> str:
+        """Alias rétrocompatible vers html_to_plain_text."""
+        return cls.html_to_plain_text(raw_html)
+
+    @classmethod
+    def extract_ics_text(cls, raw_ics: str) -> str:
+        """Extrait et formate les événements VEVENT d'un fichier agenda ICS."""
+        if not raw_ics:
+            return ""
+        unfolded: str = re.sub(r"\r?\n[ \t]", "", raw_ics)
+        events: List[str] = []
+        in_event: bool = False
+        cur: Dict[str, str] = {}
+        for line in unfolded.splitlines():
+            stripped: str = line.strip()
+            if stripped == "BEGIN:VEVENT":
+                in_event = True
+                cur = {}
+            elif stripped == "END:VEVENT" and in_event:
+                in_event = False
+                block = [
+                    f"DTSTART:{cur.get('DTSTART', '')}",
+                    f"DTEND:{cur.get('DTEND', '')}",
+                    f"SUMMARY:{cur.get('SUMMARY', '')}",
+                    f"LOCATION:{cur.get('LOCATION', '')}",
+                    f"DESCRIPTION:{cur.get('DESCRIPTION', '')}",
+                ]
+                events.append("\n".join(b for b in block if not b.endswith(":")))
+            elif in_event and ":" in stripped:
+                key_part, val_part = stripped.split(":", 1)
+                base_key: str = key_part.split(";", 1).upper()
+                if base_key in {"DTSTART", "DTEND", "SUMMARY", "LOCATION", "DESCRIPTION"}:
+                    cur[base_key] = val_part.replace(r"\n", "\n").replace(r"\,", ",")
+        return "\n---\n".join(events)
+
+    @staticmethod
+    def safe_parse_xml_fromstring(xml_content: str) -> ET.Element:
+        """Parse une chaîne XML en bloquant toute déclaration DOCTYPE/ENTITY (XXE)."""
+        if re.search(r"<!(?:DOCTYPE|ENTITY)\b", xml_content, re.IGNORECASE):
+            raise ValueError("Déclaration DOCTYPE/ENTITY interdite (protection XXE).")
+        return ET.fromstring(xml_content)
 
     @classmethod
     def resolve_contact_pair(
         cls, left_part: str, right_part: str
     ) -> Tuple[str, str, str]:
-        """Identifie (cible, alias, identifiant_normalisé) quelle que soit l'orientation."""
+        """Résout une paire issue d'un fichier de contacts (cible = alias)."""
         left: str = left_part.strip()
         right: str = right_part.strip()
         if not left or not right:
             return "", "", ""
-        if cls.is_contact_identifier(left) and not cls.is_contact_identifier(right):
+        if "@" in left:
             return left, right, cls.normalize_identifier(left)
-        if cls.is_contact_identifier(right) and not cls.is_contact_identifier(left):
-            return right, left, cls.normalize_identifier(right)
+        norm_phone: str = cls._normalize_fr_phone(left)
+        if norm_phone:
+            return left, right, norm_phone
         return left, right, ""
 
-    @classmethod
-    def _char_to_ocr_atom(cls, ch: str) -> str:
-        """Convertit un caractère en atome regex tolérant aux variantes OCR sans explosion."""
-        low: str = SharedCoreUtils.strip_accents(ch).lower()
-        if low in (" ", "-", "'", "\u2019"):
-            return r"[\s\-'\u2019]?"
-        if low in cls.ACCENT_GROUPS:
-            return cls.ACCENT_GROUPS[low]
+    @staticmethod
+    def _char_to_ocr_regex(ch: str) -> str:
+        """Convertit un caractère en classe regex tolérante aux confusions OCR."""
+        low: str = ch.lower()
+        ocr_classes: Dict[str, str] = {
+            "a": "[aàâä4]", "à": "[aàâä4]", "â": "[aàâä4]", "ä": "[aàâä4]",
+            "b": "[b8]", "c": "[cç]", "ç": "[cç]",
+            "e": "[eéèêë]", "é": "[eéèêë]", "è": "[eéèêë]", "ê": "[eéèêë]", "ë": "[eéèêë]",
+            "g": "[g6]", "i": "[iîï1l]", "î": "[iîï1l]", "ï": "[iîï1l]",
+            "l": "[li1]", "o": "[oôö0]", "ô": "[oôö0]", "ö": "[oôö0]",
+            "s": "[s5]", "u": "[uùûü]", "ù": "[uùûü]", "û": "[uùûü]", "ü": "[uùûü]",
+            "y": "[yÿ]", "ÿ": "[yÿ]",
+            " ": r"[\s\-'\u2019]*", "-": r"[\s\-'\u2019]*",
+            "'": r"[\s\-'\u2019]*", "\u2019": r"[\s\-'\u2019]*",
+        }
+        if low in ocr_classes:
+            return ocr_classes[low]
         return re.escape(ch)
 
     @classmethod
-    def _trie_node_to_regex(cls, node: dict) -> str:
-        """Sérialise récursivement un noeud d'arbre préfixe en expression régulière."""
-        is_end: bool = "__END__" in node
-        branches: List[str] = []
-        for atom in sorted(k for k in node.keys() if k != "__END__"):
-            sub: str = cls._trie_node_to_regex(node[atom])
-            branches.append(f"{atom}{sub}")
-
-        if not branches:
+    def _compile_trie_node(cls, node: Dict[str, Any]) -> str:
+        """Sérialise récursivement un noeud d'arbre préfixe en motif regex."""
+        is_end: bool = bool(node.pop("__end__", False))
+        if not node:
             return ""
-        if len(branches) == 1:
-            (body,) = branches
-        else:
-            body = f"(?:{'|'.join(branches)})"
-        return f"(?:{body})?" if is_end else body
-
-    @classmethod
-    def build_trie_regex(cls, words: List[str]) -> str:
-        """Construit une regex factorisée par arbre préfixe (Trie)."""
-        return cls.build_ocr_tolerant_trie_regex(words)
+        branches: List[str] = []
+        for ch in sorted(node.keys(), key=lambda c: (-len(node[c]), c)):
+            sub: str = cls._compile_trie_node(node[ch])
+            branches.append(f"{cls._char_to_ocr_regex(ch)}{sub}")
+        joined: str = (
+            next(iter(branches))
+            if len(branches) == 1
+            else f"(?:{'|'.join(branches)})"
+        )
+        if is_end:
+            return f"(?:{joined})?"
+        return joined
 
     @classmethod
     def build_ocr_tolerant_trie_regex(cls, words: List[str]) -> str:
-        """Construit une regex Trie tolérante aux confusions OCR et accents."""
-        root: dict = {}
+        """Construit une expression régulière Trie compacte tolérante OCR."""
+        trie: Dict[str, Any] = {}
         unique_sorted: List[str] = sorted(
             {w.strip() for w in words if w and w.strip()},
-            key=lambda s: (-len(s), s.lower()),
+            key=lambda x: (-len(x), x),
         )
         for word in unique_sorted:
-            curr: dict = root
+            curr: Dict[str, Any] = trie
             for ch in word:
-                atom: str = cls._char_to_ocr_atom(ch)
-                curr = curr.setdefault(atom, {})
-            curr["__END__"] = True
-        return cls._trie_node_to_regex(root)
-    @staticmethod
-    def html_to_plain_text(raw_html: str) -> str:
-        """Convertit du code HTML en texte brut lisible."""
-        cleaned: str = re.sub(
-            r"\x3c(script|style)[^\x3e]*\x3e.*?\x3c/\1\x3e", " ", raw_html,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        cleaned = re.sub(r"\x3cbr\s*/?\x3e", "\n", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\x3c/(p|div|li|tr|h[1-6])\x3e", "\n", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\x3c[^\x3e]+\x3e", " ", cleaned)
-        cleaned = html.unescape(cleaned)
-        cleaned = re.sub(r"[ \t\r\f\v]+", " ", cleaned)
-        cleaned = re.sub(r"\n\s*\n+", "\n\n", cleaned)
-        return cleaned.strip()
-
-    @classmethod
-    def detect_period_in_text(cls, text: str) -> Optional[str]:
-        """Extrait une période AAAA-MM depuis une date ISO, française ou textuelle."""
-        iso_m = re.search(
-            r"(?<![0-9])(19[0-9]{2}|20[0-9]{2})[-_/\.](0[1-9]|1[0-2])(?:[-_/\.][0-9]{2})?(?![0-9])",
-            text,
-        )
-        if iso_m:
-            return f"{iso_m.group(1)}-{iso_m.group(2)}"
-        fr_m = re.search(
-            r"(?<![0-9])\d{1,2}[/\-\.](0[1-9]|1[0-2])[/\-\.](19[0-9]{2}|20[0-9]{2})(?![0-9])",
-            text,
-        )
-        if fr_m:
-            return f"{fr_m.group(2)}-{fr_m.group(1)}"
-        txt_norm: str = cls.normalize_word(text)
-        word_m = re.search(
-            r"(?<![0-9])\d{1,2}\s+([a-z]{3,9})\.?\s+(19[0-9]{2}|20[0-9]{2})(?![0-9])",
-            txt_norm,
-        )
-        if word_m and word_m.group(1) in cls.MONTH_NAMES_TO_NUM:
-            return f"{word_m.group(2)}-{cls.MONTH_NAMES_TO_NUM[word_m.group(1)]}"
-        return None
-
-    @classmethod
-    def resolve_file_period(
-        cls, extracted_text: str, file_name: str, file_path: str
-    ) -> str:
-        """Détermine la période AAAA-MM d'un document depuis son nom, son contenu ou sa date."""
-        for candidate in (file_name, extracted_text[:3000]):
-            period: Optional[str] = cls.detect_period_in_text(candidate)
-            if period:
-                return period
-        try:
-            mtime: float = os.path.getmtime(file_path)
-            return datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m")
-        except OSError:
-            return "0000-00"
-
-    @staticmethod
-    def atomic_write_text(
-        target_path: str, content: str, encoding: str = "utf-8"
-    ) -> None:
-        """Écrit un fichier texte de façon atomique."""
-        SharedCoreUtils.atomic_write_text(target_path, content, encoding=encoding)
-
-    @classmethod
-    def load_filter_contacts(
-        cls, contacts_path: str
-    ) -> Tuple[Optional[Dict[str, str]], Optional[Set[str]]]:
-        """Charge les téléphones et adresses e-mail autorisés depuis un fichier de contacts."""
-        if not os.path.exists(contacts_path):
-            print(f"[ERREUR] Fichier introuvable : '{contacts_path}'", flush=True)
-            return None, None
-        phones: Dict[str, str] = {}
-        emails: Set[str] = set()
-        with open(contacts_path, "r", encoding="utf-8") as f:
-            for raw_line in f:
-                line: str = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                for sep in ("=", ";", ","):
-                    if sep in line:
-                        left_p, right_p = line.split(sep, 1)
-                        target, alias, norm_id = cls.resolve_contact_pair(left_p, right_p)
-                        if target and alias and norm_id:
-                            if "@" in norm_id:
-                                emails.add(norm_id)
-                            else:
-                                phones[norm_id] = alias
-                        break
-        return phones, emails
+                if ch not in curr:
+                    curr[ch] = {}
+                curr = curr[ch]
+            curr["__end__"] = True
+        return cls._compile_trie_node(trie)

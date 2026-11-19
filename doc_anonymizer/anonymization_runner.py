@@ -45,17 +45,20 @@ class DocumentAnonymizationRunner:
     )
 
     MRZ_LINE_PATTERN: Pattern[str] = re.compile(
-        r"\b(?:IDFRA|P<FRA|[A-Z0-9]{9,}<{2,})[A-Z0-9<]{10,}"
+        r"\b(?:IDFRA|P<FRA|[A-Z0-9×]{9,}[<«]{2,})[A-Z0-9×<«]{10,}"
     )
 
+    HTML_INLINE_TAG_CLEANUP: Pattern[str] = re.compile(
+        r"(?i)</?(?:a|u|b|strong|span|em|i)\b[^>]*>"
+    )
     PARENS_PSEUDO_PATTERN: Pattern[str] = re.compile(
         r"(?i)\b((?:vinted|colis|mondial\s*relay|locker|le\s*bon\s*coin|rakuten)\b[^\n\(]{0,35})\(([a-z0-9_.-]{4,25})\)"
     )
 
     GLUED_TITLE_OR_CAMEL: Pattern[str] = re.compile(
         r"\b(DOCTEUR|Docteur|Dr|DR|MME|Mme|MADAME|MONSIEUR|Monsieur|PROFESSEUR|PHARMACIE|CHU|Enfant|IDFR[A-Z]?)"
-        r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç]{3,})\b"
-        r"|([a-zà-ÿ]{3,})([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{4,})\b"
+        r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç]{2,})\b"
+        r"|([a-zà-ÿ]{3,})([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{4,}[a-zà-ÿ]{0,2})\b"
         r"|([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{4,})([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zà-ÿ]{3,})\b"
     )
 
@@ -81,6 +84,7 @@ class DocumentAnonymizationRunner:
         self.current_size: int = 0
         self.current_batch_files: List[str] = []
         self.processed_in_session: int = 0
+
     def initialize(self) -> bool:
         """Charge les règles et restaure l'état JSON de reprise."""
         if self._initialized:
@@ -100,7 +104,6 @@ class DocumentAnonymizationRunner:
         )
         self._initialized = True
         return True
-
     @staticmethod
     def _split_glued_tokens(match: re.Match[str]) -> str:
         """Sépare les jetons collés par casse CamelCase ou titre majuscule."""
@@ -249,12 +252,32 @@ class DocumentAnonymizationRunner:
         if self._is_non_surname_word(surname):
             return match.group(0)
         return f"{match.group(1)}{match.group(2)} {self._format_surname_initials(surname)}{match.group(4)}"
+    def _replace_catalog_location(self, match: re.Match[str]) -> str:
+        """Remplace une commune du référentiel national en temps constant O(1)."""
+        token: str = match.group(0)
+        norm: str = DocumentTextUtils.normalize_word(token)
+        if (
+            len(norm) < 4
+            or norm in ContactRulesLoader.COMMON_WORD_COLLISIONS
+            or norm in self.config.excluded_words
+            or norm not in self.config.masked_locations
+        ):
+            return token
+        prefix: str = match.string[max(0, match.start() - 30):match.start()]
+        if re.search(r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,}\s+$", prefix):
+            return token
+        suffix: str = match.string[match.end():match.end() + 30]
+        if re.match(r"^\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,}", suffix):
+            return token
+        return "[LIEU_MASQUE]"
+
     def _anonymize_chunk(self, text: str) -> str:
         """Applique les passes de masquage sur une tranche de texte bornée."""
         token: str = CommunicationExtractor.MAIN_CHARACTER_TOKEN
         text = text.replace(token, self.config.main_character_name)
         text = DocumentTextUtils.repair_mojibake(text)
         text = text.replace(r"\,", ",").replace(r"\;", ";")
+        text = self.HTML_INLINE_TAG_CLEANUP.sub("", text)
         text = self.MRZ_LINE_PATTERN.sub("[MRZ_IDENTITE_MASQUEE]", text)
         text = self.GLUED_TITLE_OR_CAMEL.sub(self._split_glued_tokens, text)
 
@@ -266,6 +289,7 @@ class DocumentAnonymizationRunner:
             text = DocumentTextUtils.REGEX_FISCAL_ID.sub("[NUM_FISCAL_MASQUE]", text)
             text = DocumentTextUtils.REGEX_FRANCE_TRAVAIL.sub("[ID_FRANCE_TRAVAIL_MASQUE]", text)
             text = DocumentTextUtils.REGEX_CAF_ALLOCATAIRE.sub("[NUM_ALLOCATAIRE_MASQUE]", text)
+            text = DocumentTextUtils.REGEX_OFFICIAL_MEDICAL_ID.sub("[ID_ADMIN_MASQUE]", text)
         text = DocumentTextUtils.REGEX_EMAIL.sub(
             lambda m: self.audit.pseudonymize_id(m.group(0), "EMAIL"), text
         )
@@ -288,6 +312,12 @@ class DocumentAnonymizationRunner:
 
         text = self.AUTO_TITLE_PATTERN.sub(self._replace_title_match, text)
 
+        if self.rules.combined_case_sensitive_pattern is not None:
+            text = self.rules.combined_case_sensitive_pattern.sub(
+                lambda m: self.rules.case_sensitive_keywords.get(m.group(0), m.group(0)),
+                text,
+            )
+
         if self.rules.combined_keyword_pattern is not None:
             text = self.rules.combined_keyword_pattern.sub(
                 lambda m: self.rules.lookup_keyword_alias(m.group(0)), text
@@ -300,6 +330,12 @@ class DocumentAnonymizationRunner:
 
         if self.rules.combined_location_pattern is not None:
             text = self.rules.combined_location_pattern.sub("[LIEU_MASQUE]", text)
+        elif self.config.masked_locations:
+            text = re.sub(
+                r"(?<![A-Za-zÀ-ÿ])[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]{3,}(?![A-Za-zÀ-ÿ])",
+                self._replace_catalog_location,
+                text,
+            )
 
         text = self.DUPLICATE_ALIAS_CLEANUP.sub(
             lambda m: m.group(1) or m.group(2), text
@@ -331,6 +367,7 @@ class DocumentAnonymizationRunner:
             masked = DocumentTextUtils.REGEX_SSN.sub("NUM_SECU_MASQUE", masked)
         if self.config.mask_financial_and_admin_ids:
             masked = DocumentTextUtils.REGEX_IBAN.sub("IBAN_MASQUE", masked)
+            masked = DocumentTextUtils.REGEX_OFFICIAL_MEDICAL_ID.sub("ID_ADMIN_MASQUE", masked)
         masked = DocumentTextUtils.REGEX_EMAIL.sub(
             lambda m: self.audit.pseudonymize_id(m.group(0), "EMAIL"), masked
         )
@@ -340,6 +377,11 @@ class DocumentAnonymizationRunner:
         if self.config.mask_urls:
             masked = DocumentTextUtils.REGEX_URL.sub("URL_MASQUEE", masked)
         masked = self.AUTO_TITLE_PATTERN.sub(self._replace_title_match, masked)
+        if self.rules.combined_case_sensitive_pattern is not None:
+            masked = self.rules.combined_case_sensitive_pattern.sub(
+                lambda m: self.rules.case_sensitive_keywords.get(m.group(0), m.group(0)),
+                masked,
+            )
         if self.rules.combined_keyword_pattern is not None:
             masked = self.rules.combined_keyword_pattern.sub(
                 lambda m: self.rules.lookup_keyword_alias(m.group(0)), masked

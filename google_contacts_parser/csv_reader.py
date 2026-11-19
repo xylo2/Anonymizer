@@ -135,6 +135,25 @@ class GoogleContactsReader:
                 formatted.append(f"{part[:1].upper()}{part[1:]}")
         return "".join(formatted)
 
+    def _strip_glued_trailing_initial(self, token: str) -> str:
+        """
+        Sépare une initiale majuscule collée en fin de prénom
+        (ex: 'SophieD' -> 'Sophie', 'CorinneP' -> 'Corinne') si la racine
+        est un prénom connu.
+
+        :param token: Jeton prénom brut.
+        :return: Prénom nettoyé de l'initiale parasite.
+        """
+        match: Optional[re.Match[str]] = re.match(
+            r"^([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç]{2,})([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])$",
+            token.strip(),
+        )
+        if match:
+            stem: str = match.group(1)
+            if self._normalize_name_token(stem) in self.frequent_first_names:
+                return stem
+        return token
+
     def _resolve_first_name_display(self, token: str) -> Optional[str]:
         """
         Vérifie si un jeton est un prénom connu ou un diminutif courant et
@@ -409,7 +428,9 @@ class GoogleContactsReader:
             row, ("Last Name", "Family Name", "Nom de famille", "Nom")
         )
 
-        clean_first: str = self._sanitize_name_part(raw_first)
+        clean_first: str = self._strip_glued_trailing_initial(
+            self._sanitize_name_part(raw_first)
+        )
         clean_middle: str = self._sanitize_name_part(raw_middle)
         clean_last: str = self._sanitize_name_part(raw_last)
 
@@ -433,10 +454,14 @@ class GoogleContactsReader:
                 return raw_full
             if " " in raw_full:
                 part_first, part_last = raw_full.split(" ", 1)
-                clean_first = self._sanitize_name_part(part_first)
+                clean_first = self._strip_glued_trailing_initial(
+                    self._sanitize_name_part(part_first)
+                )
                 clean_last = self._sanitize_name_part(part_last)
             else:
-                clean_first = self._sanitize_name_part(raw_full)
+                clean_first = self._strip_glued_trailing_initial(
+                    self._sanitize_name_part(raw_full)
+                )
 
         if clean_middle and re.search(r"\b(?:et|&)\b", clean_middle, flags=re.IGNORECASE):
             couple_parts: List[str] = [

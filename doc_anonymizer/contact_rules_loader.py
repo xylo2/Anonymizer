@@ -11,8 +11,7 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 class ContactRulesLoader:
     """
     Charge les règles d'anonymisation depuis tous les fichiers de contacts,
-    génère les variantes OCR (y compris collées sans espaces, St/Ste/Saint/Sainte
-    et distance d'édition = 1) et compile les regex optimisées (Trie).
+    génère les variantes OCR et compile les regex optimisées (Trie).
     """
 
     OCR_DIGIT_TRANS = str.maketrans({
@@ -35,7 +34,9 @@ class ContactRulesLoader:
         "bon", "bonne", "bons", "bonnes", "neuf", "neuve", "jeune",
         "vieux", "vieille", "fort", "forte", "clair", "claire",
         "doux", "douce", "sage", "juste", "rose", "aube", "fleur",
-        "pierre", "olive", "cerise", "laurier", "loup", "soleil",
+        "pierre", "pierres", "olive", "cerise", "laurier", "loup", "soleil",
+        "sol", "presse", "noisette", "laboratoire", "atelier", "ateliers",
+        "chateau", "château",
     })
 
     NON_PERSON_ALIAS_MARKERS = (
@@ -45,7 +46,6 @@ class ContactRulesLoader:
         "observatoire ", "plate-forme ", "château ", "brasserie ",
         "office ", "succursale ", "pharmacie ", "clinique ", "hopital ",
     )
-
     def __init__(
         self, config: PipelineConfig, manual_only: bool = False
     ) -> None:
@@ -54,6 +54,7 @@ class ContactRulesLoader:
         self.manual_only: bool = manual_only
         self.contacts_id: Dict[str, str] = {}
         self.keyword_to_alias: Dict[str, str] = {}
+        self.case_sensitive_keywords: Dict[str, str] = {}
         self.glued_to_alias: Dict[str, str] = {}
         self.alias_words: Set[str] = set()
         self.full_targets: Set[str] = set()
@@ -62,6 +63,7 @@ class ContactRulesLoader:
         self.last_name_to_aliases: DefaultDict[str, Set[str]] = defaultdict(set)
         self.last_name_display: Dict[str, str] = {}
         self.combined_keyword_pattern: Optional[Pattern[str]] = None
+        self.combined_case_sensitive_pattern: Optional[Pattern[str]] = None
         self.combined_glued_pattern: Optional[Pattern[str]] = None
         self.combined_location_pattern: Optional[Pattern[str]] = None
         self._normalized_first_names: Set[str] = {
@@ -76,23 +78,16 @@ class ContactRulesLoader:
             cls.OCR_DIGIT_TRANS
         )
         return re.sub(r"[\s\-'\u2019\._]+", "", base)
+
     @staticmethod
     def is_one_edit_away(word_a: str, word_b: str) -> bool:
-        """
-        Vérifie si deux mots normalisés diffèrent d'au plus 1 opération
-        (substitution, insertion ou suppression) pour tolérer les fautes OCR.
-
-        :param word_a: Premier mot normalisé.
-        :param word_b: Second mot normalisé.
-        :return: True si la distance de Levenshtein est <= 1.
-        """
+        """Vérifie si deux mots normalisés diffèrent d'au plus 1 opération OCR."""
         len_a: int = len(word_a)
         len_b: int = len(word_b)
         if abs(len_a - len_b) > 1 or min(len_a, len_b) < 6:
             return False
         if word_a == word_b:
             return True
-
         idx_a: int = 0
         idx_b: int = 0
         edits: int = 0
@@ -114,7 +109,6 @@ class ContactRulesLoader:
         if idx_a < len_a or idx_b < len_b:
             edits += 1
         return edits <= 1
-
     def is_first_name(self, token: str) -> bool:
         """Vérifie si un jeton est un prénom connu (simple ou composé)."""
         norm: str = DocumentTextUtils.normalize_word(token)
@@ -133,16 +127,12 @@ class ContactRulesLoader:
         return False
 
     def _is_person_rule_for_surname_index(self, kw: str, al: str) -> bool:
-        """
-        Vérifie qu'une règle représente une personne physique (et non une enseigne,
-        un pseudo ou un identifiant technique) avant d'indexer son nom de famille.
-        """
+        """Vérifie qu'une règle représente une personne physique avant d'indexer son nom."""
         low_al: str = al.strip().lower()
         if any(marker in low_al for marker in self.NON_PERSON_ALIAS_MARKERS):
             return False
         if low_al.startswith("-") or "=" in kw or "=" in al:
             return False
-
         clean_kw: str = re.sub(r"\s*\([^)]*\)\s*$", "", kw).strip()
         words: List[str] = [
             w for w in re.split(r"[\s\-'\u2019]+", clean_kw) if len(w) >= 2
@@ -185,6 +175,10 @@ class ContactRulesLoader:
                 return
             if not is_manual and self.is_first_name(single_norm):
                 return
+            if is_manual and len(kw) <= 5 and any(ch.isupper() for ch in kw):
+                self.case_sensitive_keywords[kw] = al
+                self.full_targets.add(single_norm)
+                return
 
         norm_kw: str = kw.lower()
         if norm_kw not in self.keyword_to_alias or is_manual:
@@ -196,9 +190,7 @@ class ContactRulesLoader:
             glued_key: str = self.normalize_ocr_key(kw)
             if len(glued_key) >= 7:
                 self.glued_to_alias[glued_key] = al
-                rev_key: str = self.normalize_ocr_key(
-                    " ".join(reversed(words))
-                )
+                rev_key: str = self.normalize_ocr_key(" ".join(reversed(words)))
                 if len(rev_key) >= 7:
                     self.glued_to_alias[rev_key] = al
 
@@ -209,14 +201,12 @@ class ContactRulesLoader:
         """Protège uniquement les vrais noms de famille sans collision lexicale."""
         if not is_manual and not self._is_person_rule_for_surname_index(kw, al):
             return
-
         clean_kw: str = re.sub(r"\s*\([^)]*\)\s*$", "", kw).strip()
         words: List[str] = [
             w for w in re.split(r"[\s\-'\u2019]+", clean_kw) if len(w) >= 2
         ]
         if not words:
             return
-
         clean_al: str = re.sub(r"\s*\([^)]*\)\s*$", "", al).strip()
         first_is_fn: bool = len(words) >= 2 and self.is_first_name(next(iter(words)))
         for idx, word in enumerate(words):
@@ -276,7 +266,6 @@ class ContactRulesLoader:
                 single_al: str = next(iter(als))
                 for fn in fns:
                     self._register_rule(fn, single_al, is_manual=False)
-
     def _load_file_rules(self, file_path: str, is_manual: bool = False) -> int:
         """Charge un fichier de règles cible = alias en ignorant les lignes corrompues."""
         if not os.path.exists(file_path):
@@ -306,7 +295,7 @@ class ContactRulesLoader:
                 self.keyword_to_alias[surname.upper()] = short_alias
 
     def _expand_saint_locations(self) -> Set[str]:
-        """Génère toutes les variantes Saint/Sainte/St/Ste avec tirets et espaces."""
+        """Génère les variantes Saint/Sainte/St/Ste pour les lieux personnalisés."""
         expanded: Set[str] = set()
         for loc in self.config.masked_locations:
             norm_loc: str = DocumentTextUtils.normalize_word(loc)
@@ -323,24 +312,31 @@ class ContactRulesLoader:
         return expanded
 
     def _compile_patterns(self) -> None:
-        """Compile les expressions régulières Trie pour les mots-clés, formes collées et lieux."""
+        """Compile les expressions régulières Trie sans explosion mémoire."""
+        if self.case_sensitive_keywords:
+            cs_sorted: List[str] = sorted(self.case_sensitive_keywords.keys(), key=len, reverse=True)
+            cs_alt: str = "|".join(re.escape(k) for k in cs_sorted)
+            self.combined_case_sensitive_pattern = re.compile(rf"(?<![A-Za-zÀ-ÿ])(?:{cs_alt})(?![A-Za-zÀ-ÿ])")
         if self.keyword_to_alias:
             kw_regex: str = DocumentTextUtils.build_ocr_tolerant_trie_regex(list(self.keyword_to_alias.keys()))
             self.combined_keyword_pattern = re.compile(rf"(?<![A-Za-zÀ-ÿ]){kw_regex}(?![A-Za-zÀ-ÿ])", re.IGNORECASE)
+
         all_locs: Set[str] = self._expand_saint_locations()
-        glued_map: Dict[str, str] = dict(self.glued_to_alias)
-        for loc in all_locs:
-            compact_loc: str = self.normalize_ocr_key(loc)
-            if len(compact_loc) >= 10 and compact_loc not in glued_map:
-                glued_map[compact_loc] = "[LIEU_MASQUE]"
-        self.glued_to_alias = glued_map
+        if len(all_locs) <= 2000:
+            glued_map: Dict[str, str] = dict(self.glued_to_alias)
+            for loc in all_locs:
+                compact_loc: str = self.normalize_ocr_key(loc)
+                if len(compact_loc) >= 10 and compact_loc not in glued_map:
+                    glued_map[compact_loc] = "[LIEU_MASQUE]"
+            self.glued_to_alias = glued_map
+            valid_locs: List[str] = [loc for loc in all_locs if len(loc) >= 3]
+            if valid_locs:
+                loc_regex: str = DocumentTextUtils.build_ocr_tolerant_trie_regex(valid_locs)
+                self.combined_location_pattern = re.compile(rf"(?<![A-Za-zÀ-ÿ]){loc_regex}(?![A-Za-zÀ-ÿ])", re.IGNORECASE)
+
         if self.glued_to_alias:
             glued_alt: str = DocumentTextUtils.build_ocr_tolerant_trie_regex(list(self.glued_to_alias.keys()))
             self.combined_glued_pattern = re.compile(glued_alt, re.IGNORECASE)
-        valid_locs: List[str] = [loc for loc in all_locs if len(loc) >= 3]
-        if valid_locs:
-            loc_regex: str = DocumentTextUtils.build_ocr_tolerant_trie_regex(valid_locs)
-            self.combined_location_pattern = re.compile(rf"(?<![A-Za-zÀ-ÿ]){loc_regex}(?![A-Za-zÀ-ÿ])", re.IGNORECASE)
 
     def lookup_keyword_alias(self, matched_text: str) -> str:
         """Retourne l'alias correspondant à un mot-clé, sa variante OCR ou à 1 lettre près."""
@@ -380,4 +376,10 @@ class ContactRulesLoader:
         self._load_file_rules(self.config.manual_contacts_file, is_manual=True)
         self._register_protected_surnames()
         self._compile_patterns()
-        return bool(self.contacts_id or self.keyword_to_alias or self.glued_to_alias or self.combined_location_pattern)
+        return bool(
+            self.contacts_id
+            or self.keyword_to_alias
+            or self.case_sensitive_keywords
+            or self.glued_to_alias
+            or self.combined_location_pattern
+        )
