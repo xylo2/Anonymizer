@@ -8,7 +8,7 @@ caean, caen, caennaises, carpiquet, cauvicourt, cingal, clinchamps, clinchamps-s
 coen, colombelles, cormelles-le-royal, evrecy, falaise, feuguerolles-bully
 fleury-sur-orne, fontenay, fontenay-le-marmion, fresney, fresney-le-puceux
 fresney le puceux, giberville, grentheville, grimbosq, herouville, herouville-saint-clair
-hfs, ifs, laize, laize-clinchamp, laize-clinchamps, le bas breuil, le champ mirey
+laize, laize-clinchamp, laize-clinchamps, le bas breuil, le champ mirey
 le hom, le mesnil-esnard, le pont du coudray, lessay, louvigny, maisoncelles-sur-ajon
 mal pas, mac pas, may-sur-orne, may sur orne, may sur o., merville-franceville
 mezidon, mezidon-canon, mondeville, mondevillage, mont-saint-aignan, rocquancourt

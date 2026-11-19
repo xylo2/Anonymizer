@@ -4,7 +4,6 @@ import os
 import re
 import time
 from typing import List, Pattern
-from common.core_utils import SharedCoreUtils
 from doc_anonymizer.audit_state_manager import AuditAndStateManager
 from doc_anonymizer.comm_extractors import CommunicationExtractor
 from doc_anonymizer.config_manager import PipelineConfig
@@ -21,7 +20,7 @@ class DocumentAnonymizationRunner:
     TEXT_CHUNK_LIMIT: int = 32768
 
     AUTO_TITLE_PATTERN: Pattern[str] = re.compile(
-        r"(?<![A-Za-zÀ-ÿ])(Dr|Docteur|DOCTEUR|Pr|Professeur|Mme|MME|Madame|M\.|Monsieur|"
+        r"(?<![A-Za-zÀ-ÿ\-])(Dr|Docteur|DOCTEUR|Pr|Professeur|Mme|MME|Madame|M\.|Monsieur|"
         r"Mlle|Mademoiselle|Me|Maître|Maitre|Famille|Pharmacie|PHARMACIE)\.?\s+"
         r"(?:((?:de|du|des|d'|le|la|van|von|ben|el|al|ould|dos|da|di)(?:\s+(?:la|le|les))?)\s+)?"
         r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
@@ -29,17 +28,26 @@ class DocumentAnonymizationRunner:
         r"(?:\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25}){0,2})(?![A-Za-zÀ-ÿ])"
     )
 
-    AUTO_PERSON_PAIR_PATTERN: Pattern[str] = re.compile(
-        r"(?<![A-Za-zÀ-ÿ])((?:Jean[\s\-]+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç]{2,}|"
-        r"(?:[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]|l(?=[a-zéèêëàâäîïôöùûüç]{4,}))[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,21}))\s+"
+    INITIAL_COMPOUND_PAIR_PATTERN: Pattern[str] = re.compile(
+        r"(?<![A-Za-zÀ-ÿ\-])([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]\.-[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç'-]{2,20})\s+"
         r"(?:((?:De|Du|Des|de|du|des|Le|La|le|la|Van|Von|Ben|El|Al|Ould|Dos|Da|Di)(?:\s+(?:La|Le|Les|la|le|les))?)\s+)?"
-        r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
+        r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25})(?![A-Za-zÀ-ÿ])"
+    )
+
+    AUTO_PERSON_PAIR_PATTERN: Pattern[str] = re.compile(
+        r"(?<![A-Za-zÀ-ÿ\-])("
+        r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç']{1,20}[\-\u2010-\u2015][A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç']{2,20}|"
+        r"Jean\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç'-]{2,20}|"
+        r"(?:[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]|l(?=[a-zéèêëàâäîïôöùûüç]{4,}))[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç']{2,21}"
+        r")\s+"
+        r"(?:((?:De|Du|Des|de|du|des|Le|La|le|la|Van|Von|Ben|El|Al|Ould|Dos|Da|Di)(?:\s+(?:La|Le|Les|la|le|les))?)\s+)?"
+        r"([A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç]"
         r"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25}(?:\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25})?)(?![A-Za-zÀ-ÿ])"
     )
 
     UPPER_PAIR_PATTERN: Pattern[str] = re.compile(
-        r"(?<![A-Za-zÀ-ÿ])([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç'-]{2,22})\s+([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{3,25})(?![A-Za-zÀ-ÿ])"
-        r"|(?<![A-Za-zÀ-ÿ])([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{4,25})\s+([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç'-]{2,22})(?![A-Za-zÀ-ÿ])"
+        r"(?<![A-Za-zÀ-ÿ\-])([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç'-]{2,22})\s+([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{3,25})(?![A-Za-zÀ-ÿ])"
+        r"|(?<![A-Za-zÀ-ÿ\-])([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{4,25})\s+([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç'-]{2,22})(?![A-Za-zÀ-ÿ])"
     )
 
     MIME_TOKEN_RECIPIENT_PATTERN: Pattern[str] = re.compile(
@@ -71,7 +79,12 @@ class DocumentAnonymizationRunner:
     def __init__(
         self, config: PipelineConfig, manual_only: bool = False
     ) -> None:
-        """Initialise l'orchestrateur d'anonymisation."""
+        """
+        Initialise l'orchestrateur d'anonymisation.
+
+        :param config: Configuration globale du pipeline.
+        :param manual_only: Indique si seules les règles manuelles sont chargées.
+        """
         self.config: PipelineConfig = config
         self.manual_only: bool = manual_only
         self.rules: ContactRulesLoader = ContactRulesLoader(
@@ -87,7 +100,11 @@ class DocumentAnonymizationRunner:
         self.processed_in_session: int = 0
 
     def initialize(self) -> bool:
-        """Charge les règles et restaure l'état JSON de reprise."""
+        """
+        Charge les règles et restaure l'état JSON de reprise.
+
+        :return: True si l'initialisation a réussi.
+        """
         if self._initialized:
             return True
         if not self.rules.load_all():
@@ -108,7 +125,12 @@ class DocumentAnonymizationRunner:
 
     @staticmethod
     def _split_glued_tokens(match: re.Match[str]) -> str:
-        """Sépare les jetons collés par casse CamelCase ou titre majuscule."""
+        """
+        Sépare les jetons collés par casse CamelCase ou titre majuscule.
+
+        :param match: Correspondance regex détectée.
+        :return: Chaîne séparée par un espace.
+        """
         if match.group(1) and match.group(2):
             return f"{match.group(1)} {match.group(2)}"
         if match.group(3) and match.group(4):
@@ -116,17 +138,28 @@ class DocumentAnonymizationRunner:
         return f"{match.group(5)} {match.group(6)}"
 
     def _is_non_surname_word(
-        self, word: str, after_known_first_name: bool = False
+        self,
+        word: str,
+        after_known_first_name: bool = False,
+        after_explicit_title: bool = False,
     ) -> bool:
-        """Vérifie si un mot est un mot-outil, un lieu ou un terme exclu."""
+        """
+        Vérifie si un mot est un mot-outil, un lieu ou un terme exclu.
+
+        :param word: Mot ou groupe de mots à tester.
+        :param after_known_first_name: True si précédé d'un prénom avéré.
+        :param after_explicit_title: True si précédé d'une civilité explicite.
+        :return: True si le mot ne doit pas être considéré comme un nom.
+        """
         for tok in word.split():
             norm: str = DocumentTextUtils.normalize_word(tok)
             if (
                 norm in AuditAndStateManager.COMMON_FRENCH_STOPWORDS
-                or norm in self.config.surname_collisions
                 or norm in self.config.excluded_words
                 or norm in self.rules.alias_words
             ):
+                return True
+            if not after_explicit_title and norm in self.config.surname_collisions:
                 return True
             if not after_known_first_name and (
                 norm in self.config.masked_locations
@@ -134,9 +167,15 @@ class DocumentAnonymizationRunner:
             ):
                 return True
         return False
+
     @staticmethod
     def _format_surname_initials(surname: str) -> str:
-        """Formate un nom de famille en initiale(s) majuscule(s)."""
+        """
+        Formate un nom de famille en initiale(s) majuscule(s).
+
+        :param surname: Nom de famille brut.
+        :return: Initiales abrégées.
+        """
         space_parts: List[str] = [p.strip() for p in surname.split() if p.strip()]
         if len(space_parts) >= 2:
             return " ".join(
@@ -151,23 +190,45 @@ class DocumentAnonymizationRunner:
 
     @staticmethod
     def _format_particle_initials(particle: str) -> str:
-        """Abrège une particule nobiliaire par son initiale."""
+        """
+        Abrège une particule nobiliaire par son initiale.
+
+        :param particle: Particule brute.
+        :return: Particule abrégée suivie d'un espace ou chaîne vide.
+        """
         if not particle or not particle.strip():
             return ""
         tokens: List[str] = [t for t in particle.strip().split() if t]
         return " ".join(f"{t[:1].upper()}." for t in tokens) + " "
-
     def _is_known_first_name_ocr(self, token: str) -> bool:
-        """Vérifie si le jeton est un prénom connu (avec tolérance OCR 'l' -> 'I')."""
+        """
+        Vérifie si le jeton est un prénom connu (simple, composé en Jean ou OCR).
+
+        :param token: Jeton à vérifier.
+        :return: True si reconnu comme prénom.
+        """
         if self.rules.is_first_name(token):
             return True
+        clean_low: str = re.sub(r"\s+", " ", token.strip().lower())
+        if clean_low.startswith(("jean ", "jean-")):
+            second_part: str = DocumentTextUtils.normalize_word(clean_low[5:])
+            if (
+                re.fullmatch(r"[a-z]{2,}", second_part)
+                and second_part not in {"de", "du", "des", "le", "la", "les", "en", "et"}
+            ):
+                return True
         if token.startswith("l") and len(token) >= 5:
             return self.rules.is_first_name("I" + token[1:])
         return False
 
     @staticmethod
     def _is_title_case_token(token: str) -> bool:
-        """Indique si un jeton commence par une majuscule suivie de minuscules."""
+        """
+        Indique si un jeton commence par une majuscule suivie de minuscules.
+
+        :param token: Jeton à tester.
+        :return: True si casse Titre.
+        """
         return (
             len(token) >= 3
             and token[:1].isupper()
@@ -175,7 +236,12 @@ class DocumentAnonymizationRunner:
         )
 
     def _replace_title_match(self, match: re.Match[str]) -> str:
-        """Remplace un nom (avec ou sans prénom simple ou composé en Jean) précédé d'un titre."""
+        """
+        Remplace un nom (avec ou sans prénom simple ou composé en Jean) précédé d'un titre.
+
+        :param match: Correspondance regex détectée.
+        :return: Chaîne anonymisée.
+        """
         title: str = match.group(1)
         particle: str = match.group(2) or ""
         raw_target: str = match.group(3)
@@ -184,7 +250,7 @@ class DocumentAnonymizationRunner:
         if len(target_parts) >= 3 and self._is_known_first_name_ocr(" ".join(target_parts[:2])):
             first_tok: str = " ".join(target_parts[:2])
             surname_tok: str = " ".join(target_parts[2:])
-            if self._is_non_surname_word(surname_tok, after_known_first_name=True):
+            if self._is_non_surname_word(surname_tok, after_known_first_name=True, after_explicit_title=True):
                 return match.group(0)
             part_init: str = self._format_particle_initials(particle)
             sur_init: str = self._format_surname_initials(surname_tok)
@@ -193,13 +259,13 @@ class DocumentAnonymizationRunner:
         if len(target_parts) >= 2 and self._is_known_first_name_ocr(next(iter(target_parts))):
             first_tok = next(iter(target_parts))
             surname_tok = " ".join(target_parts[1:])
-            if self._is_non_surname_word(surname_tok, after_known_first_name=True):
+            if self._is_non_surname_word(surname_tok, after_known_first_name=True, after_explicit_title=True):
                 return match.group(0)
             part_init = self._format_particle_initials(particle)
             sur_init = self._format_surname_initials(surname_tok)
             return f"{title} {first_tok} {part_init}{sur_init}"
 
-        if self._is_non_surname_word(raw_target):
+        if self._is_non_surname_word(raw_target, after_explicit_title=True):
             return match.group(0)
 
         norm_sur: str = DocumentTextUtils.normalize_word(raw_target)
@@ -221,8 +287,29 @@ class DocumentAnonymizationRunner:
         part_init = self._format_particle_initials(particle)
         sur_init = self._format_surname_initials(raw_target)
         return f"{title} {part_init}{sur_init}"
+
+    def _replace_initial_compound_match(self, match: re.Match[str]) -> str:
+        """
+        Masque les paires avec prénom abrégé composé (ex: J.-Marc Ayrault -> J.-Marc A.).
+
+        :param match: Correspondance regex détectée.
+        :return: Chaîne anonymisée.
+        """
+        compound_first: str = match.group(1)
+        particle: str = match.group(2) or ""
+        surname: str = match.group(3)
+        if self._is_non_surname_word(surname, after_known_first_name=True):
+            return match.group(0)
+        part_init: str = self._format_particle_initials(particle)
+        return f"{compound_first} {part_init}{self._format_surname_initials(surname)}"
+
     def _replace_upper_pair_match(self, match: re.Match[str]) -> str:
-        """Masque les paires Prénom NOM et NOM Prénom sans collision avec les sigles."""
+        """
+        Masque les paires Prénom NOM et NOM Prénom sans collision avec les sigles.
+
+        :param match: Correspondance regex détectée.
+        :return: Chaîne anonymisée.
+        """
         if match.group(1) and match.group(2):
             first_n, last_n = match.group(1), match.group(2)
             if len(last_n) == 3 and not self._is_known_first_name_ocr(first_n):
@@ -236,9 +323,13 @@ class DocumentAnonymizationRunner:
         if self._is_non_surname_word(last_n) or self._is_non_surname_word(first_n):
             return match.group(0)
         return f"{self._format_surname_initials(last_n)} {first_n}"
-
     def _replace_person_pair_match(self, match: re.Match[str]) -> str:
-        """Remplace une paire Prénom Nom ou NOM Prénom détectée en contexte."""
+        """
+        Remplace une paire Prénom Nom ou NOM Prénom détectée en contexte.
+
+        :param match: Correspondance regex détectée.
+        :return: Chaîne anonymisée.
+        """
         w1: str = match.group(1)
         particle: str = match.group(2) or ""
         w2: str = match.group(3)
@@ -246,6 +337,9 @@ class DocumentAnonymizationRunner:
         if self._is_non_surname_word(w1) or self._is_non_surname_word(
             w2, after_known_first_name=f1
         ):
+            return match.group(0)
+
+        if w2[:1].islower() and not f1:
             return match.group(0)
 
         w2_parts: List[str] = [p for p in w2.split() if p]
@@ -269,14 +363,24 @@ class DocumentAnonymizationRunner:
         return match.group(0)
 
     def _replace_mime_recipient(self, match: re.Match[str]) -> str:
-        """Abrège le nom d'un destinataire MIME accolé à un jeton E. ou EMAIL_XXX."""
+        """
+        Abrège le nom d'un destinataire MIME accolé à un jeton E. ou EMAIL_XXX.
+
+        :param match: Correspondance regex détectée.
+        :return: Chaîne anonymisée.
+        """
         surname: str = match.group(3)
         if self._is_non_surname_word(surname):
             return match.group(0)
         return f"{match.group(1)}{match.group(2)} {self._format_surname_initials(surname)}{match.group(4)}"
 
     def _replace_catalog_location(self, match: re.Match[str]) -> str:
-        """Remplace une commune du référentiel national en temps constant O(1)."""
+        """
+        Remplace une commune du référentiel national en temps constant O(1).
+
+        :param match: Correspondance regex détectée.
+        :return: Jeton [LIEU_MASQUE] ou mot original.
+        """
         token: str = match.group(0)
         norm: str = DocumentTextUtils.normalize_word(token)
         if (
@@ -293,12 +397,19 @@ class DocumentAnonymizationRunner:
         if re.match(r"^\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,}", suffix):
             return token
         return "[LIEU_MASQUE]"
-
     def _anonymize_chunk(self, text: str) -> str:
-        """Applique les passes de masquage sur une tranche de texte bornée."""
+        """
+        Applique les passes de masquage sur une tranche de texte bornée.
+
+        :param text: Texte brut à anonymiser.
+        :return: Texte anonymisé.
+        """
         token: str = CommunicationExtractor.MAIN_CHARACTER_TOKEN
         text = text.replace(token, self.config.main_character_name)
         text = DocumentTextUtils.repair_mojibake(text)
+        text = re.sub(r"(?i)\bSoBRE\s*R(?:O)?\b", "S.", text)
+        text = re.sub(r"(?i)\bCE\s*DR1C\b", "Cédric", text)
+        text = re.sub(r"(?i)\bRUE\s*GEORGE\s*SAND\b", "rue Georges Sand", text)
         text = text.replace(r"\,", ",").replace(r"\;", ";")
         text = self.HTML_INLINE_TAG_CLEANUP.sub("", text)
         text = self.MRZ_LINE_PATTERN.sub("[MRZ_IDENTITE_MASQUEE]", text)
@@ -306,6 +417,7 @@ class DocumentAnonymizationRunner:
 
         if self.config.mask_ssn:
             text = DocumentTextUtils.REGEX_SSN.sub("[NUM_SECU_MASQUE]", text)
+            text = DocumentTextUtils.REGEX_SSN_OCR_GLUED.sub(" [NUM_SECU_MASQUE]", text)
         if self.config.mask_financial_and_admin_ids:
             text = DocumentTextUtils.REGEX_IBAN.sub("[IBAN_MASQUE]", text)
             text = DocumentTextUtils.REGEX_BIC.sub("[BIC_MASQUE]", text)
@@ -324,7 +436,7 @@ class DocumentAnonymizationRunner:
             lambda m: self.audit.pseudonymize_id(m.group(0), "EMAIL"), text
         )
         text = DocumentTextUtils.REGEX_PHONE.sub(
-            lambda m: self.audit.pseudonymize_id(m.group(0), "TEL"), text
+            lambda m: f" {self.audit.pseudonymize_id(m.group(0), 'TEL')} ", text
         )
         if self.config.mask_financial_and_admin_ids:
             text = DocumentTextUtils.REGEX_ISOLATED_12_DIGITS.sub("[ID_CNI_PERMIS_MASQUE]", text)
@@ -332,7 +444,15 @@ class DocumentAnonymizationRunner:
             text = DocumentTextUtils.REGEX_URL.sub("[URL_MASQUEE]", text)
 
         text = text.replace("//", " ")
+        return self._apply_contextual_rules(text)
 
+    def _apply_contextual_rules(self, text: str) -> str:
+        """
+        Applique les règles contextuelles d'adresses, contacts, paires et lieux.
+
+        :param text: Texte pré-anonymisé.
+        :return: Texte complètement anonymisé.
+        """
         if self.config.mask_addresses:
             text = DocumentTextUtils.REGEX_POSTAL_CITY.sub("[LIEU_MASQUE]", text)
             text = DocumentTextUtils.REGEX_STREET_ADDRESS.sub("[ADRESSE_MASQUEE]", text)
@@ -344,6 +464,7 @@ class DocumentAnonymizationRunner:
             )
 
         text = self.AUTO_TITLE_PATTERN.sub(self._replace_title_match, text)
+        text = self.INITIAL_COMPOUND_PAIR_PATTERN.sub(self._replace_initial_compound_match, text)
 
         if self.rules.combined_case_sensitive_pattern is not None:
             text = self.rules.combined_case_sensitive_pattern.sub(
@@ -358,14 +479,26 @@ class DocumentAnonymizationRunner:
 
         text = self.UPPER_PAIR_PATTERN.sub(self._replace_upper_pair_match, text)
         text = self.AUTO_PERSON_PAIR_PATTERN.sub(self._replace_person_pair_match, text)
+        text = re.sub(
+            r"\b(Jean[\-\u2010-\u2015][A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç']{2,20})\s+"
+            r"(?:((?:de|du|des|d'|le|la|van|von|ben|el|al|ould|dos|da|di)(?:\s+(?:la|le|les))?)\s+)?"
+            r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25})\b",
+            lambda m: (
+                m.group(0)
+                if self._is_non_surname_word(m.group(3), after_known_first_name=True)
+                else f"{m.group(1)} {self._format_particle_initials(m.group(2) or '')}{self._format_surname_initials(m.group(3))}"
+            ),
+            text,
+        )
         text = self.MIME_TOKEN_RECIPIENT_PATTERN.sub(self._replace_mime_recipient, text)
         text = self.PARENS_PSEUDO_PATTERN.sub(r"\1([PSEUDO_MASQUE])", text)
+        text = DocumentTextUtils.REGEX_GLUED_PERSON_BIRTH_DATE.sub(r"\1[JOUR_MOIS_MASQUES]/\2", text)
 
         if self.rules.combined_location_pattern is not None:
             text = self.rules.combined_location_pattern.sub("[LIEU_MASQUE]", text)
         elif self.config.masked_locations:
             text = re.sub(
-                r"(?<![A-Za-zÀ-ÿ])[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]{3,}(?![A-Za-zÀ-ÿ])",
+                r"(?<![A-Za-zÀ-ÿ0-9])[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]{3,}(?![A-Za-zÀ-ÿ0-9])",
                 self._replace_catalog_location,
                 text,
             )
@@ -374,9 +507,13 @@ class DocumentAnonymizationRunner:
             lambda m: m.group(1) or m.group(2), text
         )
         return text
-
     def _anonymize_text(self, text: str) -> str:
-        """Découpe les textes volumineux par tranches de 32 Ko pour éviter tout blocage regex."""
+        """
+        Découpe les textes volumineux par tranches de 32 Ko pour éviter tout blocage regex.
+
+        :param text: Texte complet du document.
+        :return: Texte anonymisé.
+        """
         if len(text) <= self.TEXT_CHUNK_LIMIT:
             return self._anonymize_chunk(text)
         out_parts: List[str] = []
@@ -392,8 +529,14 @@ class DocumentAnonymizationRunner:
         if buf:
             out_parts.append(self._anonymize_chunk("".join(buf)))
         return "".join(out_parts)
+
     def _anonymize_display_path(self, trans_path: str) -> str:
-        """Masque les identifiants sensibles dans le nom de fichier source affiché."""
+        """
+        Masque les identifiants sensibles dans le nom de fichier source affiché.
+
+        :param trans_path: Chemin vers le fichier de transcription.
+        :return: Chemin d'affichage anonymisé.
+        """
         folder, file_name = os.path.split(trans_path)
         masked: str = DocumentTextUtils.repair_mojibake(file_name)
         if self.config.mask_ssn:
@@ -429,7 +572,6 @@ class DocumentAnonymizationRunner:
         if self.rules.combined_location_pattern is not None:
             masked = self.rules.combined_location_pattern.sub("LIEU_MASQUE", masked)
         return os.path.join(folder, masked)
-
     def flush_batch(self) -> None:
         """Écrit le lot en cours sur disque et met à jour l'état et l'audit."""
         if not self.current_chunk:
@@ -453,116 +595,147 @@ class DocumentAnonymizationRunner:
         self.audit.save()
         count: int = self.audit.write_report()
         print(f"    [+] LOT ÉCRIT : '{full_out_path}' (Audit : {count} nom(s))", flush=True)
-    def anonymize_single_file(self, trans_path: str, force_reprocess: bool = False) -> bool:
-        """Anonymise une transcription individuelle et l'ajoute au lot courant."""
-        if not self._initialized and not self.initialize():
-            return False
-        norm_path: str = os.path.normpath(trans_path)
-        if not force_reprocess and norm_path in self.audit.already_processed:
-            return False
-        if not os.path.exists(trans_path):
-            return False
 
-        with open(trans_path, "r", encoding="utf-8", errors="ignore") as f:
-            raw_content: str = f.read()
-        if not raw_content.strip():
-            return False
+    @staticmethod
+    def _collect_files_sorted(root_folder: str) -> List[str]:
+        """Collecte et trie tous les fichiers non cachés d'un répertoire."""
+        if not os.path.exists(root_folder):
+            return []
+        collected: List[str] = []
+        for dirpath, dirnames, filenames in os.walk(root_folder):
+            dirnames[:] = [d for d in sorted(dirnames) if not d.startswith(".")]
+            for fname in sorted(filenames):
+                if not fname.startswith("."):
+                    collected.append(os.path.join(dirpath, fname))
+        collected.sort()
+        return collected
+
+    def _print_audit_summary(self, residual_count: int) -> None:
+        """Affiche le récapitulatif des lots et fichiers d'audit."""
+        print(
+            f" * Lots totaux  : {self.audit.written_batches} dans '{self.config.results_dir}/lot_XX/'\n"
+            f" * Audit détail : {residual_count} nom(s) dans '{self.config.audit_report_file}'\n"
+            f" * Audit copier : {residual_count} nom(s) dans '{self.config.audit_copy_file}'",
+            flush=True,
+        )
+
+    def _process_single_file(self, trans_path: str) -> None:
+        """Lit et anonymise un fichier de transcription unique."""
+        if not os.path.exists(trans_path):
+            return
+        with open(trans_path, "r", encoding="utf-8", errors="replace") as f_in:
+            raw_content: str = f_in.read()
+
+        anon_content: str = self._anonymize_text(raw_content)
+        self.audit.scan_residual_names(anon_content, trans_path)
 
         display_path: str = self._anonymize_display_path(trans_path)
-        sep: str = "#" * 72
-        header: str = f"{sep}\n# SOURCE TRANSCRIPTION : {display_path}\n{sep}\n"
-        anonymized: str = self._anonymize_text(header + raw_content)
-        self.audit.scan_residual_names(anonymized, display_path)
+        header: str = (
+            f"\n{'#' * 72}\n"
+            f"# SOURCE TRANSCRIPTION : {display_path}\n"
+            f"{'#' * 72}\n"
+        )
+        block: str = header + anon_content + "\n"
+        block_bytes: int = len(block.encode("utf-8"))
 
-        block_bytes: int = len(anonymized.encode("utf-8"))
-        max_files_per_batch: int = getattr(self.config, "max_batch_files", 50)
         if self.current_chunk and (
             self.current_size + block_bytes > self.config.max_batch_bytes
-            or len(self.current_chunk) >= max_files_per_batch
         ):
             self.flush_batch()
 
-        self.current_chunk.append(anonymized)
+        self.current_chunk.append(block)
         self.current_size += block_bytes
-        self.current_batch_files.append(norm_path)
+        self.current_batch_files.append(trans_path)
         self.processed_in_session += 1
+    def anonymize_single_file(
+        self, trans_path: str, force_reprocess: bool = False
+    ) -> bool:
+        """Anonymise une transcription individuelle au fil de l'eau."""
+        norm_path: str = os.path.normpath(trans_path)
+        if not os.path.exists(norm_path):
+            return False
+        if not force_reprocess and norm_path in self.audit.already_processed:
+            return False
+        self._process_single_file(norm_path)
         return True
 
     def finalize(self, start_time: float) -> None:
-        """Vide le dernier lot et génère les rapports finaux d'audit."""
+        """Vide le dernier lot en mémoire et affiche le bilan d'exécution."""
         self.flush_batch()
-        count: int = self.audit.write_report()
-        elapsed_str: str = SharedCoreUtils.format_duration(time.time() - start_time)
-        print(f"\n[100.0%] Terminé ({self.processed_in_session} fichier(s) anonymisé(s) en {elapsed_str}).", flush=True)
-        print(f" * Lots totaux  : {self.audit.written_batches} dans '{self.config.results_dir}/lot_XX/'", flush=True)
-        print(f" * Audit détail : {count} nom(s) dans '{self.config.audit_report_file}'", flush=True)
-        print(f" * Audit copier : {count} nom(s) dans '{self.config.audit_copy_file}'", flush=True)
-
-    def run_on_existing_results(self) -> None:
-        """Réapplique les règles de contacts sur les lots déjà générés."""
-        start_time: float = time.time()
-        print("=== PASSE SUR PLACE : CONTACTS & AUTOMATISMES SUR RÉSULTATS ===", flush=True)
-        if not self.initialize():
-            return
-        res_dir: str = self.config.results_dir
-        if not os.path.isdir(res_dir):
-            print(f"Erreur : '{res_dir}' introuvable.", flush=True)
-            return
-
-        lot_files: List[str] = sorted(
-            os.path.join(rp, fn)
-            for rp, _, files in os.walk(res_dir)
-            for fn in files
-            if fn.lower().endswith(".txt") and not fn.startswith(".")
+        residual_count: int = self.audit.write_report()
+        elapsed: float = time.time() - start_time
+        print(
+            f"\n[100.0%] Terminé ({self.processed_in_session} fichier(s) "
+            f"anonymisé(s) en {elapsed:.1f}s).",
+            flush=True,
         )
-        if not lot_files:
-            print(f"Aucun fichier de lot trouvé dans '{res_dir}'.", flush=True)
-            return
-
-        self.audit.pair_counter.clear()
-        self.audit.files_by_name.clear()
-        self.audit.canonical_labels.clear()
-
-        total: int = len(lot_files)
-        for idx, lot_path in enumerate(lot_files, start=1):
-            with open(lot_path, "r", encoding="utf-8", errors="ignore") as f_in:
-                updated_content: str = self._anonymize_text(f_in.read())
-            DocumentTextUtils.atomic_write_text(lot_path, updated_content)
-            self.audit.scan_residual_names(updated_content, os.path.basename(lot_path))
-            if idx % 10 == 0 or idx == total or idx == 1:
-                print(f"    ... [{idx}/{total}] {os.path.basename(lot_path)}", flush=True)
-
-        self.audit.save()
-        count: int = self.audit.write_report()
-        elapsed_str: str = SharedCoreUtils.format_duration(time.time() - start_time)
-        print(f"\n[100.0%] Passe sur place terminée sur {total} lot(s) en {elapsed_str}.", flush=True)
-        print(f" * Audit détail : {count} nom(s) dans '{self.config.audit_report_file}'", flush=True)
-        print(f" * Audit copier : {count} nom(s) dans '{self.config.audit_copy_file}'", flush=True)
+        self._print_audit_summary(residual_count)
 
     def run(self) -> None:
-        """Exécute l'anonymisation complète sur le répertoire transcriptions."""
-        if self.manual_only:
-            self.run_on_existing_results()
-            return
-        start_time: float = time.time()
-        print("=== ÉTAPE 2 : ANONYMISATION & AUDIT ===", flush=True)
+        """Parcourt toutes les transcriptions et génère les lots anonymisés."""
         if not self.initialize():
             return
-        trans_dir: str = self.config.transcriptions_dir
-        if not os.path.exists(trans_dir):
-            print(f"Erreur : '{trans_dir}' introuvable.", flush=True)
+        t_start: float = time.time()
+        all_files: List[str] = self._collect_files_sorted(
+            self.config.transcriptions_dir
+        )
+        pending: List[str] = [
+            f for f in all_files if f not in self.audit.already_processed
+        ]
+        total_pending: int = len(pending)
+        if total_pending == 0:
+            self.audit.write_report()
+            print(
+                "[OK] Aucune nouvelle transcription à anonymiser.", flush=True
+            )
             return
 
-        all_txts: List[str] = sorted(
-            os.path.join(rp, fn)
-            for rp, _, files in os.walk(trans_dir)
-            for fn in files
-            if fn.lower().endswith(".txt") and fn != "rapport_extraction.txt" and not fn.startswith(".")
+        for idx, file_path in enumerate(pending, start=1):
+            self._process_single_file(file_path)
+            if idx % 20 == 0 or idx == total_pending:
+                pct: float = (idx / total_pending) * 100.0
+                print(
+                    f"    ... [{pct:5.1f}% | {idx}/{total_pending}] ...",
+                    flush=True,
+                )
+
+        self.finalize(t_start)
+
+    def run_on_existing_results(self) -> None:
+        """Applique les règles manuelles et l'audit sur les lots déjà générés."""
+        if not self.initialize():
+            return
+        t_start: float = time.time()
+        lot_files: List[str] = self._collect_files_sorted(
+            self.config.results_dir
         )
-        pending: List[str] = [f for f in all_txts if os.path.normpath(f) not in self.audit.already_processed]
-        total: int = len(pending)
-        for idx, trans_path in enumerate(pending, start=1):
-            if idx % 10 == 0 or idx == total or idx == 1:
-                print(f"    ... [{(idx / total) * 100:5.1f}% | {idx}/{total}] ...", flush=True)
-            self.anonymize_single_file(trans_path)
-        self.finalize(start_time)
+        total_lots: int = len(lot_files)
+        if total_lots == 0:
+            print(
+                f"[INFO] Aucun lot existant trouvé dans '{self.config.results_dir}'.",
+                flush=True,
+            )
+            return
+
+        self.audit = AuditAndStateManager(self.config, self.rules)
+        self.audit.load()
+        for idx, lot_path in enumerate(lot_files, start=1):
+            with open(lot_path, "r", encoding="utf-8", errors="replace") as f_in:
+                raw_text: str = f_in.read()
+            updated_text: str = self._anonymize_text(raw_text)
+            self.audit.scan_residual_names(updated_text, lot_path)
+            DocumentTextUtils.atomic_write_text(lot_path, updated_text)
+            print(
+                f"    ... [{idx}/{total_lots}] {os.path.basename(lot_path)}",
+                flush=True,
+            )
+
+        self.audit.save()
+        residual_count: int = self.audit.write_report()
+        elapsed: float = time.time() - t_start
+        print(
+            f"\n[100.0%] Passe sur place terminée sur {total_lots} lot(s) "
+            f"en {elapsed:.1f}s.",
+            flush=True,
+        )
+        self._print_audit_summary(residual_count)

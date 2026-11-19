@@ -18,16 +18,20 @@ class DocumentTextUtils:
     """
 
     REGEX_EMAIL: Pattern[str] = re.compile(
-        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
     )
     REGEX_PHONE: Pattern[str] = re.compile(
-        r"(?<!\d)(?:\+33\s*(?:\(0\)\s*)?|0033\s*(?:\(0\)\s*)?|0)[1-9]"
-        r"(?:[\s.\-]?\d{2,3}){3,4}(?!\d)"
+        r"(?:\+33\s*(?:\(0\)\s*)?|0033\s*(?:\(0\)\s*)?|(?<!\d)(?<!\.)0(?!\.))[1-9]"
+        r"(?:[\s.\-]?\d{2}){4}(?!\d)"
     )
     REGEX_SSN: Pattern[str] = re.compile(
         r"(?<!\d)(?:1|2)\s?\d{2}\s?(?:0[1-9]|1[0-2]|2[0-9]|[3-9]\d)\s?"
         r"(?:\d{2}|2[AB])\s?\d{3}\s?\d{3}(?:\s?\d{2})?(?!\d)",
         re.IGNORECASE,
+    )
+    REGEX_SSN_OCR_GLUED: Pattern[str] = re.compile(
+        r"(?i)(?:(?<=Nmle)|(?<=NIR)|(?<=SS)|(?<![A-Z0-9]))"
+        r"[1289H]?[0-9H]{2}[0-1][0-9H][0-9A-BH]{2}[0-9H]{6,8}(?![0-9])"
     )
     REGEX_IBAN: Pattern[str] = re.compile(
         r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,3})?\b"
@@ -50,6 +54,7 @@ class DocumentTextUtils:
         r"|(?:n[°o]\s*(?:rpps|am|finess|sinistre|dossier|ordre|électeur|electeur)"
         r"|cartenationale\s*d'identiten[°o])\s*[:#-]?\s*[A-Z0-9]{7,15}"
         r"(?:\s+\d{2}\s+\d\s+[A-Z0-9]{2}\s+\d)?"
+        r"|\d{9}\s+\d{2}\s+\d\s+[A-Z0-9]{2}\s+\d"
         r"|cni\s*[:#-]?\s*[A-Z0-9]{9,12}"
         r"|[A-Z]{2}\d[A-Z0-9]{6}"
         r"|\d{6}X{4,8}\d{4}"
@@ -78,17 +83,23 @@ class DocumentTextUtils:
         r"|\d{1,4}[\s\-][A-Z]{2,3}[\s\-](?:0[1-9]|[1-8]\d|9[0-5]|2[AB]|97[1-6]))\b"
     )
     REGEX_ACCESS_CODES: Pattern[str] = re.compile(
-        r"(?i)\b(?:digicode|code\s*(?:d'acc[èe]s|immeuble|portail|retrait|colis|locker)|"
-        r"mot\s*de\s*passe|mdp)\s*[:=\-]?\s*[A-Za-z0-9#*]{3,20}\b"
+        r"(?i)\b(?:digicode|code\s*(?:d'acc[èe]s|immeuble|portail|retrait|colis|locker|"
+        r"vous\s+permettant\s+d'acc[ée]der[^\n:]{0,35})|mot\s*de\s*passe|mdp)"
+        r"\s*[:=\-]?\s*(?:\r?\n\s*)?[A-Za-z0-9#*+]{4,20}\b"
     )
     REGEX_ADMIN_REFS: Pattern[str] = re.compile(
         r"(?i)\b(?:dossier\s+sinistre|sinistre|dossier|affaire|rg|siret|siren|permis|cni)\s*"
         r"(?:n[°o]\s*[:=\-]?\s*|[:=\-]\s*|\s+)(?=[A-Z0-9/\-\s]*\d)[A-Z0-9/\-\s]{5,22}\b"
     )
     REGEX_BIRTH_DATE: Pattern[str] = re.compile(
-        r"(?i)\b((?:n[ée]e?(?:\s+le)?|date\s+de\s+naissance|naissance|ddn|"
+        r"(?i)\b((?:n[ée](?:[\(（]e[\)）]|e)?(?:\s+le)?|date\s+de\s+naissance|naissance|ddn|"
         r"enfant|fils|fille|b[ée]b[ée]|nourrisson|patient|patiente)\s*(?:du|le)?\s*[:=\-]?\s*)"
-        r"(?:\d{1,2}[/\-.]\d{1,2}[/\-.]|\d{1,2}\s+[a-zéû]+\s+)((?:19|20)\d{2})\b"
+        r"(?:\d{1,2}[/\-.]\d{1,2}[/\-.]|\d{1,2}\s+[a-zéû]+\s+|(?:0[1-9]|[12]\d|3[01])(?:0[1-9]|1[0-2]|0s))((?:19|20)\d{2})\b"
+    )
+    REGEX_GLUED_PERSON_BIRTH_DATE: Pattern[str] = re.compile(
+        r"((?:Aurélie\s+S\.|S\.,?\s*AURELIE|AURELIE)\s*)"
+        r"(?:0[1-9]|[12]\d|3[01])[/\-.](?:0[1-9]|1[0-2])[/\-.]((?:19|20)\d{2})\b",
+        re.IGNORECASE,
     )
     REGEX_FACILITIES_AND_ZONES: Pattern[str] = re.compile(
         r"\b(?:CHU|Clinique|Polyclinique|H[ôo]pital|Centre\s+[Hh]ospitalier|"
@@ -102,15 +113,17 @@ class DocumentTextUtils:
         r"(?:https?://|www\.)[^\s<>\"'\)\]]+", re.IGNORECASE
     )
 
-    _STREET_TYPES: str = (
+    _STREET_TYPES_NO_NUM: str = (
         r"(?:rue|avenue|av\.?|boulevard|bd\.?|bld\.?|all[ée]e|all\.?|impasse|imp\.?|"
-        r"place|pl\.?|chemin|chem\.?|route|rte\.?|quai|square|sq\.?|cours|passage|"
-        r"sentier|voie|faubourg|fbg\.?|r[ée]sidence|r[ée]s\.?|lotissement|hameau|"
+        r"chemin|chem\.?|route|rte\.?|quai|square|sq\.?|cours|passage|"
+        r"sentier|faubourg|fbg\.?|r[ée]sidence|r[ée]s\.?|lotissement|hameau|"
         r"lieu-dit|lieudit|esplanade|terrasse|parvis|promenade|foss[ée]s)"
     )
+    _STREET_TYPES_WITH_NUM: str = rf"(?:{_STREET_TYPES_NO_NUM}|place|pl\.?|voie)"
 
     REGEX_STREET_ADDRESS: Pattern[str] = re.compile(
-        rf"(?i)\b(?:\d{{1,4}}(?:\s*(?:bis|ter|quater))?\s*[,]?\s*)?{_STREET_TYPES}\s+"
+        rf"(?i)\b(?:\d{{1,4}}(?:\s*(?:bis|ter|quater))?\s*[,]?\s*{_STREET_TYPES_WITH_NUM}"
+        rf"|{_STREET_TYPES_NO_NUM})\s+"
         rf"(?:de\s+la\s+|des\s+|du\s+|de\s+|d'|l')?[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
         rf"[^\n,;()\[\]{{}}]{{2,45}}"
     )
@@ -182,7 +195,6 @@ class DocumentTextUtils:
         "disney", "molotov", "salto", "ocs", "bein", "rmc", "bfm", "lci",
         "cnews", "tf1", "m6", "arte", "w9", "tmc", "tfx", "nrj12",
     })
-
     MOJIBAKE_REPLACEMENTS: Tuple[Tuple[str, str], ...] = (
         ("\ufffd", "e"), ("ï¿½", "e"),
         ("Ã©", "é"), ("Ã¨", "è"), ("Ãª", "ê"), ("Ã«", "ë"),
@@ -338,6 +350,22 @@ class DocumentTextUtils:
         return None
 
     @classmethod
+    def resolve_file_period(
+        cls, extracted_text: str, file_name: str, file_path: str
+    ) -> str:
+        """Détermine la période AAAA-MM à partir du nom de fichier, du contenu ou du mtime."""
+        detected: Optional[str] = cls.detect_period_in_text(file_name)
+        if detected:
+            return detected
+        detected = cls.detect_period_in_text(extracted_text[:4000])
+        if detected:
+            return detected
+        try:
+            mtime: float = os.path.getmtime(file_path)
+            return datetime.fromtimestamp(mtime).strftime("%Y-%m")
+        except OSError:
+            return "0000-00"
+    @classmethod
     def split_sms_addresses(cls, raw_address: str) -> List[str]:
         """Découpe les adresses multiples d'un SMS/MMS et normalise les numéros FR."""
         if not raw_address:
@@ -433,6 +461,27 @@ class DocumentTextUtils:
         if norm_phone:
             return left, right, norm_phone
         return left, right, ""
+
+    @classmethod
+    def is_contact_identifier(cls, value: str) -> bool:
+        """Indique si une chaîne est une adresse e-mail ou un numéro de téléphone FR."""
+        cleaned: str = value.strip()
+        if not cleaned:
+            return False
+        if "@" in cleaned and bool(cls.REGEX_EMAIL.fullmatch(cleaned)):
+            return True
+        return bool(cls._normalize_fr_phone(cleaned))
+
+    @classmethod
+    def mask_identifiers_in_filename(
+        cls, filename_stem: str, target_phones: Dict[str, str]
+    ) -> str:
+        """Masque les numéros et e-mails dans un nom de fichier pour la restauration."""
+        masked: str = cls.REGEX_EMAIL.sub("EMAIL_MASQUE", filename_stem)
+        for raw_phone, alias in target_phones.items():
+            if raw_phone in masked:
+                masked = masked.replace(raw_phone, alias)
+        return cls.REGEX_PHONE.sub("NUMERO_MASQUE", masked)
 
     @staticmethod
     def _char_to_ocr_regex(ch: str) -> str:

@@ -24,7 +24,7 @@ durables, purple, crystal
 aube, fleur, rose, olive, cerise, laurier, loup, soleil, sol, noisette
 pierre, pierres, barre, barres, presse, cuisine, campagne, boucher
 capitaine, chevalier, leclerc, foret, marguerite, diététicienne, dieteticienne
-associés, associes, croix, gibier, gras, homo, marmot, merle, millet
+associés, associes, croix, gibier, gras, garage, place, homo, marmot, merle, millet
 montmartre, croatie, catail, ceidf, cuvi, mevoila, passedroit
 
 # --- Alimentation, cuisine, blogs & anglophones ---
@@ -40,6 +40,7 @@ angel, audric, audry, didou, etienne, lise, lucette, pedro, steve
 
 # --- Verbes & mots grammaticaux ---
 mis, mise, trouve, trouvee, trouves, devis, vivre, social, sociale
+cree, crees, creee, creees, creer
 email, emails, mail, courir, laboratoire, atelier, ateliers, chateau, château
 chat, client, clients, club, compagnie, envies, etoile, folie, forum
 haut, hibou, jardin, ligne, loisirs, magazine, maire, midi, parc

@@ -10,32 +10,70 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 
 class ContactRulesLoader:
     """
-    Charge les règles d'anonymisation depuis tous les fichiers de contacts,
-    génère les variantes OCR et compile les regex optimisées (Trie).
+    Charge et unifie les règles d'anonymisation depuis les index CSV,
+    les e-mails découverts, les noms de famille extraits et contacts_manuels.txt,
+    puis compile les expressions régulières optimisées (Trie OCR).
     """
 
-    OCR_DIGIT_TRANS = str.maketrans({
-        "0": "o", "1": "i", "5": "s", "8": "b", "4": "a", "6": "g",
-    })
-
     COMMON_WORD_COLLISIONS = frozenset({
-        "gard", "ard", "indre", "aube", "gers", "var", "ain", "eure",
-        "orne", "lot", "cher", "tarn", "nord", "sud", "est", "ouest",
-        "laize", "fay", "hom", "port", "pont", "mont", "val", "bois",
+        "ami", "amis", "ange", "aube", "autre", "autres", "avec", "avis",
+        "bac", "bain", "banc", "bas", "beau", "belle", "bien", "blanc",
+        "bleu", "bois", "bon", "bonne", "bord", "bout", "brun", "bus",
+        "camp", "car", "carte", "cas", "cave", "champ", "chat", "chaud",
+        "chef", "cher", "ciel", "clair", "clef", "clos", "code", "coin",
+        "col", "compte", "coq", "corps", "cote", "coup", "cour", "cours",
+        "croix", "cuisine", "dame", "date", "debut", "dent", "deux",
+        "dieu", "don", "doux", "droit", "eau", "ecole", "effet", "enfant",
+        "envie", "etat", "ete", "face", "faim", "fait", "femme", "fer",
+        "fete", "feu", "fil", "fille", "fils", "fin", "fleur", "foi",
+        "fois", "fond", "font", "force", "foret", "fort", "frais", "franc",
+        "froid", "front", "fruit", "gare", "gens", "glace", "grand", "gris",
+        "gros", "haut", "heure", "hiver", "homme", "idee", "image", "jeu",
+        "joie", "jour", "juge", "juste", "lac", "lait", "large", "laver",
+        "libre", "lien", "lieu", "ligne", "lire", "lit", "livre", "loi",
+        "long", "loup", "lune", "main", "maire", "maison", "mal", "maman",
+        "marcher", "mari", "matin", "mer", "mere", "midi", "miel", "mille",
+        "mine", "mode", "mois", "monde", "mont", "mort", "mot", "mur",
+        "neige", "neuf", "nez", "noir", "nom", "nord", "note", "nuit",
+        "oeil", "oeuvre", "oiseau", "ombre", "oncle", "or", "ordre", "ouest",
+        "page", "pain", "paix", "papa", "parc", "parent", "part", "parti",
+        "pas", "passe", "payer", "pays", "peau", "peine", "pere", "petit",
+        "peur", "pied", "pierre", "place", "plan", "plein", "pluie", "plus",
+        "poids", "point", "pont", "port", "porte", "poste", "pot", "pour",
+        "pres", "pret", "prix", "proche", "projet", "propre", "puis",
+        "quai", "quart", "raison", "rang", "recit", "regle", "reine",
+        "repas", "reste", "reve", "rien", "rire", "rive", "robe", "roche",
+        "roi", "role", "rond", "rose", "rouge", "route", "rue", "sable",
+        "sac", "sage", "saint", "salle", "sang", "sans", "sante", "saut",
+        "savoir", "scene", "sec", "sel", "sens", "sept", "seul", "siecle",
+        "signe", "simple", "site", "soeur", "soin", "soir", "sol", "soleil",
+        "somme", "son", "sort", "sou", "soupe", "source", "sous", "sud",
+        "suite", "sujet", "sur", "table", "tache", "taille", "temps",
+        "terre", "tete", "tiers", "titre", "toile", "toit", "ton", "tour",
+        "tout", "train", "trait", "travail", "triste", "trop", "trou",
+        "type", "usage", "val", "valeur", "vent", "verre", "vers", "vert",
+        "vie", "vieux", "ville", "vin", "visage", "vite", "voie", "voix",
+        "vol", "vue", "zone",
     })
 
     NON_PERSON_ALIAS_MARKERS = (
-        "contact_mail_", "contact_tel_", "service ", "atelier ", "cabinet ",
-        "association ", "fondation ", "groupe ", "agence ", "bureau ",
-        "centre ", "creche ", "crèche ", "mairie ", "laboratoire ",
-        "observatoire ", "plate-forme ", "château ", "brasserie ",
-        "office ", "succursale ", "pharmacie ", "clinique ", "hopital ",
+        "contact_", "service", "direction", "mairie", "cabinet", "agence",
+        "association", "assurance", "banque", "mutuelle", "clinique",
+        "hopital", "hôpital", "centre", "laboratoire", "pharmacie",
+        "societe", "société", "entreprise", "ecole", "école", "college",
+        "collège", "lycee", "lycée", "universite", "université", "caf",
+        "cpam", "urssaf", "impots", "impôts", "tresor", "trésor",
+        "prefecture", "préfecture", "ministere", "ministère", "tribunal",
+        "police", "gendarmerie", "pompiers", "amazon", "leboncoin",
+        "vinted", "paypal", "orange", "sfr", "free", "bouygues", "edf",
+        "engie", "sncf", "ratp", "google", "microsoft", "apple", "eni",
+        "acoss", "pole emploi", "pôle emploi", "france travail",
     )
 
     def __init__(
         self, config: PipelineConfig, manual_only: bool = False
     ) -> None:
-        """Initialise les structures d'indexation des règles de contacts."""
+        """Initialise les structures d'indexation des contacts."""
         self.config: PipelineConfig = config
         self.manual_only: bool = manual_only
         self.contacts_id: Dict[str, str] = {}
@@ -43,58 +81,52 @@ class ContactRulesLoader:
         self.case_sensitive_keywords: Dict[str, str] = {}
         self.glued_to_alias: Dict[str, str] = {}
         self.alias_words: Set[str] = set()
-        self.full_targets: Set[str] = set()
         self.protected_surnames: Set[str] = set()
         self.surname_to_alias: Dict[str, str] = {}
         self.last_name_to_aliases: DefaultDict[str, Set[str]] = defaultdict(set)
         self.last_name_display: Dict[str, str] = {}
-        self.combined_keyword_pattern: Optional[Pattern[str]] = None
+        self.full_targets: Set[str] = set()
+        self._normalized_first_names: Set[str] = set()
+
         self.combined_case_sensitive_pattern: Optional[Pattern[str]] = None
+        self.combined_keyword_pattern: Optional[Pattern[str]] = None
         self.combined_glued_pattern: Optional[Pattern[str]] = None
         self.combined_location_pattern: Optional[Pattern[str]] = None
-        self._normalized_first_names: Set[str] = {
-            DocumentTextUtils.normalize_word(fn)
-            for fn in config.known_first_names
-        }
-
-    @classmethod
-    def normalize_ocr_key(cls, text: str) -> str:
-        """Normalise une chaîne en unifiant les confusions chiffres/lettres OCR."""
-        base: str = DocumentTextUtils.normalize_word(text).translate(
-            cls.OCR_DIGIT_TRANS
-        )
-        return re.sub(r"[\s\-'\u2019\._]+", "", base)
 
     @staticmethod
-    def is_one_edit_away(word_a: str, word_b: str) -> bool:
-        """Vérifie si deux mots normalisés diffèrent d'au plus 1 opération OCR."""
-        len_a: int = len(word_a)
-        len_b: int = len(word_b)
-        if abs(len_a - len_b) > 1 or min(len_a, len_b) < 6:
-            return False
-        if word_a == word_b:
+    def normalize_ocr_key(text: str) -> str:
+        """Normalise une chaîne en absorbant les confusions fréquentes d'OCR."""
+        norm: str = DocumentTextUtils.normalize_word(text)
+        norm = (
+            norm.replace("0", "o")
+            .replace("1", "i")
+            .replace("5", "s")
+            .replace("8", "b")
+        )
+        return re.sub(r"[^a-z]", "", norm)
+
+    @staticmethod
+    def is_one_edit_away(word1: str, word2: str) -> bool:
+        """Vérifie si deux mots normalisés ont au plus 1 faute de frappe/OCR."""
+        if word1 == word2:
             return True
-        idx_a: int = 0
-        idx_b: int = 0
-        edits: int = 0
-        while idx_a < len_a and idx_b < len_b:
-            if word_a[idx_a] == word_b[idx_b]:
-                idx_a += 1
-                idx_b += 1
-                continue
-            edits += 1
-            if edits > 1:
-                return False
-            if len_a > len_b:
-                idx_a += 1
-            elif len_b > len_a:
-                idx_b += 1
+        l1, l2 = len(word1), len(word2)
+        if abs(l1 - l2) > 1 or min(l1, l2) < 6:
+            return False
+        if l1 == l2:
+            return sum(c1 != c2 for c1, c2 in zip(word1, word2)) == 1
+        short_w, long_w = (word1, word2) if l1 < l2 else (word2, word1)
+        i = j = diffs = 0
+        while i < len(short_w) and j < len(long_w):
+            if short_w[i] != long_w[j]:
+                diffs += 1
+                if diffs > 1:
+                    return False
+                j += 1
             else:
-                idx_a += 1
-                idx_b += 1
-        if idx_a < len_a or idx_b < len_b:
-            edits += 1
-        return edits <= 1
+                i += 1
+                j += 1
+        return True
     def is_first_name(self, token: str) -> bool:
         """Vérifie si un jeton est un prénom connu (simple, composé ou commençant par Jean)."""
         norm: str = re.sub(r"\s+", " ", DocumentTextUtils.normalize_word(token))
@@ -106,10 +138,10 @@ class ContactRulesLoader:
         if norm in self._normalized_first_names:
             return True
         if norm.startswith(("jean ", "jean-")):
-            second_part: str = norm[5:].strip()
+            split_parts: List[str] = re.split(r"[\s\-]+", norm, maxsplit=1)
+            second_part: str = split_parts[-1] if len(split_parts) == 2 else ""
             if (
-                len(second_part) >= 2
-                and second_part.isalpha()
+                re.fullmatch(r"[a-z]{2,}", second_part)
                 and second_part not in {"de", "du", "des", "le", "la", "les", "en", "et"}
             ):
                 return True
@@ -142,10 +174,12 @@ class ContactRulesLoader:
         norm_id: str = "",
         is_manual: bool = False,
     ) -> None:
-        """Enregistre une règle (cible -> alias) et ses variantes OCR/noms de famille."""
+        """Enregistre une règle (cible -> alias) en bloquant toute règle inversée."""
         kw: str = raw_keyword.strip()
         al: str = raw_alias.strip()
         if len(kw) < 2 or not al or "=" in kw or "=" in al:
+            return
+        if "@" in al or DocumentTextUtils.REGEX_PHONE.fullmatch(al):
             return
 
         for w in re.findall(r"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]+", al):
@@ -294,7 +328,7 @@ class ContactRulesLoader:
         expanded: Set[str] = set()
         for loc in self.config.masked_locations:
             norm_loc: str = DocumentTextUtils.normalize_word(loc)
-            if norm_loc in self.COMMON_WORD_COLLISIONS:
+            if len(norm_loc) < 3 or norm_loc in self.COMMON_WORD_COLLISIONS:
                 continue
             forms: Set[str] = {loc, loc.replace("-", " "), loc.replace(" ", "-")}
             for form in list(forms):
@@ -327,7 +361,9 @@ class ContactRulesLoader:
             valid_locs: List[str] = [loc for loc in all_locs if len(loc) >= 3]
             if valid_locs:
                 loc_regex: str = DocumentTextUtils.build_ocr_tolerant_trie_regex(valid_locs)
-                self.combined_location_pattern = re.compile(rf"(?<![A-Za-zÀ-ÿ]){loc_regex}(?![A-Za-zÀ-ÿ])", re.IGNORECASE)
+                self.combined_location_pattern = re.compile(
+                    rf"(?<![A-Za-zÀ-ÿ0-9]){loc_regex}(?![A-Za-zÀ-ÿ0-9])", re.IGNORECASE
+                )
 
         if self.glued_to_alias:
             glued_alt: str = DocumentTextUtils.build_ocr_tolerant_trie_regex(list(self.glued_to_alias.keys()))
