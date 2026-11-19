@@ -1,6 +1,7 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -71,16 +72,72 @@ class TestDocAnonymizer(unittest.TestCase):
 
     def test_period_detection_priority(self) -> None:
         """
-        Vérifie la détection de la période AAAA-MM dans les noms de fichiers et contenus.
+        Vérifie la détection de la période AAAA-MM dans les noms de fichiers et contenus
+        (formats ISO, français JJ/MM/AAAA, compact AAAAMMJJ et mois en toutes lettres).
         """
         self.assertEqual(
             DocumentTextUtils.detect_period_in_text("Facture_2023-09-14_client.pdf"),
             "2023-09",
         )
         self.assertEqual(
+            DocumentTextUtils.detect_period_in_text("Ordonnance du 14/06/2013 - Pharmacie"),
+            "2013-06",
+        )
+        self.assertEqual(
+            DocumentTextUtils.detect_period_in_text("Archive_20190822_note.txt"),
+            "2019-08",
+        )
+        self.assertEqual(
             DocumentTextUtils.detect_period_in_text("Courrier du 12 octobre 2022"),
             "2022-10",
         )
+
+    def test_text_utils_comprehensive_coverage(self) -> None:
+        """
+        Verrouille l'ensemble des utilitaires critiques de DocumentTextUtils :
+        normalisation, mojibake, faux positifs téléphone/adresse, paires de contacts
+        et automates Trie tolérants aux erreurs OCR.
+        """
+        self.assertEqual(DocumentTextUtils.normalize_word("  Éléonore! "), "eleonore")
+        self.assertEqual(
+            DocumentTextUtils.repair_mojibake("RÃ©union avec lâ€™Ã©quipe"),
+            "Réunion avec l'équipe",
+        )
+        self.assertEqual(
+            DocumentTextUtils.sanitize_filename("facture:01/02*test?.pdf"),
+            "facture_01_02_test_.pdf",
+        )
+
+        self.assertIsNone(DocumentTextUtils.REGEX_PHONE.search("Valeur 0.008219178 mesurée"))
+        self.assertIsNone(DocumentTextUtils.REGEX_PHONE.search("Heure 10.15:57 enregistrée"))
+        self.assertIsNotNone(DocumentTextUtils.REGEX_PHONE.search("Appeler au 06 12 34 56 78."))
+
+        self.assertIsNone(DocumentTextUtils.REGEX_STREET_ADDRESS.search("Consultation avec le Dr Lamotte"))
+        self.assertIsNotNone(DocumentTextUtils.REGEX_STREET_ADDRESS.search("Domicile : 12 av. Victor Hugo"))
+
+        self.assertTrue(DocumentTextUtils.is_contact_identifier("06 11 22 33 44"))
+        self.assertTrue(DocumentTextUtils.is_contact_identifier("test@exemple.fr"))
+        self.assertFalse(DocumentTextUtils.is_contact_identifier("Jean Dupont"))
+
+        self.assertEqual(
+            DocumentTextUtils.resolve_contact_pair("Jean.Dupont+tag@Exemple.fr", "Jean D."),
+            ("Jean.Dupont+tag@Exemple.fr", "Jean D.", "jean.dupont@exemple.fr"),
+        )
+        self.assertEqual(
+            DocumentTextUtils.mask_identifiers_in_filename("jean@test.fr", {}),
+            "EMAIL_MASQUE",
+        )
+        self.assertEqual(
+            DocumentTextUtils.mask_identifiers_in_filename(
+                "sms_0612345678", {"0612345678": "Jean_D"}
+            ),
+            "sms_Jean_D",
+        )
+
+        trie_rx: str = DocumentTextUtils.build_ocr_tolerant_trie_regex(["Cabottiere", "Dupont"])
+        compiled = re.compile(rf"(?i)\b(?:{trie_rx})\b")
+        self.assertIsNotNone(compiled.search("Cabottière"))
+        self.assertIsNotNone(compiled.search("Dup0nt"))
 
     def test_rcs_emails_filtered_from_discovered_and_one_edit_ocr(self) -> None:
         """

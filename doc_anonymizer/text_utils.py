@@ -122,8 +122,8 @@ class DocumentTextUtils:
     _STREET_TYPES_WITH_NUM: str = rf"(?:{_STREET_TYPES_NO_NUM}|place|pl\.?|voie|cr\.?)"
 
     REGEX_STREET_ADDRESS: Pattern[str] = re.compile(
-        rf"(?i)\b(?:\d{{1,4}}(?:\s*(?:bis|ter|quater))?\s*[,]?\s*{_STREET_TYPES_WITH_NUM}(?:\b|(?=[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]))"
-        rf"|{_STREET_TYPES_NO_NUM}(?:\b|(?=[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])))\s*"
+        rf"(?i)\b(?:\d{{1,4}}(?:\s*(?:bis|ter|quater))?\s*[,]?\s*{_STREET_TYPES_WITH_NUM}(?:(?![a-zà-ÿ0-9])|(?=(?:de|du|des|d)[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]))"
+        rf"|{_STREET_TYPES_NO_NUM}(?:(?![a-zà-ÿ0-9])|(?=(?:de|du|des|d)[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])))\s*"
         rf"(?:de\s*la\s*|des\s*|du\s*|de\s*|d'|l')?[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
         rf"[^\n,;()\[\]{{}}]{{2,45}}"
     )
@@ -195,6 +195,7 @@ class DocumentTextUtils:
         "disney", "molotov", "salto", "ocs", "bein", "rmc", "bfm", "lci",
         "cnews", "tf1", "m6", "arte", "w9", "tmc", "tfx", "nrj12",
     })
+
     MOJIBAKE_REPLACEMENTS: Tuple[Tuple[str, str], ...] = (
         ("\ufffd", "e"), ("ï¿½", "e"),
         ("Ã©", "é"), ("Ã¨", "è"), ("Ãª", "ê"), ("Ã«", "ë"),
@@ -275,6 +276,7 @@ class DocumentTextUtils:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             raise
+
     @staticmethod
     def _normalize_fr_phone(raw_val: str) -> str:
         """Normalise un numéro français au format canonique '0XXXXXXXXX'."""
@@ -324,7 +326,6 @@ class DocumentTextUtils:
                     if norm_phone:
                         target_phones[norm_phone] = right
         return target_phones, allowed_emails
-
     @classmethod
     def detect_period_in_text(cls, text: str) -> Optional[str]:
         """Détecte une période AAAA-MM dans un nom de fichier ou un texte."""
@@ -333,10 +334,16 @@ class DocumentTextUtils:
         m_iso = re.search(r"(?<!\d)(19\d{2}|20\d{2})[-_/.](0[1-9]|1[0-2])(?!\d)", text)
         if m_iso:
             return f"{m_iso.group(1)}-{m_iso.group(2)}"
-        m_fr = re.search(r"(?<!\d)(?:0?[1-9]|\d|3)[/\-.](0[1-9]|1[0-2])[/\-.](19\d{2}|20\d{2})(?!\d)", text)
+        m_fr = re.search(
+            r"(?<!\d)(?:0?[1-9]|[12]\d|3[01])[/\-.](0[1-9]|1[0-2])[/\-.](19\d{2}|20\d{2})(?!\d)",
+            text,
+        )
         if m_fr:
-            return f"{m_fr.group(3)}-{m_fr.group(1)}"
-        m_compact = re.search(r"(?<!\d)(19\d{2}|20\d{2})(0[1-9]|1[0-2])(?:0[1-9]|\d|3)(?!\d)", text)
+            return f"{m_fr.group(2)}-{m_fr.group(1)}"
+        m_compact = re.search(
+            r"(?<!\d)(19\d{2}|20\d{2})(0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?!\d)",
+            text,
+        )
         if m_compact:
             return f"{m_compact.group(1)}-{m_compact.group(2)}"
         m_word = re.search(
@@ -365,6 +372,7 @@ class DocumentTextUtils:
             return datetime.fromtimestamp(mtime).strftime("%Y-%m")
         except OSError:
             return "0000-00"
+
     @classmethod
     def split_sms_addresses(cls, raw_address: str) -> List[str]:
         """Découpe les adresses multiples d'un SMS/MMS et normalise les numéros FR."""
