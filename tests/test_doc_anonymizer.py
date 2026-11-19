@@ -102,7 +102,7 @@ class TestDocAnonymizer(unittest.TestCase):
     def test_anonymization_ocr_glued_and_auto_pairs(self) -> None:
         """
         Vérifie le masquage complet : noms collés OCR, titres avec prénom,
-        CNI 12 chiffres, dates de naissance (année seule), établissements, transactions et réunions.
+        CNI 12 chiffres, dates de naissance (année seule), plaques, établissements et réunions.
         """
         with tempfile.TemporaryDirectory(prefix="test_doc_anon_") as tmp_dir:
             with open(os.path.join(tmp_dir, "prenoms.txt"), "w", encoding="utf-8") as f_fn:
@@ -135,7 +135,8 @@ class TestDocAnonymizer(unittest.TestCase):
                     "Famille Valm\ufffdnt suivie par Delacroix, adresse Rue de la Paix.\n"
                     "En-tête OCR collé : MMEMERCIERALICE habitant 12 rue des Lilas.\n"
                     "Déplacement prévu à B0ULON et 1FS, rendez-vous Clinique Saint-Martin.\n"
-                    "Enfant née le 02/05/2013, titre 987654321098 délivrée le 10/03/2020.\n"
+                    "Enfant : 02/05/2013 et ddn 14-08-2015, titre 987654321098 délivrée le 10/03/2020.\n"
+                    "Véhicule immatriculé AB-123-CD et ancien 1234 AB 14.\n"
                     "Carte terminant par 4921, transaction n° VTD88412, don de 40 euros.\n"
                     "Visio ID de réunion : 912 3456 7890, code secret : 554433.\n"
                     "Saisie par Charlotte LEFEBVRE et audition de BERNARD Nadia.\n"
@@ -174,8 +175,13 @@ class TestDocAnonymizer(unittest.TestCase):
             self.assertIn("Famille V. suivie par D.", res_txt)
             self.assertNotIn("Saint-Martin", res_txt)
             self.assertIn("[ETABLISSEMENT_LIEU_MASQUE]", res_txt)
-            self.assertIn("née le [JOUR_MOIS_MASQUES]/2013", res_txt)
+            self.assertIn("Enfant : [JOUR_MOIS_MASQUES]/2013", res_txt)
+            self.assertIn("ddn [JOUR_MOIS_MASQUES]/2015", res_txt)
             self.assertNotIn("02/05", res_txt)
+            self.assertNotIn("14-08", res_txt)
+            self.assertIn("[PLAQUE_IMMAT_MASQUEE]", res_txt)
+            self.assertNotIn("AB-123-CD", res_txt)
+            self.assertNotIn("1234 AB 14", res_txt)
             self.assertIn("[ID_CNI_PERMIS_MASQUE]", res_txt)
             self.assertNotIn("987654321098", res_txt)
             self.assertIn("délivrée le [DATE_TITRE_MASQUEE]", res_txt)

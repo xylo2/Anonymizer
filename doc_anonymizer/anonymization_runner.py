@@ -240,16 +240,17 @@ class DocumentAnonymizationRunner:
         f2: bool = len(w2_parts) == 1 and self._is_known_first_name_ocr(w2)
         part_init: str = self._format_particle_initials(particle)
 
-        if w2.isupper() and len(w2) >= 4 and (f1 or self._is_title_case_token(w1)):
-            return f"{w1} {part_init}{self._format_surname_initials(w2)}"
+        if w2.isupper() and len(w2) >= 2 and (f1 or self._is_title_case_token(w1)):
+            if len(w2) >= 4 or f1:
+                return f"{w1} {part_init}{self._format_surname_initials(w2)}"
 
         if w1.isupper() and len(w1) >= 4 and len(w2_parts) == 1 and (f2 or self._is_title_case_token(w2)):
             return f"{self._format_surname_initials(w1)} {part_init}{w2}"
 
-        if f1 and (not f2 or particle or len(w2_parts) >= 2) and len(w2) >= 3:
+        if f1 and (not f2 or particle or len(w2_parts) >= 2) and len(w2) >= 2:
             return f"{w1} {part_init}{self._format_surname_initials(w2)}"
 
-        if not f1 and f2 and len(w1) >= 3:
+        if not f1 and f2 and len(w1) >= 2:
             if w1.isupper() or DocumentTextUtils.normalize_word(w1) in self.rules.protected_surnames:
                 return f"{self._format_surname_initials(w1)} {part_init}{w2}"
 
@@ -302,6 +303,7 @@ class DocumentAnonymizationRunner:
             text = DocumentTextUtils.REGEX_OFFICIAL_MEDICAL_ID.sub("[ID_ADMIN_MASQUE]", text)
             text = DocumentTextUtils.REGEX_BANK_TX_AND_CARDS.sub("[REF_BANCAIRE_TX_MASQUEE]", text)
             text = DocumentTextUtils.REGEX_MEETING_IDS.sub("[ID_REUNION_MASQUE]", text)
+            text = DocumentTextUtils.REGEX_LICENSE_PLATE.sub("[PLAQUE_IMMAT_MASQUEE]", text)
             text = DocumentTextUtils.REGEX_ACCESS_CODES.sub("[CODE_ACCES_MASQUE]", text)
             text = DocumentTextUtils.REGEX_ADMIN_REFS.sub("[REF_ADMIN_MASQUEE]", text)
             text = DocumentTextUtils.REGEX_ID_DOC_DATES.sub(r"\1[DATE_TITRE_MASQUEE]", text)

@@ -73,6 +73,10 @@ class DocumentTextUtils:
         r"(?i)\b(?:id\s*(?:de\s*)?(?:la\s*)?r[ée]union|meeting\s*id|code\s*secret|passcode)"
         r"\s*[:#=\-]?\s*(?:\d[\d\s]{7,14}|[A-Za-z0-9]{4,12})\b"
     )
+    REGEX_LICENSE_PLATE: Pattern[str] = re.compile(
+        r"\b(?:[A-HJ-NP-TV-Z]{2}[\s\-]\d{3}[\s\-][A-HJ-NP-TV-Z]{2}"
+        r"|\d{1,4}[\s\-][A-Z]{2,3}[\s\-](?:0[1-9]|[1-8]\d|9[0-5]|2[AB]|97[1-6]))\b"
+    )
     REGEX_ACCESS_CODES: Pattern[str] = re.compile(
         r"(?i)\b(?:digicode|code\s*(?:d'acc[èe]s|immeuble|portail|retrait|colis|locker)|"
         r"mot\s*de\s*passe|mdp)\s*[:=\-]?\s*[A-Za-z0-9#*]{3,20}\b"
@@ -82,7 +86,8 @@ class DocumentTextUtils:
         r"(?:n[°o]\s*[:=\-]?\s*|[:=\-]\s*|\s+)(?=[A-Z0-9/\-\s]*\d)[A-Z0-9/\-\s]{5,22}\b"
     )
     REGEX_BIRTH_DATE: Pattern[str] = re.compile(
-        r"(?i)\b((?:n[ée]e?\s+le|date\s+de\s+naissance|ddn)\s*[:=\-]?\s*)"
+        r"(?i)\b((?:n[ée]e?(?:\s+le)?|date\s+de\s+naissance|naissance|ddn|"
+        r"enfant|fils|fille|b[ée]b[ée]|nourrisson|patient|patiente)\s*(?:du|le)?\s*[:=\-]?\s*)"
         r"(?:\d{1,2}[/\-.]\d{1,2}[/\-.]|\d{1,2}\s+[a-zéû]+\s+)((?:19|20)\d{2})\b"
     )
     REGEX_FACILITIES_AND_ZONES: Pattern[str] = re.compile(
