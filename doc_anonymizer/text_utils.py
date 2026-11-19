@@ -113,16 +113,16 @@ class DocumentTextUtils:
 
     _STREET_TYPES_NO_NUM: str = (
         r"(?:rue|rve|avenue|av\.|boulevard|bd\.?|bld\.?|impasse|imp\.?|"
-        r"chemin|chem\.?|route|rte\.?|quai|square|sq\.?|cours|passage|"
+        r"chemin|chem\.?|route|rte\.?|quai|square|sq\.?|"
         r"sentier|faubourg|fbg\.?|r[ée]sidence|r[ée]s\.?|lotissement|hameau|"
         r"lieu-dit|lieudit|esplanade|terrasse|parvis|promenade|foss[ée]s)"
     )
-    _STREET_TYPES_WITH_NUM: str = rf"(?:{_STREET_TYPES_NO_NUM}|all[ée]e|all\.?|r\.?|place|pl\.?|voie|cr\.?)"
+    _STREET_TYPES_WITH_NUM: str = rf"(?:{_STREET_TYPES_NO_NUM}|all[ée]e|all\.?|r\.?|place|pl\.?|cours|passage|voie|cr\.?)"
 
     REGEX_STREET_ADDRESS: Pattern[str] = re.compile(
-        rf"(?i)(?<!:)\b(?:\d{{1,4}}[ \t]*(?:bis|ter|quater)?[ \t]*[,]?[ \t]*{_STREET_TYPES_WITH_NUM}(?:(?![a-zà-ÿ0-9])|(?=[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]))"
-        rf"|{_STREET_TYPES_NO_NUM}(?:(?![a-zà-ÿ0-9])|(?=(?:de|du|des|d)[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])))[ \t]*"
-        rf"(?:de[ \t]*la[ \t]*|des[ \t]*|du[ \t]*|de[ \t]*|d'|l')?[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
+        rf"(?i)(?<!:)\b(?:\d{{1,4}}[ \t]*(?:bis|ter|quater)?[ \t]*[,]?[ \t]*{_STREET_TYPES_WITH_NUM}(?:(?![a-zà-ÿ0-9])|(?=(?-i:[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])))"
+        rf"|{_STREET_TYPES_NO_NUM}(?:(?![a-zà-ÿ0-9])|(?=(?:de|du|des|d)(?-i:[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]))))[ \t]*"
+        rf"(?:de[ \t]*la[ \t]*|des[ \t]*|du[ \t]*|de[ \t]*|d'|l')?(?-i:[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])"
         rf"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç0-9'\- \t]{{2,42}}"
     )
 

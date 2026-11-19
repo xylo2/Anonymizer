@@ -429,7 +429,7 @@ class DocumentAnonymizationRunner:
         )
 
         res = re.sub(
-            r"\b(MME|MR|DR|PR|MLLE|ENFANT|Enfant)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç]{2,})",
+            r"\b(MME|MR|DR|MLLE|ENFANT|Enfant)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç]{2,})",
             r"\1 \2",
             res,
         )
