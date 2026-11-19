@@ -113,10 +113,11 @@ class TestAuditAndPowerCoverage(unittest.TestCase):
         reloaded.load()
         self.assertIn("audrey valmont", reloaded.pair_counter)
         self.assertNotIn("sophie", reloaded.pair_counter)
-    def test_power_manager_disabled_and_linux_paths(self) -> None:
+    def test_power_manager_disabled_linux_and_error_paths(self) -> None:
         """
-        Vérifie le mode désactivé (enabled=False) ainsi que les branches
-        Linux (systemd-inhibit présent ou absent) de SystemSleepInhibitor.
+        Vérifie le mode désactivé (enabled=False), les branches Linux
+        (systemd-inhibit présent, absent ou en erreur) et les exceptions Windows
+        de SystemSleepInhibitor.
         """
         disabled_inh = SystemSleepInhibitor(enabled=False)
         with disabled_inh:
@@ -139,10 +140,28 @@ class TestAuditAndPowerCoverage(unittest.TestCase):
 
         with patch.object(os, "name", "posix"), patch.object(
             sys, "platform", "linux"
+        ), patch("shutil.which", return_value="/usr/bin/systemd-inhibit"), patch(
+            "subprocess.Popen", side_effect=OSError("Permission denied")
+        ):
+            err_linux_inh = SystemSleepInhibitor(enabled=True)
+            with err_linux_inh:
+                self.assertIsNone(err_linux_inh._linux_proc)
+
+        with patch.object(os, "name", "posix"), patch.object(
+            sys, "platform", "linux"
         ), patch("shutil.which", return_value=None):
             no_bin_inh = SystemSleepInhibitor(enabled=True)
             with no_bin_inh:
                 self.assertIsNone(no_bin_inh._linux_proc)
+
+        with patch.object(os, "name", "nt"), patch.object(
+            SystemSleepInhibitor,
+            "_apply_windows_state",
+            side_effect=RuntimeError("Win32 indisponible"),
+        ):
+            err_win_inh = SystemSleepInhibitor(enabled=True)
+            with err_win_inh:
+                self.assertFalse(err_win_inh._win_active)
 
 
 if __name__ == "__main__":
