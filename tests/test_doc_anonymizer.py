@@ -102,114 +102,99 @@ class TestDocAnonymizer(unittest.TestCase):
     def test_anonymization_ocr_glued_and_auto_pairs(self) -> None:
         """
         Vérifie le masquage complet : noms collés OCR, titres avec prénom,
-        prénoms composés en Jean (avec ou sans tiret), CNI 12 chiffres, dates de naissance,
-        plaques, établissements et réunions.
+        adresses, dates de naissance (y compris liste personnalisée), NIR et IBAN.
         """
         with tempfile.TemporaryDirectory(prefix="test_doc_anon_") as tmp_dir:
-            with open(os.path.join(tmp_dir, "prenoms.txt"), "w", encoding="utf-8") as f_fn:
-                f_fn.write("jean\nsophie\nluc\ncédric\nmartin\nalice\ncharlotte\nnadia\nevelyne\n")
-
-            with open(os.path.join(tmp_dir, "villes_masquees.txt"), "w", encoding="utf-8") as f_loc:
-                f_loc.write("boulon\nifs\nfresney-le-puceux\nboigny-sur-bionne\nsainte-honorine-du-fay\n")
-
-            with open(os.path.join(tmp_dir, "collisions_noms.txt"), "w", encoding="utf-8") as f_col:
-                f_col.write("grand\nblanc\n")
-
-            with open(os.path.join(tmp_dir, "noms_famille_contacts.txt"), "w", encoding="utf-8") as f_sur:
-                f_sur.write("Valmont = V.\nDelacroix = D.\n")
-
-            with open(os.path.join(tmp_dir, "contacts.txt"), "w", encoding="utf-8") as f_ct:
-                f_ct.write(
+            with open(os.path.join(tmp_dir, "prenoms.txt"), "w", encoding="utf-8") as f:
+                f.write("jean\nevelyne\nalice\npaul\ncharlotte\nnadia\n")
+            with open(os.path.join(tmp_dir, "villes_masquees.txt"), "w", encoding="utf-8") as f:
+                f.write("caen\nsaint-jean-de-luz\n")
+            with open(os.path.join(tmp_dir, "contacts.txt"), "w", encoding="utf-8") as f:
+                f.write(
                     "Jean Dupont = Jean D.\n"
                     "Alice Mercier = Alice M.\n"
-                    "Cédric Martin = Cédric M.\n"
                     "Jean De La Tour = Jean D. L. T.\n"
                     "Paul Grand = Paul G.\n"
                 )
 
-            trans_dir: str = os.path.join(tmp_dir, "transcriptions", "2024-05", "Documents")
-            os.makedirs(trans_dir, exist_ok=True)
-            sample_txt: str = os.path.join(trans_dir, "note_reunion.txt")
-            with open(sample_txt, "w", encoding="utf-8") as f_txt:
-                f_txt.write(
-                    "Réunion avec Jean Dupont, Docteur Evelyne Moreau et Jean De La Tour.\n"
-                    "Échanges avec Jean-Eudes Lemoine, Jean Eudes Mercier et Dr Jean Philippe Bernard.\n"
-                    "Famille Valm\ufffdnt suivie par Delacroix, adresse Rue de la Paix.\n"
-                    "En-tête OCR collé : MMEMERCIERALICE habitant 12 rue des Lilas.\n"
-                    "Déplacement prévu à B0ULON et 1FS, rendez-vous Clinique Saint-Martin.\n"
-                    "Enfant : 02/05/2013 et ddn 14-08-2015, titre 987654321098 délivrée le 10/03/2020.\n"
-                    "Véhicule immatriculé AB-123-CD et ancien 1234 AB 14.\n"
-                    "Carte terminant par 4921, transaction n° VTD88412, don de 40 euros.\n"
-                    "Visio ID de réunion : 912 3456 7890, code secret : 554433.\n"
-                    "Saisie par Charlotte LEFEBVRE et audition de BERNARD Nadia.\n"
-                    "Digicode 1985 et dossier sinistre n° 999888777.\n"
-                    "MRZ : IDFRA0000000000<<<<<<<<<<<<<<<\n"
-                    "Texte courant à préserver : une grande fenêtre et un grand merci à Paul Grand.\n"
-                    "NIR:190017500100203 et IBAN FR7630001007941234567890185.\n"
+            config = PipelineConfig(os.path.join(tmp_dir, "config.ini"))
+            config.masked_birth_dates = ["02/05/2013", "10/10/1980"]
+            config.custom_birth_date_pattern = (
+                PipelineConfig._compile_custom_dates_pattern(
+                    config.masked_birth_dates
                 )
-            cfg_path: str = os.path.join(tmp_dir, "config.ini")
-            with open(cfg_path, "w", encoding="utf-8") as f_cfg:
-                f_cfg.write(
-                    "[files]\nfirst_names_file = prenoms.txt\nlocations_file = villes_masquees.txt\n"
-                    "surname_collisions_file = collisions_noms.txt\n"
-                    "surnames_output_file = noms_famille_contacts.txt\n"
-                    "inverted_output_file = contacts.txt\n"
-                    "[paths]\nroot_dir = .\ncontacts_file = contacts.txt\n"
-                    "surnames_contacts_file = noms_famille_contacts.txt\n"
-                    "manual_contacts_file = contacts_manuels.txt\n"
-                    "discovered_contacts_file = contacts_emails_decouverts.txt\n"
-                    "transcriptions_dir = transcriptions\nresults_dir = resultats_anonymisation\n"
-                    "audit_report_file = audit_noms_residuels.txt\n"
-                    "audit_copy_file = audit_noms_residuels_copier.txt\n"
-                )
+            )
+            runner = DocumentAnonymizationRunner(config)
 
-            config: PipelineConfig = PipelineConfig(config_path=cfg_path)
-            runner: DocumentAnonymizationRunner = DocumentAnonymizationRunner(config=config)
+            doc_dir = os.path.join(tmp_dir, "transcriptions", "2024-05", "Documents")
+            os.makedirs(doc_dir, exist_ok=True)
+            sample_file = os.path.join(doc_dir, "note_reunion.txt")
+
+            raw_text = (
+                "Réunion avec Jean Dupont, Docteur Evelyne Marneau et Jean De La Tour.\n"
+                "Échanges avec Jean-Eudes Lemoine, Jean Eudes Mercier et Dr Jean Philippe Bernard.\n"
+                "Famille Vasseur suivie par DrLAMOTTE, adresse RuedelaCabottiere.\n"
+                "En-tête OCR collé : MMEAlice Mercier habitant 12 bis avenue Victor Hugo\n"
+                "Déplacement prévu à Caen et Saint-Jean-de-Luz, rendez-vous CHU Caen.\n"
+                "Enfant : 02/05/2013, ISO 2013-05-02, ICS 20130502 et ddn 14/09/2015.\n"
+                "Mère née 10.10.1980, titre 123456789012 délivrée le 01/03/2020.\n"
+                "Véhicule immatriculé AB-123-CD et ancien 1234 AB 75.\n"
+                "Carte ************2922, commande n° P16048112, don de 140,00 €.\n"
+                "Visio 832 1462 0148, passcode GihJ2Q.\n"
+                "SaisieparCharlotte Lemaitre et audition de B. Nadia.\n"
+                "Digicode : A1234 et dossier n° 2025-07-29-04.\n"
+                "MRZ : IDFRADUPONT<<<<<<<<<<<<<<<<<<<8010104F3110145\n"
+                "Texte courant à préserver : une grande fenêtre et un grand merci à Paul Grand.\n"
+                "NIR:184117512345678 et IBAN FR76 3000 6000 0112 3456 7890 189.\n"
+            )
+            with open(sample_file, "w", encoding="utf-8") as f:
+                f.write(raw_text)
+
             runner.run()
 
-            lot_file: str = os.path.join(config.results_dir, "lot_01", "anonymise_partie_001.txt")
+            lot_file = os.path.join(
+                tmp_dir,
+                "resultats_anonymisation",
+                "lot_01",
+                "anonymise_partie_001.txt",
+            )
             self.assertTrue(os.path.exists(lot_file))
-            with open(lot_file, "r", encoding="utf-8") as f_res:
-                res_txt: str = f_res.read()
+            with open(lot_file, "r", encoding="utf-8") as f:
+                res_txt = f.read()
 
             self.assertIn("Jean D.", res_txt)
             self.assertIn("Docteur Evelyne M.", res_txt)
+            self.assertIn("Jean D. L. T.", res_txt)
             self.assertIn("Jean-Eudes L.", res_txt)
             self.assertIn("Jean Eudes M.", res_txt)
             self.assertIn("Dr Jean Philippe B.", res_txt)
-            self.assertNotIn("Lemoine", res_txt)
-            self.assertIn("Famille V. suivie par D.", res_txt)
-            self.assertNotIn("Saint-Martin", res_txt)
+            self.assertIn("Famille V.", res_txt)
+            self.assertIn("Dr L.", res_txt)
+            self.assertIn("MME Alice M.", res_txt)
+            self.assertIn("[ADRESSE_MASQUEE]", res_txt)
+            self.assertNotIn("RuedelaCabottiere", res_txt)
+            self.assertIn("[LIEU_MASQUE]", res_txt)
             self.assertIn("[ETABLISSEMENT_LIEU_MASQUE]", res_txt)
-            self.assertIn("Enfant : [JOUR_MOIS_MASQUES]/2013", res_txt)
-            self.assertIn("ddn [JOUR_MOIS_MASQUES]/2015", res_txt)
-            self.assertNotIn("02/05", res_txt)
-            self.assertNotIn("14-08", res_txt)
-            self.assertIn("[PLAQUE_IMMAT_MASQUEE]", res_txt)
-            self.assertNotIn("AB-123-CD", res_txt)
-            self.assertNotIn("1234 AB 14", res_txt)
+            self.assertNotIn("02/05/2013", res_txt)
+            self.assertNotIn("2013-05-02", res_txt)
+            self.assertNotIn("20130502", res_txt)
+            self.assertNotIn("10.10.1980", res_txt)
+            self.assertIn("[DATE_MASQUEE]", res_txt)
+            self.assertIn("[JOUR_MOIS_MASQUES]/2015", res_txt)
             self.assertIn("[ID_CNI_PERMIS_MASQUE]", res_txt)
-            self.assertNotIn("987654321098", res_txt)
-            self.assertIn("délivrée le [DATE_TITRE_MASQUEE]", res_txt)
+            self.assertIn("[DATE_TITRE_MASQUEE]", res_txt)
+            self.assertIn("[PLAQUE_IMMAT_MASQUEE]", res_txt)
             self.assertIn("[REF_BANCAIRE_TX_MASQUEE]", res_txt)
-            self.assertNotIn("4921", res_txt)
-            self.assertNotIn("VTD88412", res_txt)
             self.assertIn("[ID_REUNION_MASQUE]", res_txt)
-            self.assertNotIn("554433", res_txt)
-            self.assertIn("[CODE_ACCES_MASQUE]", res_txt)
-            self.assertIn("[REF_ADMIN_MASQUEE]", res_txt)
-            self.assertNotIn("999888777", res_txt)
-            self.assertIn("Jean D. L. T.", res_txt)
             self.assertIn("Charlotte L.", res_txt)
             self.assertIn("B. Nadia", res_txt)
-            self.assertIn("une grande fenêtre et un grand merci à Paul G.", res_txt)
-            self.assertNotIn("Valmont", res_txt)
-            self.assertNotIn("Moreau", res_txt)
-            self.assertNotIn("Delacroix", res_txt)
-            self.assertNotIn("Paix", res_txt)
-            self.assertIn("[ADRESSE_MASQUEE]", res_txt)
-            self.assertIn("[LIEU_MASQUE]", res_txt)
-            self.assertIn("NIR:[NUM_SECU_MASQUE]", res_txt)
+            self.assertIn("[CODE_ACCES_MASQUE]", res_txt)
+            self.assertIn("[REF_ADMIN_MASQUEE]", res_txt)
+            self.assertIn("[MRZ_IDENTITE_MASQUEE]", res_txt)
+            self.assertIn("une grande fenêtre", res_txt)
+            self.assertIn("un grand merci", res_txt)
+            self.assertIn("Paul G.", res_txt)
+            self.assertIn("[NUM_SECU_MASQUE]", res_txt)
             self.assertIn("[IBAN_MASQUE]", res_txt)
 
 

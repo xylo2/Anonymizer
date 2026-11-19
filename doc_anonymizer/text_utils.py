@@ -92,19 +92,19 @@ class DocumentTextUtils:
         r"(?:n[°o]\s*[:=\-]?\s*|[:=\-]\s*|\s+)(?=[A-Z0-9/\-\s]*\d)[A-Z0-9/\-\s]{5,22}\b"
     )
     REGEX_BIRTH_DATE: Pattern[str] = re.compile(
-        r"(?i)\b((?:n[ée](?:[\(（]e[\)）]|e)?(?:\s+le)?|date\s+de\s+naissance|naissance|ddn|"
+        r"(?i)\b((?:n[ée](?:[\(（]e[\)）]|e)?(?:\s+le)?(?:/rang)?|date\s+de\s+naissance|naissance|ddn|"
         r"enfant|fils|fille|b[ée]b[ée]|nourrisson|patient|patiente)\s*(?:du|le)?\s*[:=\-]?\s*)"
-        r"(?:\d{1,2}[/\-.]\d{1,2}[/\-.]|\d{1,2}\s+[a-zéû]+\s+|(?:0[1-9]|[12]\d|3[01])(?:0[1-9]|1[0-2]|0s))((?:19|20)\d{2})\b"
+        r"(?:\d{1,2}[/\-.]\d{1,2}[/\-.]|\d{1,2}\s+[a-zéû]+\s+|(?:0[1-9]|\d|3)(?:0[1-9]|1[0-2]|0s))((?:19|20)\d{2}|\d{2})\b"
     )
     REGEX_GLUED_PERSON_BIRTH_DATE: Pattern[str] = re.compile(
         r"((?:Aurélie\s+S\.|S\.,?\s*AURELIE|AURELIE)\s*)"
-        r"(?:0[1-9]|[12]\d|3[01])[/\-.](?:0[1-9]|1[0-2])[/\-.]((?:19|20)\d{2})\b",
+        r"(?:0[1-9]|\d|3)[/\-.](?:0[1-9]|1[0-2])[/\-.]((?:19|20)\d{2})\b",
         re.IGNORECASE,
     )
     REGEX_FACILITIES_AND_ZONES: Pattern[str] = re.compile(
         r"\b(?:CHU|Clinique|Polyclinique|H[ôo]pital|Centre\s+[Hh]ospitalier|"
         r"Maison\s+[Mm][ée]dicale|Maison\s+de\s+[Ss]ant[ée]|Institut|Espace|Foyer|"
-        r"Centre\s+[Cc]ommercial|ZAC|Gare\s+de|Porte\s+de|Rives\s+de)\s+"
+        r"Centre\s+[Cc]ommercial|ZAC|ZI|Gare\s+de|Porte\s+de|Rives\s+de)\s*"
         r"(?:de\s+la\s+|des\s+|du\s+|de\s+|d'|l')?"
         r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+"
         r"(?:[\s\-]+(?:de|du|des|la|le|les|l'|sur|en|[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+)){0,4}\b"
@@ -114,25 +114,25 @@ class DocumentTextUtils:
     )
 
     _STREET_TYPES_NO_NUM: str = (
-        r"(?:rue|avenue|av\.?|boulevard|bd\.?|bld\.?|all[ée]e|all\.?|impasse|imp\.?|"
+        r"(?:rue|rve|avenue|av\.|boulevard|bd\.?|bld\.?|all[ée]e|all\.?|impasse|imp\.?|"
         r"chemin|chem\.?|route|rte\.?|quai|square|sq\.?|cours|passage|"
         r"sentier|faubourg|fbg\.?|r[ée]sidence|r[ée]s\.?|lotissement|hameau|"
-        r"lieu-dit|lieudit|esplanade|terrasse|parvis|promenade|foss[ée]s)"
+        r"lieu-dit|lieudit|esplanade|terrasse|parvis|promenade|foss[ée]s|vente)"
     )
-    _STREET_TYPES_WITH_NUM: str = rf"(?:{_STREET_TYPES_NO_NUM}|place|pl\.?|voie)"
+    _STREET_TYPES_WITH_NUM: str = rf"(?:{_STREET_TYPES_NO_NUM}|place|pl\.?|voie|cr\.?)"
 
     REGEX_STREET_ADDRESS: Pattern[str] = re.compile(
-        rf"(?i)\b(?:\d{{1,4}}(?:\s*(?:bis|ter|quater))?\s*[,]?\s*{_STREET_TYPES_WITH_NUM}"
-        rf"|{_STREET_TYPES_NO_NUM})\s+"
-        rf"(?:de\s+la\s+|des\s+|du\s+|de\s+|d'|l')?[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
+        rf"(?i)\b(?:\d{{1,4}}(?:\s*(?:bis|ter|quater))?\s*[,]?\s*{_STREET_TYPES_WITH_NUM}(?:\b|(?=[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]))"
+        rf"|{_STREET_TYPES_NO_NUM}(?:\b|(?=[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])))\s*"
+        rf"(?:de\s*la\s*|des\s*|du\s*|de\s*|d'|l')?[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
         rf"[^\n,;()\[\]{{}}]{{2,45}}"
     )
 
     REGEX_POSTAL_CITY: Pattern[str] = re.compile(
         r"(?<!\d)\b(?:0[1-9]|[1-8]\d|9[0-8])\d{3}\s*"
         r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+"
-        r"(?:[\s\-]+(?:sur|sous|en|de|du|des|la|le|les|l'|st|ste|saint|sainte|"
-        r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+)){0,5}\b"
+        r"(?:[\s\-]+(?:sur|sous|en|de|du|des|la|le|les|l'|st|ste|saint|sainte|cedex|"
+        r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+)){0,5}(?:\s*\d{1,2})?\b"
     )
     ORG_GENERIC_WORDS = frozenset({
         "france", "travail", "pole", "emploi", "caf", "cpam", "urssaf",

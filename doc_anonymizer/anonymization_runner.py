@@ -21,7 +21,7 @@ class DocumentAnonymizationRunner:
 
     AUTO_TITLE_PATTERN: Pattern[str] = re.compile(
         r"(?<![A-Za-zÀ-ÿ\-])(Dr|Docteur|DOCTEUR|Pr|Professeur|Mme|MME|Madame|M\.|Monsieur|"
-        r"Mlle|Mademoiselle|Me|Maître|Maitre|Famille|Pharmacie|PHARMACIE)\.?\s+"
+        r"Mlle|Mademoiselle|Me|Maître|Maitre|Famille|Pharmacie|PHARMACIE)\.?\s*"
         r"(?:((?:de|du|des|d'|le|la|van|von|ben|el|al|ould|dos|da|di)(?:\s+(?:la|le|les))?)\s+)?"
         r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]"
         r"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25}"
@@ -41,6 +41,7 @@ class DocumentAnonymizationRunner:
         r"(?:[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]|l(?=[a-zéèêëàâäîïôöùûüç]{4,}))[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç']{2,21}"
         r")\s+"
         r"(?:((?:De|Du|Des|de|du|des|Le|La|le|la|Van|Von|Ben|El|Al|Ould|Dos|Da|Di)(?:\s+(?:La|Le|Les|la|le|les))?)\s+)?"
+        r"(?!(?:par|avec|pour|chez|dans|sur|sous|vers|entre|sans|et|ou|de|du|des|le|la|les)\b)"
         r"([A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç]"
         r"[A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25}(?:\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25})?)(?![A-Za-zÀ-ÿ])"
     )
@@ -66,7 +67,7 @@ class DocumentAnonymizationRunner:
     )
 
     GLUED_TITLE_OR_CAMEL: Pattern[str] = re.compile(
-        r"\b(DOCTEUR|Docteur|Dr|DR|MME|Mme|MADAME|MONSIEUR|Monsieur|PROFESSEUR|PHARMACIE|CHU|Enfant|IDFR[A-Z]?)"
+        r"\b(DOCTEUR|Docteur|Dr|DR|MME|Mme|MADAME|MONSIEUR|Monsieur|PROFESSEUR|PHARMACIE|AGENCE|CHU|Enfant|Saisie|IDFR[A-Z]?)"
         r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç]{2,})\b"
         r"|([a-zà-ÿ]{3,})([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{4,}[a-zà-ÿ]{0,2})\b"
         r"|([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{4,})([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zà-ÿ]{3,})\b"
@@ -414,6 +415,19 @@ class DocumentAnonymizationRunner:
         text = self.HTML_INLINE_TAG_CLEANUP.sub("", text)
         text = self.MRZ_LINE_PATTERN.sub("[MRZ_IDENTITE_MASQUEE]", text)
         text = self.GLUED_TITLE_OR_CAMEL.sub(self._split_glued_tokens, text)
+        text = re.sub(
+            r"(?i)\b(Saisie)(par)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zà-ÿ]{2,})",
+            r"\1 \2 \3",
+            text,
+        )
+        text = re.sub(
+            r"(?i)\b(AGENCE)(DE)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{3,})\b",
+            r"\1 \2 \3",
+            text,
+        )
+
+        if self.config.custom_birth_date_pattern is not None:
+            text = self.config.custom_birth_date_pattern.sub("[DATE_MASQUEE]", text)
 
         if self.config.mask_ssn:
             text = DocumentTextUtils.REGEX_SSN.sub("[NUM_SECU_MASQUE]", text)
@@ -444,15 +458,7 @@ class DocumentAnonymizationRunner:
             text = DocumentTextUtils.REGEX_URL.sub("[URL_MASQUEE]", text)
 
         text = text.replace("//", " ")
-        return self._apply_contextual_rules(text)
 
-    def _apply_contextual_rules(self, text: str) -> str:
-        """
-        Applique les règles contextuelles d'adresses, contacts, paires et lieux.
-
-        :param text: Texte pré-anonymisé.
-        :return: Texte complètement anonymisé.
-        """
         if self.config.mask_addresses:
             text = DocumentTextUtils.REGEX_POSTAL_CITY.sub("[LIEU_MASQUE]", text)
             text = DocumentTextUtils.REGEX_STREET_ADDRESS.sub("[ADRESSE_MASQUEE]", text)
