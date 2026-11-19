@@ -173,8 +173,22 @@ class TestDocAnonymizer(unittest.TestCase):
                     "Jean De La Tour = Jean D. L. T.\n"
                     "Paul Grand = Paul G.\n"
                 )
+            ini_path: str = os.path.join(tmp_dir, "config.ini")
+            with open(ini_path, "w", encoding="utf-8") as f_ini:
+                f_ini.write(
+                    "[files]\n"
+                    "first_names_file = prenoms.txt\n"
+                    "locations_file = villes_masquees.txt\n"
+                    "[paths]\n"
+                    "root_dir = .\n"
+                    "contacts_file = contacts.txt\n"
+                    "manual_contacts_file = contacts_manuels.txt\n"
+                    "discovered_contacts_file = contacts_emails_decouverts.txt\n"
+                    "audit_report_file = audit_noms_residuels.txt\n"
+                    "audit_copy_file = audit_noms_residuels_copier.txt\n"
+                )
 
-            config = PipelineConfig(os.path.join(tmp_dir, "config.ini"))
+            config = PipelineConfig(ini_path)
             config.masked_birth_dates = ["02/05/2013", "10/10/1980"]
             config.custom_birth_date_pattern = (
                 PipelineConfig._compile_custom_dates_pattern(

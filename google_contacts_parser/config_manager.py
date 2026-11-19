@@ -10,7 +10,7 @@ from google_contacts_parser.geo_data import FrenchGeoCatalog
 class ContactsConfig:
     """
     Charge et expose de manière typée la configuration du pipeline de contacts
-    depuis le fichier config.ini unifié, villes_masquees.txt et collisions_noms.txt.
+    depuis le fichier config.ini unifié et les référentiels dans data/.
     """
 
     def __init__(self, config_path: str = "config.ini") -> None:
@@ -25,18 +25,28 @@ class ContactsConfig:
 
         self.csv_directory: str = os.path.join(self._base_dir, "export_contacts")
         self.csv_prefixes: List[str] = ["contacts", "autres contacts"]
-        self.first_names_file: str = os.path.join(self._base_dir, "prenoms.txt")
+        self.first_names_file: str = os.path.join(self._base_dir, "data", "prenoms.txt")
         self.suggested_first_names_file: str = os.path.join(
-            self._base_dir, "prenoms_suggeres.txt"
+            self._base_dir, "output_contacts", ".intermediaires", "prenoms_suggeres.txt"
         )
-        self.locations_file: str = os.path.join(self._base_dir, "villes_masquees.txt")
-        self.surname_collisions_file: str = os.path.join(self._base_dir, "collisions_noms.txt")
-        self.excluded_words_file: str = os.path.join(self._base_dir, "mots_exclus.txt")
-        self.output_file: str = os.path.join(self._base_dir, "contacts_indexes.txt")
-        self.anonymized_output_file: str = os.path.join(self._base_dir, "contacts_anonymises.txt")
-        self.surnames_output_file: str = os.path.join(self._base_dir, "noms_famille_contacts.txt")
-        self.deduplicated_output_file: str = os.path.join(self._base_dir, "contacts_dedoublonnes.txt")
-        self.inverted_output_file: str = os.path.join(self._base_dir, "contacts.txt")
+        self.locations_file: str = os.path.join(self._base_dir, "data", "villes_masquees.txt")
+        self.surname_collisions_file: str = os.path.join(self._base_dir, "data", "collisions_noms.txt")
+        self.excluded_words_file: str = os.path.join(self._base_dir, "data", "mots_exclus.txt")
+        self.output_file: str = os.path.join(
+            self._base_dir, "output_contacts", ".intermediaires", "contacts_indexes.txt"
+        )
+        self.anonymized_output_file: str = os.path.join(
+            self._base_dir, "output_contacts", ".intermediaires", "contacts_anonymises.txt"
+        )
+        self.surnames_output_file: str = os.path.join(
+            self._base_dir, "output_contacts", ".intermediaires", "noms_famille_contacts.txt"
+        )
+        self.deduplicated_output_file: str = os.path.join(
+            self._base_dir, "output_contacts", ".intermediaires", "contacts_dedoublonnes.txt"
+        )
+        self.inverted_output_file: str = os.path.join(
+            self._base_dir, "output_contacts", "contacts.txt"
+        )
         self.encoding: str = "utf-8-sig"
 
         self.clean_phone_spaces: bool = False

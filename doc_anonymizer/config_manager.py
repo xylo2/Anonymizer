@@ -39,50 +39,50 @@ class PipelineConfig:
             "paths", "results_dir", "resultats_anonymisation"
         )
         self.contacts_file: str = self._resolve_path(
-            "paths", "contacts_file", "contacts.txt"
+            "paths", "contacts_file", "output_contacts/contacts.txt"
         )
         self.indexed_contacts_file: str = self._resolve_path(
-            "files", "output_file", "contacts_indexes.txt"
+            "files", "output_file", "output_contacts/.intermediaires/contacts_indexes.txt"
         )
         self.anonymized_contacts_file: str = self._resolve_path(
-            "files", "anonymized_output_file", "contacts_anonymises.txt"
+            "files", "anonymized_output_file", "output_contacts/.intermediaires/contacts_anonymises.txt"
         )
         self.deduplicated_contacts_file: str = self._resolve_path(
-            "files", "deduplicated_output_file", "contacts_dedoublonnes.txt"
+            "files", "deduplicated_output_file", "output_contacts/.intermediaires/contacts_dedoublonnes.txt"
         )
         self.surnames_contacts_file: str = self._resolve_path(
-            "paths", "surnames_contacts_file", "noms_famille_contacts.txt"
+            "paths", "surnames_contacts_file", "output_contacts/.intermediaires/noms_famille_contacts.txt"
         )
         self.manual_contacts_file: str = self._resolve_path(
-            "paths", "manual_contacts_file", "contacts_manuels.txt"
+            "paths", "manual_contacts_file", "output_contacts/contacts_manuels.txt"
         )
         self.discovered_contacts_file: str = self._resolve_path(
-            "paths", "discovered_contacts_file", "contacts_emails_decouverts.txt"
+            "paths", "discovered_contacts_file", "output_contacts/contacts_emails_decouverts.txt"
         )
         self.all_sms_numbers_file: str = self._resolve_path(
-            "paths", "all_sms_numbers_file", "tous_numeros_sms.txt"
+            "paths", "all_sms_numbers_file", "audits/tous_numeros_sms.txt"
         )
         self.all_emails_file: str = self._resolve_path(
-            "paths", "all_emails_file", "tous_emails_trouves.txt"
+            "paths", "all_emails_file", "audits/tous_emails_trouves.txt"
         )
         self.audit_report_file: str = self._resolve_path(
-            "paths", "audit_report_file", "audit_noms_residuels.txt"
+            "paths", "audit_report_file", "audits/audit_noms_residuels.txt"
         )
         self.audit_copy_file: str = self._resolve_path(
-            "paths", "audit_copy_file", "audit_noms_residuels_copier.txt"
+            "paths", "audit_copy_file", "audits/audit_noms_residuels_copier.txt"
         )
 
         self.first_names_file: str = self._resolve_path(
-            "files", "first_names_file", "prenoms.txt"
+            "files", "first_names_file", "data/prenoms.txt"
         )
         self.locations_file: str = self._resolve_path(
-            "files", "locations_file", "villes_masquees.txt"
+            "files", "locations_file", "data/villes_masquees.txt"
         )
         self.surname_collisions_file: str = self._resolve_path(
-            "files", "surname_collisions_file", "collisions_noms.txt"
+            "files", "surname_collisions_file", "data/collisions_noms.txt"
         )
         self.excluded_words_file: str = self._resolve_path(
-            "files", "excluded_words_file", "mots_exclus.txt"
+            "files", "excluded_words_file", "data/mots_exclus.txt"
         )
 
         self.state_file: str = os.path.join(
@@ -121,8 +121,8 @@ class PipelineConfig:
         self.ignored_dirs: Set[str] = self._get_csv_set(
             "extraction",
             "ignored_dirs",
-            "transcriptions, resultats_anonymisation, venv, .venv, .git, "
-            "__pycache__, common, tools, tests",
+            "transcriptions, resultats_anonymisation, output_contacts, audits, "
+            "data, docs, venv, .venv, .git, __pycache__, common, tools, tests",
         )
 
         self.main_character_name: str = self._get_str(
@@ -179,6 +179,7 @@ class PipelineConfig:
         self.surname_collisions: Set[str] = set()
         self.excluded_words: Set[str] = set()
         self.load_external_lists()
+
     def load_external_lists(self) -> None:
         """Charge ou recharge les dictionnaires externes (prénoms, lieux, collisions, mots exclus)."""
         self.known_first_names = self._load_word_set(self.first_names_file)

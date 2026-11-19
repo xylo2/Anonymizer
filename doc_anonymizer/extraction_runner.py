@@ -458,11 +458,17 @@ class DocumentExtractionRunner:
             item for item in expanded if "@" in item and not item.lower().endswith("://google.com")
         }
         if clean_phones or os.path.exists(self.config.all_sms_numbers_file):
+            sms_dir: str = os.path.dirname(self.config.all_sms_numbers_file)
+            if sms_dir:
+                os.makedirs(sms_dir, exist_ok=True)
             with open(self.config.all_sms_numbers_file, "w", encoding="utf-8") as f_num:
                 f_num.writelines(f"{num}\n" for num in sorted(clean_phones))
 
         merged_emails: Set[str] = self.load_tracking_set(self.config.all_emails_file) | discovered_emails | migrated_emails
         if merged_emails:
+            mail_dir: str = os.path.dirname(self.config.all_emails_file)
+            if mail_dir:
+                os.makedirs(mail_dir, exist_ok=True)
             with open(self.config.all_emails_file, "w", encoding="utf-8") as f_mail:
                 f_mail.writelines(f"{mail}\n" for mail in sorted(merged_emails))
 
