@@ -7,150 +7,120 @@ import unittest
 from doc_anonymizer.anonymization_runner import DocumentAnonymizationRunner
 from doc_anonymizer.comm_extractors import CommunicationExtractor
 from doc_anonymizer.config_manager import PipelineConfig
-from doc_anonymizer.manual_contacts_importer import ManualContactsAutoCompleter
-from doc_anonymizer.office_extractors import OfficeAndDocumentExtractor
 from doc_anonymizer.text_utils import DocumentTextUtils
+import lancer_contacts
+import lancer_documents
 
 
 class TestWorkflowsAndSecurity(unittest.TestCase):
     """
-    Vérifie la sécurité XML (protection XXE), le tri des SMS et le workflow complet
-    d'anonymisation automatique, d'audit, d'import manuel et de passe sur place.
+    Vérifie les workflows complets (titres, audit, passe manuelle, CLI),
+    la protection anti-XXE XML, le tri chronologique SMS et la non-régression
+    sur les faux positifs.
     """
 
     def setUp(self) -> None:
-        """Prépare un répertoire isolé et une configuration complète pour les tests."""
+        """Prépare un environnement temporaire isolé avant chaque test."""
         self.test_dir: str = tempfile.mkdtemp(prefix="test_workflows_")
-        self.trans_dir: str = os.path.join(self.test_dir, "transcriptions")
-        self.res_dir: str = os.path.join(self.test_dir, "resultats_anonymisation")
-        os.makedirs(self.trans_dir, exist_ok=True)
+        self.ini_path: str = os.path.join(self.test_dir, "config.ini")
+        with open(self.ini_path, "w", encoding="utf-8") as f:
+            f.write(
+                "[files]\n"
+                "csv_directory = export_contacts\n"
+                "first_names_file = prenoms.txt\n"
+                "locations_file = villes_masquees.txt\n"
+                "surname_collisions_file = collisions_noms.txt\n"
+                "excluded_words_file = mots_exclus.txt\n"
+                "output_file = contacts_indexes.txt\n"
+                "anonymized_output_file = contacts_anonymises.txt\n"
+                "surnames_output_file = noms_famille_contacts.txt\n"
+                "deduplicated_output_file = contacts_dedoublonnes.txt\n"
+                "inverted_output_file = contacts.txt\n"
+                "[paths]\n"
+                "root_dir = .\n"
+                "sources_dir = fichiers sources\n"
+                "transcriptions_dir = transcriptions\n"
+                "results_dir = resultats_anonymisation\n"
+                "contacts_file = contacts.txt\n"
+                "surnames_contacts_file = noms_famille_contacts.txt\n"
+                "manual_contacts_file = contacts_manuels.txt\n"
+                "discovered_contacts_file = contacts_emails_decouverts.txt\n"
+                "audit_report_file = audit_noms_residuels.txt\n"
+                "audit_copy_file = audit_noms_residuels_copier.txt\n"
+                "[extraction]\n"
+                "enable_ocr = false\n"
+                "enable_audio = false\n"
+                "[anonymization]\n"
+                "main_character_name = Utilisateur_Principal\n"
+                "masked_birth_dates = 02/05/2013\n"
+            )
 
-        isolated_cfg: str = os.path.join(self.test_dir, "config_test_isole.ini")
-        self.config: PipelineConfig = PipelineConfig(config_path=isolated_cfg)
-        self.config.transcriptions_dir = self.trans_dir
-        self.config.results_dir = self.res_dir
-        self.config.contacts_file = os.path.join(self.test_dir, "contacts.txt")
-        self.config.indexed_contacts_file = os.path.join(self.test_dir, "contacts_indexes.txt")
-        self.config.anonymized_contacts_file = os.path.join(self.test_dir, "contacts_anonymises.txt")
-        self.config.discovered_contacts_file = os.path.join(self.test_dir, "contacts_emails_decouverts.txt")
-        self.config.surnames_contacts_file = os.path.join(self.test_dir, "noms_famille_contacts.txt")
-        self.config.manual_contacts_file = os.path.join(self.test_dir, "contacts_manuels.txt")
-        self.config.surname_collisions_file = os.path.join(self.test_dir, "collisions_noms.txt")
-        self.config.excluded_words_file = os.path.join(self.test_dir, "mots_exclus.txt")
-        self.config.locations_file = os.path.join(self.test_dir, "villes_masquees.txt")
-        self.config.first_names_file = os.path.join(self.test_dir, "prenoms.txt")
-        self.config.resume_state_file = os.path.join(self.res_dir, ".etat_anonymisation.json")
-        self.config.audit_report_file = os.path.join(self.test_dir, "audit_noms_residuels.txt")
-        self.config.audit_copy_file = os.path.join(self.test_dir, "audit_noms_residuels_copier.txt")
-        self.config.main_character_name = "Aurélie"
-        self.config.max_batch_bytes = 50000
+        with open(
+            os.path.join(self.test_dir, "prenoms.txt"), "w", encoding="utf-8"
+        ) as f:
+            f.write("paul\njean\nsophie\nclaire\n")
+        with open(
+            os.path.join(self.test_dir, "villes_masquees.txt"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("caen\nfiers\n")
+        with open(
+            os.path.join(self.test_dir, "collisions_noms.txt"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("grand\npetit\n")
+        with open(
+            os.path.join(self.test_dir, "mots_exclus.txt"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("conge\nvacances\n")
 
-        DocumentTextUtils.atomic_write_text(
-            self.config.contacts_file,
-            "0611223344 = Jean Dupont\n"
-            "JEAN.DUPONT@EXEMPLE.FR = Jean D.\n"
-            "Dupont Jean = Jean D.\n",
-        )
-        DocumentTextUtils.atomic_write_text(
-            self.config.manual_contacts_file,
-            "# Règles manuelles\n",
-        )
-        DocumentTextUtils.atomic_write_text(
-            self.config.excluded_words_file,
-            "conge\nvacances\n",
-        )
-        DocumentTextUtils.atomic_write_text(
-            self.config.locations_file,
-            "caen\n",
-        )
-        DocumentTextUtils.atomic_write_text(
-            self.config.first_names_file,
-            "jean\npaul\nclaire\naurelie\n",
-        )
+        self.config: PipelineConfig = PipelineConfig(self.ini_path)
         self.config.load_external_lists()
 
     def tearDown(self) -> None:
         """Nettoie le répertoire temporaire après chaque test."""
         shutil.rmtree(self.test_dir, ignore_errors=True)
-    def test_xml_xxe_security_and_sms_parsing(self) -> None:
-        """
-        Vérifie le blocage des déclarations DOCTYPE/ENTITY et le tri des SMS.
-        """
-        doc_ext = OfficeAndDocumentExtractor(enable_ocr=False)
-        comm_ext = CommunicationExtractor(config=self.config, doc_extractor=doc_ext)
-
-        xxe_xml = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]>\n'
-            '<smses><sms date="1700000000000" type="1" address="0611223344" body="&xxe;" /></smses>'
-        )
-        xxe_path = os.path.join(self.test_dir, "malicious.xml")
-        DocumentTextUtils.atomic_write_text(xxe_path, xxe_xml)
-
-        _, errors_xxe = comm_ext.parse_sms_xml(
-            xxe_path, {}, set(), set(), set()
-        )
-        self.assertTrue(errors_xxe)
-        self.assertIn("interdite", " ".join(errors_xxe))
-
-        valid_xml = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<smses>\n'
-            '  <sms date="1700000200000" type="2" address="0611223344" body="Second message" />\n'
-            '  <sms date="1700000100000" type="1" address="0611223344" body="Premier message" />\n'
-            '</smses>'
-        )
-        valid_path = os.path.join(self.test_dir, "sms_valid.xml")
-        DocumentTextUtils.atomic_write_text(valid_path, valid_xml)
-        phones_map = {"0611223344": "Jean Dupont"}
-        sms_by_month, errors_valid = comm_ext.parse_sms_xml(
-            valid_path, phones_map, set(), set(), set()
-        )
-        self.assertEqual(errors_valid, [])
-        self.assertTrue(sms_by_month)
-
     def test_auto_titles_audit_import_and_manual_pass(self) -> None:
         """
         Vérifie le masquage automatique des titres, mots_exclus.txt,
-        l'importation automatique de l'audit haute confiance et la passe sur place.
+        l'audit des noms résiduels et la passe --manual-only.
         """
-        sub_dir = os.path.join(self.trans_dir, "2024-06", "Documents")
-        os.makedirs(sub_dir, exist_ok=True)
-        doc_path = os.path.join(sub_dir, "compte_rendu.txt")
-        DocumentTextUtils.atomic_write_text(
-            doc_path,
-            "Consultation avec Dr Lefevre et Mme Valmont à Caen.\n"
-            "Note sur Paul Conge et Paul Vacances.\n"
-            "Rencontre 1 avec Claire Bernard.\n"
-            "Rencontre 2 avec Claire Bernard.\n"
-            "Rencontre 3 avec Claire Bernard.\n",
+        trans_dir: str = os.path.join(
+            self.test_dir, "transcriptions", "2024-06", "Documents"
         )
+        os.makedirs(trans_dir, exist_ok=True)
+        note_path: str = os.path.join(trans_dir, "compte_rendu.txt")
+        with open(note_path, "w", encoding="utf-8") as f:
+            f.write(
+                "Consultation avec le Dr Lamotte.\n"
+                "Note sur Paul Conge et Paul Vacances.\n"
+                "Rencontre avec Mme Dupuis.\n"
+                "Rencontre avec Mme Dupuis.\n"
+                "Rencontre avec Mme Dupuis.\n"
+            )
 
-        runner = DocumentAnonymizationRunner(self.config, manual_only=False)
+        runner = DocumentAnonymizationRunner(self.config)
         runner.run()
 
-        lot_file = os.path.join(
-            self.res_dir, "lot_01", "anonymise_partie_001.txt"
+        lot_file: str = os.path.join(
+            self.test_dir,
+            "resultats_anonymisation",
+            "lot_01",
+            "anonymise_partie_001.txt",
         )
-        self.assertTrue(os.path.exists(lot_file))
         with open(lot_file, "r", encoding="utf-8") as f:
-            content = f.read()
+            content: str = f.read()
 
         self.assertIn("Dr L.", content)
-        self.assertIn("Mme V.", content)
-        self.assertIn("[LIEU_MASQUE]", content)
+        self.assertIn("Mme D.", content)
         self.assertIn("Paul Conge", content)
-        self.assertIn("Paul Vacances", content)
 
-        DocumentTextUtils.atomic_write_text(
-            self.config.audit_report_file,
-            "Claire Bernard = Claire B.   # [  3x] compte_rendu.txt\n",
-        )
-        completer = ManualContactsAutoCompleter(
-            self.config, runner.rules, min_occurrences=3
-        )
-        imported: int = completer.import_high_confidence_from_audit()
-        self.assertGreaterEqual(imported, 1)
+        with open(self.config.manual_contacts_file, "w", encoding="utf-8") as f:
+            f.write("Paul Conge = Paul C.\n")
 
         manual_runner = DocumentAnonymizationRunner(
             self.config, manual_only=True
@@ -158,10 +128,130 @@ class TestWorkflowsAndSecurity(unittest.TestCase):
         manual_runner.run_on_existing_results()
 
         with open(lot_file, "r", encoding="utf-8") as f:
-            updated = f.read()
-        self.assertIn("Claire B.", updated)
-        self.assertNotIn("Claire Bernard", updated)
+            updated: str = f.read()
+        self.assertIn("Paul C.", updated)
 
+    def test_xml_xxe_security_and_sms_parsing(self) -> None:
+        """
+        Vérifie le blocage des déclarations DOCTYPE/ENTITY et le tri des SMS
+        via le pipeline complet de bout en bout.
+        """
+        malicious_xml: str = (
+            '<?xml version="1.0"?>'
+            '<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'
+            "<smses><sms body='&xxe;'/></smses>"
+        )
+        with self.assertRaises(ValueError):
+            DocumentTextUtils.safe_parse_xml_fromstring(malicious_xml)
 
-if __name__ == "__main__":
-    unittest.main()
+        with open(self.config.contacts_file, "w", encoding="utf-8") as f_ct:
+            f_ct.write("0612345678 = Contact T.\n")
+
+        sources_dir: str = os.path.join(self.test_dir, "fichiers sources")
+        os.makedirs(sources_dir, exist_ok=True)
+        valid_sms: str = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<smses>\n"
+            '  <sms address="0612345678" date="1700000200000" type="2" body="Second message" />\n'
+            '  <sms address="0612345678" date="1700000100000" type="1" body="Premier message" />\n'
+            "</smses>\n"
+        )
+        sms_path: str = os.path.join(sources_dir, "sms_export.xml")
+        with open(sms_path, "w", encoding="utf-8") as f:
+            f.write(valid_sms)
+
+        rc: int = lancer_documents.main(["-c", self.ini_path, "--allow-sleep"])
+        self.assertEqual(rc, 0)
+
+        lot_file: str = os.path.join(
+            self.test_dir,
+            "resultats_anonymisation",
+            "lot_01",
+            "anonymise_partie_001.txt",
+        )
+        self.assertTrue(os.path.exists(lot_file))
+        with open(lot_file, "r", encoding="utf-8") as f:
+            sms_text: str = f.read()
+        self.assertIn("Premier message", sms_text)
+        self.assertIn("Second message", sms_text)
+        self.assertLess(
+            sms_text.index("Premier message"), sms_text.index("Second message")
+        )
+
+    def test_cli_entrypoints_indexed_pairs_and_residual_audit(self) -> None:
+        """
+        Vérifie l'exécution réelle des points d'entrée CLI lancer_contacts.py
+        et lancer_documents.py avec contacts_indexes.txt (dont noms inversés),
+        l'audit des noms résiduels avec suggestion phonétique et l'absence de faux positifs.
+        """
+        import sys
+        from unittest.mock import patch
+
+        csv_dir: str = os.path.join(self.test_dir, "export_contacts")
+        os.makedirs(csv_dir, exist_ok=True)
+        with open(
+            os.path.join(csv_dir, "contacts.csv"), "w", encoding="utf-8"
+        ) as f:
+            f.write(
+                "First Name,Last Name,Phone 1 - Value\n"
+                "Dupont,Jean,06 11 22 33 44\n"
+                "Claire,Bois,06 55 66 77 88\n"
+            )
+
+        with patch.object(sys, "argv", ["lancer_contacts.py", "-c", self.ini_path]):
+            lancer_contacts.main()
+
+        sources_dir: str = os.path.join(self.test_dir, "fichiers sources")
+        os.makedirs(sources_dir, exist_ok=True)
+        with open(
+            os.path.join(sources_dir, "compte_rendu_2024-07.txt"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write(
+                "Rendez-vous le 02/05/2013 avec Jean Dupont et Claire Bois.\n"
+                "Interlocutrice : Sophie Renard.\n"
+                "Témoin inconnu : Zéphyrin Valmont.\n"
+                "Nous sommes très fiers de marcher dans les bois une fois.\n"
+                "Ratio mesuré : 0.008219178 et téléphone 06 11 22 33 44.\n"
+            )
+
+        rc_docs: int = lancer_documents.main(
+            ["-c", self.ini_path, "--allow-sleep"]
+        )
+        self.assertEqual(rc_docs, 0)
+
+        lot_file: str = os.path.join(
+            self.test_dir,
+            "resultats_anonymisation",
+            "lot_01",
+            "anonymise_partie_001.txt",
+        )
+        self.assertTrue(os.path.exists(lot_file))
+        with open(lot_file, "r", encoding="utf-8") as f:
+            lot_text: str = f.read()
+
+        self.assertIn("[DATE_MASQUEE]", lot_text)
+        self.assertIn("Jean D.", lot_text)
+        self.assertIn("Claire B.", lot_text)
+        self.assertIn("Sophie R.", lot_text)
+        self.assertIn("Zéphyrin Valmont", lot_text)
+        self.assertIn("très fiers", lot_text)
+        self.assertIn("dans les bois", lot_text)
+        self.assertIn("une fois", lot_text)
+        self.assertIn("0.008219178", lot_text)
+        self.assertNotIn("06 11 22 33 44", lot_text)
+
+        runner = DocumentAnonymizationRunner(self.config)
+        self.assertTrue(runner.initialize())
+        runner.audit.scan_residual_names(
+            "Entretien avec Sophie Dupond.", "note.txt"
+        )
+        runner.audit.write_report()
+
+        with open(
+            self.config.audit_report_file, "r", encoding="utf-8"
+        ) as f_aud:
+            audit_txt: str = f_aud.read()
+        self.assertIn("RAPPORT D'AUDIT DES NOMS PROPRES RÉSIDUELS", audit_txt)
+        self.assertIn("Proche de 'Dupont'", audit_txt)

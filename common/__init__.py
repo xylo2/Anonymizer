@@ -1,6 +1,5 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
 """
-Package commun fournissant les utilitaires partagés de normalisation,
-d'écriture atomique et de résolution de configuration.
+Paquet d'utilitaires partagés entre l'extraction des contacts et l'anonymisation de documents.
 """

@@ -68,9 +68,11 @@ class ContactRulesLoader:
         self.case_sensitive_keywords: Dict[str, str] = {}
         self.glued_to_alias: Dict[str, str] = {}
         self.norm_glued_to_alias: Dict[str, str] = {}
+        self.full_targets: Set[str] = set()
         self.alias_words: Set[str] = set()
         self.protected_surnames: Set[str] = set()
         self.last_name_to_aliases: Dict[str, Set[str]] = {}
+        self.last_name_display: Dict[str, str] = {}
         self.contacts_id: Dict[str, str] = {}
         self.contact_emails: Set[str] = set()
         self.contact_phones: Dict[str, str] = {}
@@ -215,6 +217,7 @@ class ContactRulesLoader:
 
         self.keyword_to_alias[kw] = al
         self.norm_keyword_to_alias[norm_kw] = al
+        self.full_targets.add(norm_kw)
 
         if len(words) >= 2:
             glued_compact: str = "".join(words)
@@ -228,6 +231,7 @@ class ContactRulesLoader:
             if len(words[-1]) >= 3 and norm_rev not in self.norm_keyword_to_alias:
                 self.keyword_to_alias[reversed_kw] = al
                 self.norm_keyword_to_alias[norm_rev] = al
+                self.full_targets.add(norm_rev)
 
         self._extract_surname_protection(kw, al, is_manual=is_manual)
 
@@ -240,9 +244,10 @@ class ContactRulesLoader:
         parts: List[str] = [p for p in kw.split() if len(p) >= 2]
         if len(parts) < 2:
             return
+        first_part: str = parts[0]
         candidate_last: str = parts[-1]
-        if self.is_first_name(candidate_last) and not self.is_first_name(parts[0]):
-            candidate_last = parts[0]
+        if self.is_first_name(candidate_last) and not self.is_first_name(first_part):
+            candidate_last = first_part
         norm_last: str = DocumentTextUtils.normalize_word(candidate_last)
         if (
             len(norm_last) >= 3
@@ -252,6 +257,8 @@ class ContactRulesLoader:
         ):
             self.protected_surnames.add(norm_last)
             self.last_name_to_aliases.setdefault(norm_last, set()).add(al)
+            if norm_last not in self.last_name_display:
+                self.last_name_display[norm_last] = candidate_last.capitalize()
     def _load_indexed_and_anonymized_pairs(self) -> None:
         """Croise contacts_indexes.txt et contacts_anonymises.txt pour enregistrer les noms complets."""
         idx_p: str = self.config.indexed_contacts_file
@@ -390,9 +397,11 @@ class ContactRulesLoader:
         self.case_sensitive_keywords.clear()
         self.glued_to_alias.clear()
         self.norm_glued_to_alias.clear()
+        self.full_targets.clear()
         self.alias_words.clear()
         self.protected_surnames.clear()
         self.last_name_to_aliases.clear()
+        self.last_name_display.clear()
         self.contacts_id.clear()
         self.contact_emails.clear()
         self.contact_phones.clear()

@@ -1,234 +1,259 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
+import ctypes
 import os
 import re
+import subprocess
 import tempfile
+from typing import Optional, Set
 import unicodedata
-from typing import Set
 
 
 class SharedCoreUtils:
     """
-    Centralise les utilitaires partagés entre google_contacts_parser et doc_anonymizer :
-    normalisation Unicode, identifiants (téléphones/e-mails), formatage des durées,
-    écriture atomique et résolution des chemins de configuration.
+    Fournit les primitives partagées de normalisation Unicode, de téléphones FR,
+    d'identifiants, d'écriture atomique, de durée et d'inhibition de veille.
     """
 
-    @staticmethod
-    def format_duration(seconds: float) -> str:
-        """
-        Formate une durée en secondes sous forme lisible par un humain
-        (ex: '42.3s', '2 min 49s', '1 h 05 min 12s').
-
-        :param seconds: Durée écoulée en secondes.
-        :return: Chaîne formatée lisible.
-        """
-        safe_sec: float = max(0.0, float(seconds))
-        if safe_sec < 60.0:
-            return f"{safe_sec:.1f}s"
-
-        total_seconds: int = int(round(safe_sec))
-        hours, remainder = divmod(total_seconds, 3600)
-        minutes, secs = divmod(remainder, 60)
-
-        if hours > 0:
-            return f"{hours} h {minutes:02d} min {secs:02d}s"
-        return f"{minutes} min {secs:02d}s"
+    _sleep_process: Optional[subprocess.Popen] = None
 
     @staticmethod
     def strip_accents(text: str) -> str:
         """
-        Supprime les diacritiques et accents d'une chaîne Unicode via NFD.
+        Supprime les signes diacritiques d'une chaîne Unicode (NFKD).
 
-        :param text: Texte source brut.
+        :param text: Texte source accentué.
         :return: Texte sans accents.
         """
-        return "".join(
-            ch
-            for ch in unicodedata.normalize("NFD", text)
-            if unicodedata.category(ch) != "Mn"
-        )
+        nfkd: str = unicodedata.normalize("NFKD", text)
+        return "".join(ch for ch in nfkd if not unicodedata.combining(ch))
 
     @classmethod
-    def normalize_token(cls, text: str) -> str:
+    def normalize_word(cls, word: str) -> str:
         """
-        Normalise un jeton en minuscules sans accents ni espaces périphériques.
+        Normalise un mot en minuscules sans accents ni ponctuation périphérique.
 
-        :param text: Chaîne brute.
-        :return: Chaîne normalisée.
+        :param word: Mot brut.
+        :return: Mot normalisé.
         """
-        return cls.strip_accents(text).lower().strip()
+        no_acc: str = cls.strip_accents(word.strip().lower())
+        return re.sub(r"^[^\w]+|[^\w]+$", "", no_acc)
+
+    @classmethod
+    def normalize_token(cls, token: str) -> str:
+        """
+        Alias vers normalize_word pour la normalisation de jetons individuels.
+
+        :param token: Jeton brut.
+        :return: Jeton normalisé.
+        """
+        return cls.normalize_word(token)
 
     @classmethod
     def normalize_compact_text(cls, text: str) -> str:
         """
-        Normalise un nom en minuscules sans accents, espaces, tirets ni apostrophes.
+        Normalise une expression en minuscules sans accents avec espaces simples.
 
-        :param text: Texte brut à comparer.
-        :return: Chaîne compacte normalisée.
+        :param text: Texte brut.
+        :return: Texte normalisé compact.
         """
-        base: str = cls.normalize_token(text)
-        return re.sub(r"[\s\-'\u2019]", "", base)
+        no_acc: str = cls.strip_accents(text.strip().lower())
+        cleaned: str = re.sub(r"[^\w\s'-]+", " ", no_acc)
+        return re.sub(r"\s+", " ", cleaned).strip()
 
     @staticmethod
-    def normalize_email_alias(email: str, lowercase: bool = True) -> str:
+    def normalize_fr_phone(raw_val: str) -> str:
         """
-        Retire l'extension d'alias '+...' dans la partie locale d'un e-mail.
+        Normalise un numéro français au format canonique '0XXXXXXXXX'.
 
-        :param email: Adresse e-mail brute.
-        :param lowercase: Convertit l'adresse en minuscules si True.
-        :return: Adresse e-mail canonique.
+        :param raw_val: Numéro brut.
+        :return: Numéro normalisé ou chaîne vide si non reconnu.
         """
-        cleaned: str = re.sub(r"^mailto:", "", email.strip(), flags=re.IGNORECASE)
+        digits: str = re.sub(r"[\s.\-()]+", "", raw_val.strip())
+        if digits.startswith("+33") and len(digits) == 12 and digits[3:].isdigit():
+            return "0" + digits[3:]
+        if digits.startswith("0033") and len(digits) == 13 and digits[4:].isdigit():
+            return "0" + digits[4:]
+        if digits.startswith("0") and len(digits) == 10 and digits.isdigit():
+            return digits
+        return ""
+
+    @staticmethod
+    def normalize_email_alias(raw_email: str, lowercase: bool = True) -> str:
+        """
+        Normalise une adresse e-mail et supprime les suffixes +alias.
+
+        :param raw_email: Adresse e-mail brute.
+        :param lowercase: Convertit l'adresse en minuscules si True.
+        :return: Adresse e-mail normalisée.
+        """
+        cleaned: str = raw_email.strip()
+        if lowercase:
+            cleaned = cleaned.lower()
         if "@" not in cleaned:
             return cleaned
-        local_part, domain_part = cleaned.rsplit("@", 1)
-        if "+" in local_part:
-            local_part, _ = local_part.split("+", 1)
-        result: str = f"{local_part}@{domain_part}"
-        return result.lower() if lowercase else result
-    @classmethod
-    def normalize_identifier(cls, value: str, lowercase_email: bool = True) -> str:
-        """
-        Uniformise un numéro de téléphone français (format 0XXXXXXXXX)
-        ou international ainsi qu'une adresse e-mail.
+        return re.sub(r"\+[^@]+(?=@)", "", cleaned).strip()
 
-        :param value: Coordonnée brute (téléphone ou e-mail).
-        :param lowercase_email: Met l'e-mail en minuscules si True.
+    @classmethod
+    def normalize_identifier(cls, raw_val: str) -> str:
+        """
+        Normalise un e-mail (sans +alias) ou un numéro de téléphone français.
+
+        :param raw_val: Coordonnée brute.
         :return: Identifiant normalisé.
         """
-        val: str = value.strip()
-        if "@" in val:
-            return cls.normalize_email_alias(val, lowercase=lowercase_email)
-        num: str = re.sub(r"[\s.\-\u00a0()]", "", val)
-        if num.startswith("+330"):
-            num = "0" + num[4:]
-        elif num.startswith("+33"):
-            num = "0" + num[3:]
-        elif num.startswith("00330"):
-            num = "0" + num[5:]
-        elif num.startswith("0033"):
-            num = "0" + num[4:]
-        return num
+        cleaned: str = raw_val.strip()
+        if not cleaned:
+            return ""
+        if "@" in cleaned:
+            return cls.normalize_email_alias(cleaned, lowercase=True)
+        norm_phone: str = cls.normalize_fr_phone(cleaned)
+        return norm_phone if norm_phone else cleaned.lower()
 
     @staticmethod
-    def atomic_write_text(target_path: str, content: str, encoding: str = "utf-8") -> None:
+    def resolve_config_path(config_arg: str, root_dir: str) -> str:
         """
-        Écrit un fichier texte de façon atomique via un fichier temporaire
-        dans le répertoire cible afin d'éviter toute corruption.
+        Résout le chemin vers config.ini par rapport à la racine si relatif.
 
-        :param target_path: Chemin final du fichier sur disque.
-        :param content: Contenu complet à enregistrer.
-        :param encoding: Encodage cible (défaut : utf-8).
-        """
-        parent_dir: str = os.path.dirname(os.path.abspath(target_path))
-        if parent_dir:
-            os.makedirs(parent_dir, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(
-            dir=parent_dir, prefix=".tmp_atom_", suffix=".tmp"
-        )
-        try:
-            with os.fdopen(fd, "w", encoding=encoding, newline="\n") as f_tmp:
-                f_tmp.write(content)
-            os.replace(tmp_path, target_path)
-        except Exception:
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-            raise
-
-    @staticmethod
-    def resolve_config_path(raw_config: str, root_dir: str) -> str:
-        """
-        Résout le chemin vers config.ini en vérifiant le chemin fourni
-        puis la racine du dépôt.
-
-        :param raw_config: Chemin brut passé en argument CLI.
+        :param config_arg: Chemin passé en argument CLI.
         :param root_dir: Répertoire racine du projet.
-        :return: Chemin absolu existant vers config.ini.
+        :return: Chemin absolu normalisé.
         """
-        if os.path.isabs(raw_config):
-            if os.path.exists(raw_config):
-                return raw_config
-            raise FileNotFoundError(f"Fichier de configuration introuvable : '{raw_config}'")
-
-        root_candidate: str = os.path.normpath(os.path.join(root_dir, raw_config))
-        if os.path.exists(root_candidate):
-            return root_candidate
-
-        cwd_candidate: str = os.path.abspath(raw_config)
-        if os.path.exists(cwd_candidate):
-            return cwd_candidate
-
-        raise FileNotFoundError(
-            f"Fichier de configuration '{raw_config}' introuvable "
-            f"(cherché dans '{root_candidate}' et '{cwd_candidate}')."
-        )
-
-    @classmethod
-    def load_first_names_set(cls, file_path: str) -> Set[str]:
-        """
-        Charge et normalise les prénoms depuis le fichier prenoms.txt partagé.
-
-        :param file_path: Chemin vers prenoms.txt.
-        :return: Ensemble des prénoms normalisés sans accents.
-        """
-        names: Set[str] = set()
-        if not os.path.exists(file_path):
-            return names
-        with open(file_path, "r", encoding="utf-8") as f_in:
-            for raw_line in f_in:
-                cleaned: str = raw_line.strip()
-                if cleaned and not cleaned.startswith("#"):
-                    norm: str = cls.normalize_token(cleaned)
-                    if norm:
-                        names.add(norm)
-        return names
-
-    @classmethod
-    def load_locations_set(cls, file_path: str) -> Set[str]:
-        """
-        Charge les villes et communes supplémentaires depuis un fichier texte
-        (une entrée par ligne ou séparée par des virgules, commentaires '#' ignorés).
-
-        :param file_path: Chemin vers villes_masquees.txt.
-        :return: Ensemble des noms de lieux normalisés sans accents.
-        """
-        locations: Set[str] = set()
-        if not os.path.exists(file_path):
-            return locations
-        with open(file_path, "r", encoding="utf-8") as f_in:
-            for raw_line in f_in:
-                cleaned: str = raw_line.strip()
-                if not cleaned or cleaned.startswith("#"):
-                    continue
-                for item in cleaned.split(","):
-                    norm: str = cls.normalize_token(item)
-                    if len(norm) >= 3:
-                        locations.add(norm)
-        return locations
+        if os.path.isabs(config_arg):
+            return os.path.normpath(config_arg)
+        if os.path.exists(config_arg):
+            return os.path.abspath(config_arg)
+        return os.path.normpath(os.path.join(root_dir, config_arg))
 
     @classmethod
     def load_words_set(cls, file_path: str) -> Set[str]:
         """
-        Charge une liste de mots exclus depuis un fichier texte
-        (un mot par ligne ou séparé par des virgules, commentaires '#' ignorés).
+        Charge un fichier dictionnaire ligne par ligne en un ensemble normalisé.
 
-        :param file_path: Chemin vers mots_exclus.txt.
-        :return: Ensemble des mots normalisés sans accents.
+        :param file_path: Chemin vers le fichier dictionnaire.
+        :return: Ensemble des entrées normalisées.
         """
-        words: Set[str] = set()
-        if not os.path.exists(file_path):
-            return words
-        with open(file_path, "r", encoding="utf-8") as f_in:
-            for raw_line in f_in:
-                cleaned: str = raw_line.strip()
-                if not cleaned or cleaned.startswith("#"):
+        items: Set[str] = set()
+        if not file_path or not os.path.exists(file_path):
+            return items
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            for raw_line in f:
+                line: str = raw_line.strip()
+                if not line or line.startswith("#"):
                     continue
-                for item in cleaned.split(","):
-                    norm: str = cls.normalize_token(item)
-                    if norm:
-                        words.add(norm)
-        return words
+                norm: str = cls.normalize_compact_text(line)
+                if norm:
+                    items.add(norm)
+        return items
+
+    @classmethod
+    def load_first_names_set(cls, file_path: str) -> Set[str]:
+        """
+        Charge le référentiel des prénoms en un ensemble normalisé.
+
+        :param file_path: Chemin vers prenoms.txt.
+        :return: Ensemble des prénoms normalisés.
+        """
+        return cls.load_words_set(file_path)
+
+    @classmethod
+    def load_locations_set(cls, file_path: str) -> Set[str]:
+        """
+        Charge un fichier de communes/lieux et retourne un ensemble normalisé.
+
+        :param file_path: Chemin vers le fichier villes_masquees.txt.
+        :return: Ensemble des noms de lieux normalisés.
+        """
+        return cls.load_words_set(file_path)
+    @staticmethod
+    def atomic_write_text(
+        target_path: str, content: str, encoding: str = "utf-8"
+    ) -> None:
+        """
+        Écrit un fichier texte de façon atomique via un fichier temporaire.
+
+        :param target_path: Chemin du fichier cible.
+        :param content: Contenu texte à écrire.
+        :param encoding: Encodage cible (défaut : 'utf-8').
+        """
+        parent_dir: str = os.path.dirname(os.path.abspath(target_path))
+        os.makedirs(parent_dir, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=parent_dir, prefix=".tmp_shared_", suffix=".txt"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding=encoding, newline="\n") as f_out:
+                f_out.write(content)
+            os.replace(tmp_path, target_path)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
+
+    @staticmethod
+    def format_duration(seconds: float) -> str:
+        """
+        Formate une durée en secondes sous forme lisible (ex: '1 h 05 min 12s').
+
+        :param seconds: Durée écoulée en secondes.
+        :return: Chaîne formatée.
+        """
+        total: float = max(0.0, seconds)
+        if total < 60.0:
+            return f"{total:.1f}s"
+        mins: int = int(total // 60)
+        rem_sec: int = int(round(total % 60.0))
+        if rem_sec == 60:
+            mins += 1
+            rem_sec = 0
+        if mins < 60:
+            return f"{mins} min {rem_sec}s"
+        hours: int = mins // 60
+        rem_min: int = mins % 60
+        return f"{hours} h {rem_min:02d} min {rem_sec}s"
+
+    @classmethod
+    def prevent_sleep(cls, enable: bool = True) -> None:
+        """
+        Empêche ou réautorise la mise en veille du système (Windows et Linux).
+
+        :param enable: True pour inhiber la veille, False pour restaurer.
+        """
+        if os.name == "nt":
+            es_continuous: int = 0x80000000
+            es_system_required: int = 0x00000001
+            flags: int = (
+                (es_continuous | es_system_required) if enable else es_continuous
+            )
+            try:
+                ctypes.windll.kernel32.SetThreadExecutionState(flags)
+            except Exception:
+                pass
+            return
+
+        if enable:
+            if cls._sleep_process is not None:
+                return
+            try:
+                cls._sleep_process = subprocess.Popen(
+                    [
+                        "systemd-inhibit",
+                        "--what=idle:sleep",
+                        "--who=watch_clipboard",
+                        "--why=Anonymisation documentaire en cours",
+                        "sleep",
+                        "infinity",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                cls._sleep_process = None
+        else:
+            if cls._sleep_process is not None:
+                try:
+                    cls._sleep_process.terminate()
+                    cls._sleep_process.wait(timeout=2.0)
+                except Exception:
+                    pass
+                cls._sleep_process = None

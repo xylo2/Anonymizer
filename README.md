@@ -1,6 +1,6 @@
 # Extraction et anonymisation locale de contacts et documents
 
-Suite d'outils Python **100 % locale** permettant d'extraire, structurer et anonymiser des carnets d'adresses (Google Contacts / Outlook CSV) ainsi que des corpus documentaires hétérogènes (PDF, bureautique, e-mails, SMS/MMS, audio, images, agendas).
+Suite d'outils Python **100 % locale** permettant d'extraire, structurer et anonymiser des carnets d'adresses (Google Contacts / Outlook CSV) ainsi que des corpus documentaires hétérogènes (PDF natifs/OCR, bureautique, e-mails, SMS/MMS, audio, images, agendas).
 
 ---
 
@@ -34,6 +34,18 @@ python lancer_documents.py --complete-manual
 # Réappliquer uniquement contacts_manuels.txt sur les lots existants
 python lancer_documents.py --manual-only
 ```
+
+---
+
+## Couverture d'anonymisation et vigilance
+
+* **Données masquées automatiquement** :
+  * **Identités** : contacts issus des référentiels, paires `Prénom Nom` / `NOM Prénom`, prénoms composés (`Jean-Eudes L.`), titres civils et médicaux (`Dr`, `Mme`, `Me`, `Famille`, y compris collés par l'OCR comme `DrLAMOTTE`), destinataires MIME et pseudonymes de plateformes.
+  * **Coordonnées et identifiants** : téléphones (`TEL_001`), e-mails (`EMAIL_001`), URLs (`[URL_MASQUEE]`), NIR (`[NUM_SECU_MASQUE]`), IBAN/BIC, identifiants fiscaux, France Travail, CAF, RPPS/FINESS/CNI/MRZ, digicodes et plaques d'immatriculation.
+  * **Dates et lieux** : dates exactes déclarées dans `masked_birth_dates` de `config.ini` (`[DATE_MASQUEE]` sous tous formats, y compris ISO et OCR), dates de naissance contextuelles (`[JOUR_MOIS_MASQUES]/AAAA`), adresses postales même collées par l'OCR (`[ADRESSE_MASQUEE]`), communes (`[LIEU_MASQUE]`) et établissements (`[ETABLISSEMENT_LIEU_MASQUE]`).
+* **Points de vigilance (relecture via `audit_noms_residuels.txt`)** :
+  * Les **prénoms seuls** et surnoms familiers sont conservés par conception (ajoutez-les dans `contacts_manuels.txt` si vous souhaitez les pseudonymiser).
+  * Les **noms de famille isolés** hors carnet d'adresses, les **employeurs/écoles spécifiques**, les **identifiants numériques libres sans libellé** et le **contenu clinique narratif** nécessitent une vérification finale dans `audit_noms_residuels.txt`.
 
 ---
 

@@ -110,15 +110,43 @@ Le traitement s'exécute en **parallèle au fil de l'eau** : les threads d'extra
 
 ---
 
-## 5. Types de données masquées et fichiers d'audit
+## 5. Couverture d'anonymisation et limites
 
-### 5.1 Catégories d'anonymisation
+### 5.1 Données systématiquement masquées
 
-* **Identités et contacts** : noms issus de `contacts.txt`, `contacts_manuels.txt`, `contacts_emails_decouverts.txt`, paires `Prénom Nom` / `NOM Prénom`, prénoms composés (`Jean-Eudes L.`), titres civils et médicaux (`Dr`, `Mme`, `Me`, `Famille`), destinataires MIME et jetons collés par l'OCR.
-* **Coordonnées numériques** : téléphones français et internationaux remplacés par des pseudonymes déterministes `TEL_001` (via empreinte SHA-256 salée), adresses e-mails remplacées par `EMAIL_001` et URLs par `[URL_MASQUEE]`.
-* **Identifiants sensibles et administratifs** : numéros de Sécurité sociale (`[NUM_SECU_MASQUE]`), IBAN/BIC, numéros fiscaux, identifiants France Travail, numéros d'allocataire CAF, RPPS/AM/FINESS/CNI/MRZ, références bancaires, codes d'accès/digicodes et plaques d'immatriculation.
-* **Dates et localisations** : jour et mois des dates de naissance masqués en conservant l'année (`[JOUR_MOIS_MASQUES]/2015`), adresses postales (`[ADRESSE_MASQUEE]`), communes françaises et établissements de santé (`[LIEU_MASQUE]`, `[ETABLISSEMENT_LIEU_MASQUE]`).
-### 5.2 Boucle d'audit des noms résiduels
+* **Identités des personnes** :
+  * Contacts issus de `contacts.txt`, `contacts_manuels.txt` et `contacts_emails_decouverts.txt` (y compris en ordre inversé `Nom Prénom` et formes collées OCR).
+  * Paires `Prénom Nom` et `NOM Prénom`, prénoms composés (`Jean-Eudes L.`, `Jean Eudes M.`, `J.-Marc A.`) et noms précédés d'une civilité ou d'un titre médical/juridique (`Dr`, `Docteur`, `Mme`, `M.`, `Pr`, `Me`, `Famille`), y compris sans espace OCR (`DrLAMOTTE` -> `Dr L.`, `MMEAlice` -> `MME Alice`).
+  * Destinataires d'en-têtes MIME (`"EMAIL_068 B."`) et pseudonymes sur plateformes de vente/colis (`Vinted (pseudo)`).
+  * Les mots courants homographes (`fois`, `bois`, `fiers`, `mis`, `créé`, `cousin`, `barrière`, `garage`, `courant`, `cerisier`, `commande`, `colis`) sont protégés pour éviter les faux positifs d'abréviation.
+* **Coordonnées numériques** :
+  * Numéros de téléphone français et internationaux remplacés par des pseudonymes déterministes (`TEL_001` via empreinte SHA-256 salée), sans confusion avec les nombres décimaux (`0.008...`) ou les horodatages (`10.15:57`).
+  * Adresses e-mail (`EMAIL_001`) et liens hypertextes (`[URL_MASQUEE]`).
+* **Dates et état civil** :
+  * Dates de naissance exactes déclarées dans `masked_birth_dates` (`config.ini`), automatiquement masquées sous tous les formats (`JJ/MM/AAAA`, `JJ.MM.AA`, `AAAA-MM-JJ`, `AAAAMMJJ`, `2 mai 2013` et confusions OCR `0`/`O`, `5`/`S`) par `[DATE_MASQUEE]`.
+  * Autres dates de naissance contextuelles (`né(e) le`, `ddn`, `enfant`, `patient`) masquées au niveau du jour et du mois (`[JOUR_MOIS_MASQUES]/2015`).
+  * Dates de délivrance et d'expiration de pièces d'identité (`[DATE_TITRE_MASQUEE]`).
+* **Identifiants administratifs, médicaux et financiers** :
+  * Numéros de Sécurité sociale (`[NUM_SECU_MASQUE]`), y compris collés ou altérés par l'OCR.
+  * Coordonnées bancaires (`[IBAN_MASQUE]`, `[BIC_MASQUE]`), numéros de carte tronqués, transactions et commandes (`[REF_BANCAIRE_TX_MASQUEE]`).
+  * Identifiants fiscaux (`[NUM_FISCAL_MASQUE]`), France Travail (`[ID_FRANCE_TRAVAIL_MASQUE]`), CAF (`[NUM_ALLOCATAIRE_MASQUE]`), RPPS/AM/FINESS/IPP (`[ID_ADMIN_MASQUE]`), titres d'identité à 12 chiffres (`[ID_CNI_PERMIS_MASQUE]`) et bandes MRZ (`[MRZ_IDENTITE_MASQUEE]`).
+  * Codes d'accès, digicodes, mots de passe (`[CODE_ACCES_MASQUE]`), identifiants de visioconférence (`[ID_REUNION_MASQUE]`), références de dossiers (`[REF_ADMIN_MASQUEE]`) et plaques d'immatriculation (`[PLAQUE_IMMAT_MASQUEE]`).
+* **Localisations et établissements** :
+  * Adresses postales (`[ADRESSE_MASQUEE]`), y compris collées par l'OCR (`RuedelaCabottiere`, `23Rve...`), codes postaux et communes (`[LIEU_MASQUE]`, y compris `14031Caencedex9`) ainsi qu'établissements hospitaliers et zones d'activité (`[ETABLISSEMENT_LIEU_MASQUE]`).
+
+### 5.2 Données sensibles pouvant subsister (vigilance manuelle)
+
+1. **Prénoms seuls et surnoms familiers** :
+   * Les prénoms employés sans nom de famille (`Maël`, `Aloïs`, `Lilou`, `Steph`) sont conservés par conception pour maintenir la lisibilité des échanges. Pour les remplacer par des pseudonymes (`Enfant_1`, `Conjoint`), ajoutez-les explicitement dans `contacts_manuels.txt`.
+2. **Noms de famille isolés ou hors carnet d'adresses** :
+   * Un nom de famille isolé (sans prénom ni titre) absent de `contacts.txt` et `contacts_manuels.txt` reste visible, mais est signalé dans `audit_noms_residuels.txt`.
+3. **Employeurs, écoles et associations spécifiques** :
+   * Les noms propres d'entreprises, d'écoles ou d'associations non listés dans les contacts ne sont pas masqués automatiquement afin de préserver les enseignes et organismes courants (`Ikea`, `Decathlon`, `CPAM`).
+4. **Identifiants numériques libres sans mot-clé** :
+   * Les numéros de client, d'adhérent, identifiants internes d'échographie ou identifiants séparés de leur libellé par un saut de ligne ne sont pas interceptés par les motifs génériques.
+5. **Contenu médical et biographique narratif** :
+   * Les diagnostics, traitements et récits cliniques sont conservés intacts pour l'analyse et peuvent permettre une ré-identification indirecte si les noms d'établissements ou de proches n'ont pas été ajoutés dans `contacts_manuels.txt`.
+### 5.3 Boucle d'audit des noms résiduels
 
 À l'issue de chaque passe, deux fichiers sont mis à jour à la racine :
 
