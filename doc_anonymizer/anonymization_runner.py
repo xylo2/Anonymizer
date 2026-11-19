@@ -156,6 +156,7 @@ class DocumentAnonymizationRunner:
             norm: str = DocumentTextUtils.normalize_word(tok)
             if (
                 norm in AuditAndStateManager.COMMON_FRENCH_STOPWORDS
+                or norm in ContactRulesLoader.COMMON_WORD_COLLISIONS
                 or norm in self.config.excluded_words
                 or norm in self.rules.alias_words
             ):
@@ -486,7 +487,7 @@ class DocumentAnonymizationRunner:
         text = self.UPPER_PAIR_PATTERN.sub(self._replace_upper_pair_match, text)
         text = self.AUTO_PERSON_PAIR_PATTERN.sub(self._replace_person_pair_match, text)
         text = re.sub(
-            r"\b(Jean[\-\u2010-\u2015][A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç']{2,20})\s+"
+            r"\b(Jean[\-\u2010-\u2015\s][A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç']{2,20})\s+"
             r"(?:((?:de|du|des|d'|le|la|van|von|ben|el|al|ould|dos|da|di)(?:\s+(?:la|le|les))?)\s+)?"
             r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'-]{2,25})\b",
             lambda m: (
