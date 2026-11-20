@@ -75,17 +75,27 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Supprime les anciens lots avant de relancer l'anonymisation complète.",
     )
+    parser.add_argument(
+        "--copy-unmasked",
+        default="",
+        help="Chemin vers un fichier liste (.txt/.md) de fichiers anonymisés pour copier les transcriptions brutes correspondantes.",
+    )
+    parser.add_argument(
+        "--unmasked-dir",
+        default="transcriptions_non_anonymisees",
+        help="Dossier de destination pour --copy-unmasked (défaut : transcriptions_non_anonymisees).",
+    )
     return parser.parse_args(argv)
 def _install_sigint_handler() -> None:
     """
     Force l'arrêt immédiat du processus au second Ctrl+C sous Windows
     si un thread C/C++ (OCR ou Whisper) bloque la sortie.
     """
-    sigint_count: List[int] = [0]
+    sigint_count: List[int] = list((0,))
 
     def _on_sigint(signum: int, frame: Any) -> None:
-        sigint_count[0] += 1
-        if sigint_count[0] >= 2:
+        sigint_count.append(1)
+        if len(sigint_count) >= 3:
             print(
                 "\n[ARRÊT FORCÉ] Second Ctrl+C détecté : fermeture immédiate.",
                 flush=True,
@@ -106,6 +116,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     _install_sigint_handler()
     args = parse_args(argv)
     config = PipelineConfig(args.config)
+
+    if args.copy_unmasked:
+        from tools.copy_unmasked_transcriptions import (
+            UnmaskedTranscriptionCopier,
+        )
+
+        copier = UnmaskedTranscriptionCopier(
+            config=config,
+            output_dir=args.unmasked_dir,
+        )
+        targets: List[str] = copier.extract_targets_from_list_file(
+            args.copy_unmasked
+        )
+        _, missing = copier.copy_from_targets(targets)
+        return 0 if missing == 0 else 1
 
     if args.sync_contacts:
         from tools.sync_contacts import ContactsSynchronizer

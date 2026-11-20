@@ -9,6 +9,7 @@ from doc_anonymizer.audit_state_manager import AuditAndStateManager
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.contact_rules_loader import ContactRulesLoader
 from doc_anonymizer.manual_contacts_importer import AuditManualContactsImporter
+from doc_anonymizer.source_mapping_manager import SourceMappingManager
 from doc_anonymizer.text_utils import DocumentTextUtils
 
 
@@ -116,18 +117,24 @@ class DocumentAnonymizationRunner:
         "et", "ou", "mais", "donc", "car", "que", "qui", "quoi", "dont",
     })
 
+    CASE_SENSITIVE_LOCATIONS = frozenset({
+        "rots", "ifs", "boulon", "clin", "orge", "aire", "sens", "nice", "pau", "auch",
+    })
+
     def __init__(self, config: PipelineConfig, manual_only: bool = False) -> None:
         """Initialise le moteur d'anonymisation."""
         self.config: PipelineConfig = config
         self.manual_only: bool = manual_only
         self.rules: ContactRulesLoader = ContactRulesLoader(config, manual_only=manual_only)
         self.audit: AuditAndStateManager = AuditAndStateManager(config, self.rules)
+        self.source_mapper: SourceMappingManager = SourceMappingManager(config)
 
         self.dynamic_tokens: Dict[str, str] = {}
         self.email_counter: int = 1
         self.phone_counter: int = 1
 
         self.current_chunk: List[str] = []
+        self.current_chunk_keys: List[str] = []
         self.current_size: int = 0
         self.processed_in_session: int = 0
 
@@ -145,6 +152,7 @@ class DocumentAnonymizationRunner:
         if not self.rules.load_all():
             return False
         self.audit.load()
+        self.source_mapper.load()
         self._sync_dynamic_counters()
         self._compile_patterns()
         print(
@@ -187,10 +195,6 @@ class DocumentAnonymizationRunner:
         _ = digest
         self.dynamic_tokens[key] = token
         return token
-    CASE_SENSITIVE_LOCATIONS = frozenset({
-        "rots", "ifs", "boulon", "clin", "orge", "aire", "sens", "nice", "pau", "auch",
-    })
-
     def _compile_patterns(self) -> None:
         """Compile les expressions régulières optimisées sans traverser les sauts de ligne."""
         self.fast_replacer_map = {}
@@ -273,7 +277,6 @@ class DocumentAnonymizationRunner:
                     rf"(?<![A-Za-zÀ-ÿ0-9_])(?:{'|'.join(loc_branches)})(?![A-Za-zÀ-ÿ0-9_])"
                 )
         self.regex_compiled = True
-
     def _replace_fast_target(self, match: re.Match) -> str:
         """Remplace une cible reconnue en ignorant les vrais toponymes composés."""
         matched_text: str = match.group(0)
@@ -299,6 +302,7 @@ class DocumentAnonymizationRunner:
             if re.sub(r"[\s\-'\u2019]+", "", k_norm) == compact:
                 return val_alias
         return matched_text
+
     def _is_known_first_name(self, token: str) -> bool:
         """Vérifie si un jeton est un prénom connu (simple ou composé type Jean-Eudes)."""
         norm: str = DocumentTextUtils.normalize_word(token)
@@ -341,7 +345,6 @@ class DocumentAnonymizationRunner:
         ):
             return match.group(0)
         return f"{title} {last[:1].upper()}."
-
     def _replace_auto_first_last(self, match: re.Match) -> str:
         """Abrège 'Charlotte Lemaitre' ou 'Jean-Eudes Lemoine'."""
         firsts: str = match.group(1)
@@ -400,6 +403,7 @@ class DocumentAnonymizationRunner:
         if norm_tel and norm_tel in self.rules.target_phones:
             return self.rules.target_phones[norm_tel]
         return self._get_or_create_token(raw_tel, "TEL")
+
     def anonymize_text(self, text: str) -> str:
         """Applique l'ensemble des passes d'anonymisation sur un texte."""
         if not text:
@@ -427,7 +431,6 @@ class DocumentAnonymizationRunner:
             res,
             flags=re.IGNORECASE,
         )
-
         res = re.sub(
             r"\b(MME|MR|DR|MLLE|ENFANT|Enfant)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç]{2,})",
             r"\1 \2",
@@ -441,15 +444,9 @@ class DocumentAnonymizationRunner:
 
         if self.config.custom_birth_date_pattern:
             res = self.config.custom_birth_date_pattern.sub("[DATE_MASQUEE]", res)
-        res = DocumentTextUtils.REGEX_GLUED_PERSON_BIRTH_DATE.sub(
-            r"\1[DATE_MASQUEE]", res
-        )
-        res = DocumentTextUtils.REGEX_BIRTH_DATE.sub(
-            r"\1[JOUR_MOIS_MASQUES]/\2", res
-        )
-        res = DocumentTextUtils.REGEX_ID_DOC_DATES.sub(
-            r"\1[DATE_TITRE_MASQUEE]", res
-        )
+        res = DocumentTextUtils.REGEX_GLUED_PERSON_BIRTH_DATE.sub(r"\1[DATE_MASQUEE]", res)
+        res = DocumentTextUtils.REGEX_BIRTH_DATE.sub(r"\1[JOUR_MOIS_MASQUES]/\2", res)
+        res = DocumentTextUtils.REGEX_ID_DOC_DATES.sub(r"\1[DATE_TITRE_MASQUEE]", res)
 
         if self.config.mask_ssn:
             res = DocumentTextUtils.REGEX_SSN.sub("[NUM_SECU_MASQUE]", res)
@@ -472,15 +469,12 @@ class DocumentAnonymizationRunner:
 
         if self.fast_replacer_regex:
             res = self.fast_replacer_regex.sub(self._replace_fast_target, res)
-
         if self.config.mask_addresses:
             res = DocumentTextUtils.REGEX_STREET_ADDRESS.sub("[ADRESSE_MASQUEE]", res)
             res = DocumentTextUtils.REGEX_POSTAL_CITY.sub("[ADRESSE_MASQUEE]", res)
             res = DocumentTextUtils.REGEX_FACILITIES_AND_ZONES.sub("[ETABLISSEMENT_LIEU_MASQUE]", res)
-
         if self.locations_regex:
             res = self.locations_regex.sub("[LIEU_MASQUE]", res)
-
         if self.title_first_last_regex:
             res = self.title_first_last_regex.sub(self._replace_title_first_last, res)
         if self.title_last_name_regex:
@@ -489,7 +483,6 @@ class DocumentAnonymizationRunner:
             res = self.auto_first_last_regex.sub(self._replace_auto_first_last, res)
         if self.auto_last_first_regex:
             res = self.auto_last_first_regex.sub(self._replace_auto_last_first, res)
-
         if self.config.mask_urls:
             res = DocumentTextUtils.REGEX_URL.sub("[URL_MASQUEE]", res)
 
@@ -498,7 +491,6 @@ class DocumentAnonymizationRunner:
 
         for idx, original_css in enumerate(css_stash):
             res = res.replace(f"__CSS_ATTR_{idx}__", original_css)
-
         return res
     def flush_batch(self) -> None:
         """Écrit le lot en cours sur disque dans batch_XX/, met à jour l'audit et l'état JSON."""
@@ -513,6 +505,9 @@ class DocumentAnonymizationRunner:
         merged_content: str = "".join(self.current_chunk)
         DocumentTextUtils.atomic_write_text(out_file, merged_content)
 
+        self.source_mapper.update_batch_for_keys(self.current_chunk_keys, out_file)
+        self.source_mapper.save()
+
         count: int = self.audit.write_report()
         self.audit.save()
         print(
@@ -521,6 +516,7 @@ class DocumentAnonymizationRunner:
         )
         self.audit.file_idx += 1
         self.current_chunk.clear()
+        self.current_chunk_keys.clear()
         self.current_size = 0
 
     def _process_single_file(self, norm_path: str) -> bool:
@@ -534,6 +530,11 @@ class DocumentAnonymizationRunner:
 
         anon_text: str = self.anonymize_text(raw_text)
         anon_header_path: str = self.anonymize_text(norm_path)
+        self.source_mapper.register_entry(
+            anonymized_path=anon_header_path,
+            extracted_path=norm_path,
+            raw_text=raw_text,
+        )
         if not self.manual_only:
             self.audit.scan_residual_names(anon_text, norm_path)
 
@@ -552,6 +553,7 @@ class DocumentAnonymizationRunner:
             self.flush_batch()
 
         self.current_chunk.append(block)
+        self.current_chunk_keys.append(anon_header_path)
         self.current_size += block_bytes
         self.audit.already_processed.add(norm_path)
         self.processed_in_session += 1
