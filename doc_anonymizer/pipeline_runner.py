@@ -1,11 +1,12 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
 from concurrent.futures import ThreadPoolExecutor
+import json
 import os
 import shutil
 import threading
 import time
-from typing import List, Set
+from typing import Any, Dict, List, Set
 from common.core_utils import SharedCoreUtils
 from doc_anonymizer.anonymization_runner import DocumentAnonymizationRunner
 from doc_anonymizer.config_manager import PipelineConfig
@@ -17,6 +18,8 @@ from doc_anonymizer.discovered_contacts_builder import (
 )
 from doc_anonymizer.extraction_runner import DocumentExtractionRunner
 from doc_anonymizer.power_manager import SystemSleepInhibitor
+from doc_anonymizer.source_mapping_manager import SourceMappingManager
+from doc_anonymizer.text_utils import DocumentTextUtils
 
 
 class DocAnonymizerPipelineRunner:
@@ -38,6 +41,30 @@ class DocAnonymizerPipelineRunner:
         self.config: PipelineConfig = config
         self.prevent_sleep: bool = prevent_sleep
         self.stop_event: threading.Event = threading.Event()
+
+    def _save_extraction_dashboard_state(
+        self,
+        skipped_zips: List[str],
+        extracted_count: int,
+    ) -> None:
+        """Enregistre le bilan d'extraction (fichiers extraits et ZIP ignorés) pour l'interface."""
+        os.makedirs(self.config.results_dir, exist_ok=True)
+        payload: Dict[str, Any] = {}
+        if os.path.exists(self.config.resume_state_file):
+            try:
+                with open(self.config.resume_state_file, "r", encoding="utf-8") as f_in:
+                    payload = json.load(f_in)
+            except Exception:
+                payload = {}
+
+        stats: Dict[str, Any] = payload.get("stats_anonymisation", {})
+        stats["documents_extraits"] = int(extracted_count)
+        stats["zip_ignores"] = list(skipped_zips)
+        payload["stats_anonymisation"] = stats
+        DocumentTextUtils.atomic_write_text(
+            self.config.resume_state_file,
+            json.dumps(payload, ensure_ascii=False, indent=2),
+        )
 
     def _anonymize_pending_transcriptions(
         self, anonymizer: DocumentAnonymizationRunner
@@ -89,7 +116,6 @@ class DocAnonymizerPipelineRunner:
                 processed_count += 1
 
         return processed_count
-
     def _reset_results_for_second_pass(self) -> None:
         """
         Nettoie intégralement les anciens lots (batch_XX / lot_XX) et l'état JSON
@@ -109,11 +135,14 @@ class DocAnonymizerPipelineRunner:
         if os.path.exists(self.config.resume_state_file):
             os.remove(self.config.resume_state_file)
 
-    def _run_second_pass_with_discovered_emails(self) -> bool:
+    def _run_second_pass_with_discovered_emails(
+        self, skipped_zips: List[str] | None = None
+    ) -> bool:
         """
         Génère discovered_email_contacts.txt et discovered_chat_contacts.txt
         et exécute une seconde passe d'anonymisation si des règles ont été ajoutées.
 
+        :param skipped_zips: Archives ZIP ignorées lors de l'extraction à conserver dans l'état.
         :return: True si une seconde passe a été exécutée, False sinon.
         """
         email_builder: DiscoveredEmailContactsBuilder = (
@@ -145,10 +174,107 @@ class DocAnonymizerPipelineRunner:
         )
         if not second_anonymizer.initialize():
             return False
+        if skipped_zips:
+            second_anonymizer.set_skipped_zips(skipped_zips)
 
         self._anonymize_pending_transcriptions(second_anonymizer)
         second_anonymizer.finalize(pass_start)
         return True
+
+    def run_extract_only(self, force_ocr_and_audio: bool = True) -> int:
+        """
+        Extrait et classe chronologiquement les documents nominatifs (sans anonymisation),
+        en forçant l'OCR sur les images/scans et la transcription sur les audios.
+
+        :param force_ocr_and_audio: Active impérativement OCR et Audio pour le dossier avocat.
+        :return: Nombre de transcriptions produites ou disponibles.
+        """
+        start_time: float = time.perf_counter()
+        self.stop_event.clear()
+        if force_ocr_and_audio:
+            self.config.enable_ocr = True
+            self.config.enable_audio = True
+
+        with SystemSleepInhibitor(enabled=self.prevent_sleep):
+            print("=== PIPELINE DOC_ANONYMIZER (EXTRACTION NOMINATIVE AVOCAT) ===", flush=True)
+            print(f"[CONFIG] Sources        : {self.config.sources_dir}", flush=True)
+            print(f"[CONFIG] Transcriptions : {self.config.transcriptions_dir}", flush=True)
+            print("[CONFIG] OCR & Audio    : ACTIVÉS (images + transcriptions audio)", flush=True)
+
+            extractor: DocumentExtractionRunner = DocumentExtractionRunner(
+                config=self.config, stop_event=self.stop_event
+            )
+            os.makedirs(self.config.transcriptions_dir, exist_ok=True)
+            already_extracted: Set[str] = extractor.load_tracking_set(
+                self.config.extraction_tracking_file
+            )
+            sms_processed: Set[str] = extractor.load_tracking_set(
+                self.config.sms_tracking_file
+            )
+            discovered_phones: Set[str] = set()
+            discovered_emails: Set[str] = set()
+            workers: int = extractor.get_worker_count()
+            executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=workers)
+            total_generated: int = 0
+
+            try:
+                files: List[str] = extractor.collect_source_files()
+                total_files: int = len(files)
+                print(f"Inventaire : {total_files} fichier(s) source(s) ({workers} thread(s)).", flush=True)
+
+                futures = {
+                    executor.submit(
+                        extractor.process_single_file,
+                        fp, {}, set(), already_extracted,
+                        sms_processed, discovered_phones, discovered_emails
+                    ): fp
+                    for fp in files
+                }
+                pending_futures = set(futures.keys())
+                while pending_futures:
+                    done_batch = [fut for fut in list(pending_futures) if fut.done()]
+                    if not done_batch:
+                        time.sleep(0.1)
+                        continue
+                    for future in done_batch:
+                        pending_futures.remove(future)
+                        fp: str = futures[future]
+                        generated_txts: List[str] = future.result()
+                        total_generated += len(generated_txts)
+                        idx: int = total_files - len(pending_futures)
+                        print(f"[{idx}/{total_files}] Extrait : {os.path.basename(fp)}", flush=True)
+
+                executor.shutdown(wait=True)
+                extractor.finalize_reports(discovered_phones, discovered_emails)
+
+                mapper = SourceMappingManager(self.config)
+                mapper.load()
+                for root_p, _, txts in os.walk(self.config.transcriptions_dir):
+                    for fn in sorted(txts):
+                        if fn.startswith(".") or not fn.lower().endswith(".txt"):
+                            continue
+                        if fn in {"rapport_extraction.txt", "extraction_report.txt"}:
+                            continue
+                        full_t: str = os.path.normpath(os.path.join(root_p, fn))
+                        try:
+                            with open(full_t, "r", encoding="utf-8", errors="ignore") as f_t:
+                                raw_c: str = f_t.read()
+                            mapper.register_entry(full_t, full_t, raw_c)
+                        except OSError:
+                            pass
+                mapper.save()
+                self._save_extraction_dashboard_state(
+                    skipped_zips=extractor.skipped_zip_files,
+                    extracted_count=total_generated,
+                )
+            except KeyboardInterrupt:
+                self.stop_event.set()
+                executor.shutdown(wait=False, cancel_futures=True)
+                os._exit(130)
+
+        elapsed_str: str = SharedCoreUtils.format_duration(time.perf_counter() - start_time)
+        print(f"\nExtraction nominative terminée en {elapsed_str}.", flush=True)
+        return total_generated
     def run_anonymize_only(self, reset_results: bool = False) -> None:
         """
         Exécute uniquement l'étape complète d'anonymisation à partir des
@@ -277,9 +403,12 @@ class DocAnonymizerPipelineRunner:
 
                 executor.shutdown(wait=True)
                 self._anonymize_pending_transcriptions(anonymizer)
+                anonymizer.set_skipped_zips(extractor.skipped_zip_files)
                 extractor.finalize_reports(discovered_phones, discovered_emails)
                 anonymizer.finalize(wall_start)
-                self._run_second_pass_with_discovered_emails()
+                self._run_second_pass_with_discovered_emails(
+                    skipped_zips=extractor.skipped_zip_files
+                )
 
             except KeyboardInterrupt:
                 self.stop_event.set()

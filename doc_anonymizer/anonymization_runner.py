@@ -16,7 +16,7 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 class DocumentAnonymizationRunner:
     """
     Moteur d'anonymisation de niveau 3+ avec découpage par lots (batch_XX),
-    masquage contextuel multi-passes et audit continu.
+    masquage contextuel multi-passes, compteur de statistiques et audit continu.
     """
 
     SAFE_UPPER_WORDS = frozenset({
@@ -122,7 +122,6 @@ class DocumentAnonymizationRunner:
     })
 
     def __init__(self, config: PipelineConfig, manual_only: bool = False) -> None:
-        """Initialise le moteur d'anonymisation."""
         self.config: PipelineConfig = config
         self.manual_only: bool = manual_only
         self.rules: ContactRulesLoader = ContactRulesLoader(config, manual_only=manual_only)
@@ -137,6 +136,7 @@ class DocumentAnonymizationRunner:
         self.current_chunk_keys: List[str] = []
         self.current_size: int = 0
         self.processed_in_session: int = 0
+        self._active_stats: Optional[Dict[str, int]] = None
 
         self.regex_compiled: bool = False
         self.fast_replacer_regex: Optional[Pattern[str]] = None
@@ -147,8 +147,16 @@ class DocumentAnonymizationRunner:
         self.auto_last_first_regex: Optional[Pattern[str]] = None
         self.locations_regex: Optional[Pattern[str]] = None
 
+    def set_skipped_zips(self, skipped_zips: List[str]) -> None:
+        """Enregistre la liste des archives ZIP ignorées pour le tableau de bord."""
+        self.audit.stats["zip_ignores"] = list(skipped_zips)
+
+    def _bump_stat(self, key: str, count: int = 1) -> None:
+        """Incrémente un compteur de statistique d'anonymisation si actif."""
+        if self._active_stats is not None and count > 0:
+            self._active_stats[key] = self._active_stats.get(key, 0) + count
+
     def initialize(self) -> bool:
-        """Charge les règles, compile les expressions régulières et restaure l'état."""
         if not self.rules.load_all():
             return False
         self.audit.load()
@@ -161,9 +169,7 @@ class DocumentAnonymizationRunner:
             flush=True,
         )
         return True
-
     def _sync_dynamic_counters(self) -> None:
-        """Synchronise les compteurs EMAIL_XXX et TEL_XXX avec l'état restauré."""
         for token in self.dynamic_tokens.values():
             if token.startswith("EMAIL_"):
                 try:
@@ -177,29 +183,22 @@ class DocumentAnonymizationRunner:
                     pass
 
     def _get_or_create_token(self, raw_val: str, prefix: str) -> str:
-        """Retourne un jeton déterministe EMAIL_XXX ou TEL_XXX pour une coordonnée."""
         norm: str = DocumentTextUtils.normalize_identifier(raw_val) or raw_val.strip().lower()
         key: str = f"{prefix}:{norm}"
         if key in self.dynamic_tokens:
             return self.dynamic_tokens[key]
-
-        digest: str = hashlib.sha256(
-            f"{self.config.secret_salt}:{key}".encode("utf-8")
-        ).hexdigest()[:6].upper()
         if prefix == "EMAIL":
             token: str = f"EMAIL_{self.email_counter:03d}"
             self.email_counter += 1
         else:
             token = f"TEL_{self.phone_counter:03d}"
             self.phone_counter += 1
-        _ = digest
         self.dynamic_tokens[key] = token
         return token
+
     def _compile_patterns(self) -> None:
-        """Compile les expressions régulières optimisées sans traverser les sauts de ligne."""
         self.fast_replacer_map = {}
         raw_targets: List[str] = []
-
         for target, alias in self.rules.keyword_to_alias.items():
             clean_t: str = target.strip()
             if not clean_t or not alias:
@@ -257,7 +256,6 @@ class DocumentAnonymizationRunner:
         self.initial_last_name_regex = re.compile(
             rf"(?<![A-Za-zÀ-ÿ0-9])([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])\.[ \t]*({cap_word})(?![A-Za-zÀ-ÿ0-9])"
         )
-
         extra_cs_locs: Set[str] = set(self.CASE_SENSITIVE_LOCATIONS) | {
             "fiers", "fier", "fiere", "fieres", "vers", "car", "bon", "fort",
             "clair", "claire", "grand", "petit", "haut", "bas", "saint", "sainte",
@@ -278,12 +276,8 @@ class DocumentAnonymizationRunner:
             if len(loc) >= 3 and loc not in self.config.excluded_words
         )
         if safe_locs:
-            ci_locs: List[str] = [
-                loc for loc in safe_locs if loc not in extra_cs_locs
-            ]
-            cs_locs: List[str] = [
-                loc for loc in safe_locs if loc in extra_cs_locs
-            ]
+            ci_locs: List[str] = [loc for loc in safe_locs if loc not in extra_cs_locs]
+            cs_locs: List[str] = [loc for loc in safe_locs if loc in extra_cs_locs]
             loc_branches: List[str] = []
             if ci_locs:
                 ci_trie: str = DocumentTextUtils.build_ocr_tolerant_trie_regex(ci_locs)
@@ -298,8 +292,8 @@ class DocumentAnonymizationRunner:
                     rf"(?<![A-Za-zÀ-ÿ0-9])(?:{'|'.join(loc_branches)})(?![A-Za-zÀ-ÿ0-9])"
                 )
         self.regex_compiled = True
+
     def _is_known_first_name(self, token: str) -> bool:
-        """Vérifie si un jeton (simple ou composé par espace/tiret) est un prénom reconnu."""
         norm: str = DocumentTextUtils.normalize_word(token)
         if not norm:
             return False
@@ -324,15 +318,14 @@ class DocumentAnonymizationRunner:
         return False
 
     def _replace_fast_target(self, match: re.Match) -> str:
-        """Remplace une cible exacte/OCR du dictionnaire par son alias."""
         raw: str = match.group(0)
         norm: str = DocumentTextUtils.normalize_word(raw)
         if norm in self.fast_replacer_map:
+            self._bump_stat("noms_masques")
             return self.fast_replacer_map[norm]
         return raw
 
     def _replace_title_first_last(self, match: re.Match) -> str:
-        """Abrège 'Docteur Evelyne Moreau' -> 'Docteur Evelyne M.' et 'Dr Jean Pierre Bernard' -> 'Dr Jean P. B.'."""
         title: str = match.group(1)
         firsts: str = match.group(2)
         last: str = match.group(3)
@@ -341,6 +334,7 @@ class DocumentAnonymizationRunner:
             return match.group(0)
         first_tokens: List[str] = [t for t in re.split(r"[\s\-]+", firsts) if t]
         if first_tokens and self._is_known_first_name(next(iter(first_tokens))):
+            self._bump_stat("noms_masques")
             if len(first_tokens) >= 2 and " " in firsts:
                 first_kept: str = next(iter(first_tokens))
                 mid_initials: str = " ".join(f"{p[:1].upper()}." for p in first_tokens[1:])
@@ -349,7 +343,6 @@ class DocumentAnonymizationRunner:
         return match.group(0)
 
     def _replace_title_last_name(self, match: re.Match) -> str:
-        """Abrège 'Dr Lemaitre', 'Famille VASSEUR' ou 'DocteurHivet'."""
         title: str = match.group(1)
         last: str = match.group(2)
         norm_last: str = DocumentTextUtils.normalize_word(last)
@@ -361,10 +354,9 @@ class DocumentAnonymizationRunner:
             or self._is_known_first_name(last)
         ):
             return match.group(0)
+        self._bump_stat("noms_masques")
         return f"{title} {last[:1].upper()}."
-
     def _replace_auto_first_double_upper(self, match: re.Match) -> str:
-        """Abrège 'Nelly ABITBOL CANO' en 'Nelly A. C.'."""
         first: str = match.group(1)
         last1: str = match.group(2)
         last2: str = match.group(3)
@@ -380,9 +372,10 @@ class DocumentAnonymizationRunner:
                 or self._is_known_first_name(lp)
             ):
                 return match.group(0)
+        self._bump_stat("noms_masques")
         return f"{first} {last1[:1].upper()}. {last2[:1].upper()}."
+
     def _replace_auto_first_last(self, match: re.Match) -> str:
-        """Abrège 'Charlotte Lemaitre', 'Maël_Sobréro' ou 'Jean Eudes Moreau'."""
         firsts: str = match.group(1) or match.group(3) or ""
         last: str = match.group(2) or match.group(4) or ""
         sep: str = "_" if "_" in match.group(0) else " "
@@ -396,20 +389,19 @@ class DocumentAnonymizationRunner:
             or self._is_known_first_name(last)
         ):
             return match.group(0)
-
         if " " in firsts:
             parts: List[str] = [p for p in firsts.split(" ") if p]
             if len(parts) == 2:
                 t1, t2 = parts
                 if not self._is_known_first_name(t1) and self._is_known_first_name(t2):
+                    self._bump_stat("noms_masques")
                     return f"{t1} {t2} {last[:1].upper()}."
-
         if self._is_known_first_name(firsts):
+            self._bump_stat("noms_masques")
             return f"{firsts}{sep}{last[:1].upper()}."
         return match.group(0)
 
     def _replace_auto_last_first(self, match: re.Match) -> str:
-        """Abrège 'BERNARD Nadia', 'GOULLET DE RUGY Marc' ou 'Michèle_SOBRÉRO'."""
         last_upper: str = match.group(1)
         first: str = match.group(2)
         sep: str = "_" if "_" in match.group(0) else " "
@@ -424,11 +416,11 @@ class DocumentAnonymizationRunner:
         ):
             return match.group(0)
         if self._is_known_first_name(first_token):
+            self._bump_stat("noms_masques")
             return f"{last_upper[:1].upper()}.{sep}{first}"
         return match.group(0)
 
     def _replace_initial_last_name(self, match: re.Match) -> str:
-        """Abrège 'V. COLLIN', 'C. BOUZ' ou 'J. Smagge' en 'I. N.'."""
         initial: str = match.group(1)
         last: str = match.group(2)
         norm_last: str = DocumentTextUtils.normalize_word(last)
@@ -441,134 +433,146 @@ class DocumentAnonymizationRunner:
             or self._is_known_first_name(last)
         ):
             return match.group(0)
+        self._bump_stat("noms_masques")
         return f"{initial}. {last[:1].upper()}."
 
     def _replace_email_with_alias(self, match: re.Match) -> str:
-        """Remplace une adresse e-mail par son alias connu ou génère EMAIL_XXX."""
         raw_mail: str = match.group(0)
         norm_mail: str = DocumentTextUtils.normalize_identifier(raw_mail)
+        self._bump_stat("coordonnees_masquees")
         if norm_mail in self.rules.email_to_alias:
             return self.rules.email_to_alias[norm_mail]
         return self._get_or_create_token(raw_mail, "EMAIL")
 
     def _replace_phone_with_alias(self, match: re.Match) -> str:
-        """Remplace un numéro de téléphone par son alias connu ou génère TEL_XXX."""
         raw_tel: str = match.group(0)
         cleaned_tel: str = re.sub(r"[\s.\-/,]+", "", raw_tel)
         norm_tel: str = DocumentTextUtils._normalize_fr_phone(cleaned_tel)
+        self._bump_stat("coordonnees_masquees")
         if norm_tel and norm_tel in self.rules.target_phones:
             return self.rules.target_phones[norm_tel]
         return self._get_or_create_token(raw_tel, "TEL")
-
-    def anonymize_text(self, text: str) -> str:
-        """Applique l'ensemble des passes d'anonymisation sur un texte."""
+    def anonymize_text(
+        self, text: str, stats_collector: Optional[Dict[str, int]] = None
+    ) -> str:
+        """Applique l'ensemble des passes d'anonymisation et alimente les compteurs."""
         if not text:
             return text
         if not self.regex_compiled:
             self._compile_patterns()
 
-        res: str = DocumentTextUtils.repair_mojibake(text)
+        prev_stats = self._active_stats
+        self._active_stats = stats_collector
+        try:
+            res: str = DocumentTextUtils.repair_mojibake(text)
+            if self.manual_only:
+                if self.fast_replacer_regex:
+                    res = self.fast_replacer_regex.sub(self._replace_fast_target, res)
+                return res
 
-        if self.manual_only:
+            if self.config.mask_financial_and_admin_ids:
+                res, n_mrz = re.subn(r"\b[A-Z0-9]{10,}<{2,}[A-Z0-9<]{10,}\b", "[MRZ_IDENTITE_MASQUEE]", res)
+                self._bump_stat("identifiants_masques", n_mrz)
+
+            css_stash: List[str] = []
+
+            def _stash_css(m_css: re.Match) -> str:
+                idx: int = len(css_stash)
+                css_stash.append(m_css.group(0))
+                return f"__CSS_ATTR_{idx}__"
+
+            res = re.sub(
+                r'\b(?:style|class|width|height|cellpadding|cellspacing|border)\s*=\s*"[^"]*"',
+                _stash_css,
+                res,
+                flags=re.IGNORECASE,
+            )
+            res = re.sub(r"\b([0-2]\d:[0-5]\d)([A-Za-zÀ-ÿ])", r"\1 \2", res)
+            res = re.sub(
+                r"\b(SOCIETE|Societe|SOCIÉTÉ|Société|EAEA|IDFRA|DOCTEUR|Docteur|MADAME|Madame|MONSIEUR|Monsieur|MME|Mme|MR|Mr|DR|Dr|MLLE|Mlle|ENFANT|Enfant)"
+                r"(?!EYFUS\b)_?([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç\-]{2,})",
+                r"\1 \2",
+                res,
+            )
+            res = re.sub(
+                r"\b((?:Dr\.?|Docteur|Pr\.?|Professeur|Mme\.?|Madame|M\.|Mr\.?|Monsieur|Mlle\.?|Mademoiselle)"
+                r"[ \t]+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç]{2,})"
+                r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{3,25})\b",
+                r"\1 \2",
+                res,
+            )
+            res = re.sub(
+                r"([a-zéèêëàâäîïôöùûüç]{2,})(par|avec|pour|de|du|des|le|la|les)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç]{2,})",
+                r"\1 \2 \3",
+                res,
+            )
+
+            if self.config.custom_birth_date_pattern:
+                res, n_cd = self.config.custom_birth_date_pattern.subn("[DATE_MASQUEE]", res)
+                self._bump_stat("lieux_dates_masques", n_cd)
+            res, n_gd = DocumentTextUtils.REGEX_GLUED_PERSON_BIRTH_DATE.subn(r"\1[DATE_MASQUEE]", res)
+            res, n_bd = DocumentTextUtils.REGEX_BIRTH_DATE.subn(r"\1[JOUR_MOIS_MASQUES]/\2", res)
+            res, n_id_d = DocumentTextUtils.REGEX_ID_DOC_DATES.subn(r"\1[DATE_TITRE_MASQUEE]", res)
+            self._bump_stat("lieux_dates_masques", n_gd + n_bd + n_id_d)
+
+            if self.config.mask_financial_and_admin_ids:
+                for rx, tag in (
+                    (DocumentTextUtils.REGEX_IBAN, "[IBAN_MASQUE]"),
+                    (DocumentTextUtils.REGEX_BIC, "[BIC_MASQUE]"),
+                    (DocumentTextUtils.REGEX_FISCAL_ID, "[ID_FISCAL_MASQUE]"),
+                    (DocumentTextUtils.REGEX_FRANCE_TRAVAIL, "[ID_FT_MASQUE]"),
+                    (DocumentTextUtils.REGEX_CAF_ALLOCATAIRE, "[ID_CAF_MASQUE]"),
+                    (DocumentTextUtils.REGEX_OFFICIAL_MEDICAL_ID, "[ID_CNI_PERMIS_MASQUE]"),
+                    (DocumentTextUtils.REGEX_ISOLATED_12_DIGITS, "[ID_CNI_PERMIS_MASQUE]"),
+                    (DocumentTextUtils.REGEX_BANK_TX_AND_CARDS, "[REF_BANCAIRE_TX_MASQUEE]"),
+                    (DocumentTextUtils.REGEX_MEETING_IDS, "[ID_REUNION_MASQUE]"),
+                    (DocumentTextUtils.REGEX_LICENSE_PLATE, "[PLAQUE_IMMAT_MASQUEE]"),
+                    (DocumentTextUtils.REGEX_ACCESS_CODES, "[CODE_ACCES_MASQUE]"),
+                    (DocumentTextUtils.REGEX_ADMIN_REFS, "[REF_ADMIN_MASQUEE]"),
+                ):
+                    res, n_hit = rx.subn(tag, res)
+                    self._bump_stat("identifiants_masques", n_hit)
             if self.fast_replacer_regex:
                 res = self.fast_replacer_regex.sub(self._replace_fast_target, res)
+
+            if self.config.mask_ssn:
+                res, n_s1 = DocumentTextUtils.REGEX_SSN.subn("[NUM_SECU_MASQUE]", res)
+                res, n_s2 = DocumentTextUtils.REGEX_SSN_OCR_GLUED.subn("[NUM_SECU_MASQUE]", res)
+                self._bump_stat("identifiants_masques", n_s1 + n_s2)
+            if self.config.mask_addresses:
+                res, n_a1 = DocumentTextUtils.REGEX_STREET_ADDRESS.subn("[ADRESSE_MASQUEE]", res)
+                res, n_a2 = DocumentTextUtils.REGEX_POSTAL_CITY.subn("[ADRESSE_MASQUEE]", res)
+                res, n_a3 = DocumentTextUtils.REGEX_FACILITIES_AND_ZONES.subn("[ETABLISSEMENT_LIEU_MASQUE]", res)
+                self._bump_stat("lieux_dates_masques", n_a1 + n_a2 + n_a3)
+            if self.locations_regex:
+                res, n_loc = self.locations_regex.subn("[LIEU_MASQUE]", res)
+                self._bump_stat("lieux_dates_masques", n_loc)
+            if self.title_first_last_regex:
+                res = self.title_first_last_regex.sub(self._replace_title_first_last, res)
+            if self.title_last_name_regex:
+                res = self.title_last_name_regex.sub(self._replace_title_last_name, res)
+            if getattr(self, "auto_first_double_upper_regex", None):
+                res = self.auto_first_double_upper_regex.sub(self._replace_auto_first_double_upper, res)
+            if self.auto_first_last_regex:
+                res = self.auto_first_last_regex.sub(self._replace_auto_first_last, res)
+            if self.auto_last_first_regex:
+                res = self.auto_last_first_regex.sub(self._replace_auto_last_first, res)
+            if getattr(self, "initial_last_name_regex", None):
+                res = self.initial_last_name_regex.sub(self._replace_initial_last_name, res)
+            if self.config.mask_urls:
+                res, n_url = DocumentTextUtils.REGEX_URL.subn("[URL_MASQUEE]", res)
+                self._bump_stat("coordonnees_masquees", n_url)
+
+            res = DocumentTextUtils.REGEX_EMAIL.sub(self._replace_email_with_alias, res)
+            res = DocumentTextUtils.REGEX_PHONE.sub(self._replace_phone_with_alias, res)
+
+            for idx, original_css in enumerate(css_stash):
+                res = res.replace(f"__CSS_ATTR_{idx}__", original_css)
             return res
+        finally:
+            self._active_stats = prev_stats
 
-        if self.config.mask_financial_and_admin_ids:
-            res = re.sub(r"\b[A-Z0-9]{10,}<{2,}[A-Z0-9<]{10,}\b", "[MRZ_IDENTITE_MASQUEE]", res)
-
-        css_stash: List[str] = []
-
-        def _stash_css(m_css: re.Match) -> str:
-            idx: int = len(css_stash)
-            css_stash.append(m_css.group(0))
-            return f"__CSS_ATTR_{idx}__"
-
-        res = re.sub(
-            r'\b(?:style|class|width|height|cellpadding|cellspacing|border)\s*=\s*"[^"]*"',
-            _stash_css,
-            res,
-            flags=re.IGNORECASE,
-        )
-        res = re.sub(
-            r"\b([0-2]\d:[0-5]\d)([A-Za-zÀ-ÿ])",
-            r"\1 \2",
-            res,
-        )
-        res = re.sub(
-            r"\b(SOCIETE|Societe|SOCIÉTÉ|Société|EAEA|IDFRA|DOCTEUR|Docteur|MADAME|Madame|MONSIEUR|Monsieur|MME|Mme|MR|Mr|DR|Dr|MLLE|Mlle|ENFANT|Enfant)"
-            r"(?!EYFUS\b)_?([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç\-]{2,})",
-            r"\1 \2",
-            res,
-        )
-        res = re.sub(
-            r"\b((?:Dr\.?|Docteur|Pr\.?|Professeur|Mme\.?|Madame|M\.|Mr\.?|Monsieur|Mlle\.?|Mademoiselle)"
-            r"[ \t]+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç]{2,})"
-            r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{3,25})\b",
-            r"\1 \2",
-            res,
-        )
-        res = re.sub(
-            r"([a-zéèêëàâäîïôöùûüç]{2,})(par|avec|pour|de|du|des|le|la|les)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç]{2,})",
-            r"\1 \2 \3",
-            res,
-        )
-
-        if self.config.custom_birth_date_pattern:
-            res = self.config.custom_birth_date_pattern.sub("[DATE_MASQUEE]", res)
-        res = DocumentTextUtils.REGEX_GLUED_PERSON_BIRTH_DATE.sub(r"\1[DATE_MASQUEE]", res)
-        res = DocumentTextUtils.REGEX_BIRTH_DATE.sub(r"\1[JOUR_MOIS_MASQUES]/\2", res)
-        res = DocumentTextUtils.REGEX_ID_DOC_DATES.sub(r"\1[DATE_TITRE_MASQUEE]", res)
-
-        if self.config.mask_financial_and_admin_ids:
-            res = DocumentTextUtils.REGEX_IBAN.sub("[IBAN_MASQUE]", res)
-            res = DocumentTextUtils.REGEX_BIC.sub("[BIC_MASQUE]", res)
-            res = DocumentTextUtils.REGEX_FISCAL_ID.sub("[ID_FISCAL_MASQUE]", res)
-            res = DocumentTextUtils.REGEX_FRANCE_TRAVAIL.sub("[ID_FT_MASQUE]", res)
-            res = DocumentTextUtils.REGEX_CAF_ALLOCATAIRE.sub("[ID_CAF_MASQUE]", res)
-            res = DocumentTextUtils.REGEX_OFFICIAL_MEDICAL_ID.sub("[ID_CNI_PERMIS_MASQUE]", res)
-            res = DocumentTextUtils.REGEX_ISOLATED_12_DIGITS.sub("[ID_CNI_PERMIS_MASQUE]", res)
-            res = DocumentTextUtils.REGEX_BANK_TX_AND_CARDS.sub("[REF_BANCAIRE_TX_MASQUEE]", res)
-            res = DocumentTextUtils.REGEX_MEETING_IDS.sub("[ID_REUNION_MASQUE]", res)
-            res = DocumentTextUtils.REGEX_LICENSE_PLATE.sub("[PLAQUE_IMMAT_MASQUEE]", res)
-            res = DocumentTextUtils.REGEX_ACCESS_CODES.sub("[CODE_ACCES_MASQUE]", res)
-            res = DocumentTextUtils.REGEX_ADMIN_REFS.sub("[REF_ADMIN_MASQUEE]", res)
-
-        if self.fast_replacer_regex:
-            res = self.fast_replacer_regex.sub(self._replace_fast_target, res)
-
-        if self.config.mask_ssn:
-            res = DocumentTextUtils.REGEX_SSN.sub("[NUM_SECU_MASQUE]", res)
-            res = DocumentTextUtils.REGEX_SSN_OCR_GLUED.sub("[NUM_SECU_MASQUE]", res)
-        if self.config.mask_addresses:
-            res = DocumentTextUtils.REGEX_STREET_ADDRESS.sub("[ADRESSE_MASQUEE]", res)
-            res = DocumentTextUtils.REGEX_POSTAL_CITY.sub("[ADRESSE_MASQUEE]", res)
-            res = DocumentTextUtils.REGEX_FACILITIES_AND_ZONES.sub("[ETABLISSEMENT_LIEU_MASQUE]", res)
-        if self.locations_regex:
-            res = self.locations_regex.sub("[LIEU_MASQUE]", res)
-        if self.title_first_last_regex:
-            res = self.title_first_last_regex.sub(self._replace_title_first_last, res)
-        if self.title_last_name_regex:
-            res = self.title_last_name_regex.sub(self._replace_title_last_name, res)
-        if getattr(self, "auto_first_double_upper_regex", None):
-            res = self.auto_first_double_upper_regex.sub(self._replace_auto_first_double_upper, res)
-        if self.auto_first_last_regex:
-            res = self.auto_first_last_regex.sub(self._replace_auto_first_last, res)
-        if self.auto_last_first_regex:
-            res = self.auto_last_first_regex.sub(self._replace_auto_last_first, res)
-        if getattr(self, "initial_last_name_regex", None):
-            res = self.initial_last_name_regex.sub(self._replace_initial_last_name, res)
-        if self.config.mask_urls:
-            res = DocumentTextUtils.REGEX_URL.sub("[URL_MASQUEE]", res)
-
-        res = DocumentTextUtils.REGEX_EMAIL.sub(self._replace_email_with_alias, res)
-        res = DocumentTextUtils.REGEX_PHONE.sub(self._replace_phone_with_alias, res)
-
-        for idx, original_css in enumerate(css_stash):
-            res = res.replace(f"__CSS_ATTR_{idx}__", original_css)
-        return res
     def flush_batch(self) -> None:
-        """Écrit le lot en cours sur disque dans batch_XX/, met à jour l'audit et l'état JSON."""
         if not self.current_chunk:
             return
         folder_num: int = ((self.audit.file_idx - 1) // self.config.files_per_folder) + 1
@@ -585,17 +589,13 @@ class DocumentAnonymizationRunner:
 
         count: int = self.audit.write_report()
         self.audit.save()
-        print(
-            f"    [+] LOT ÉCRIT : '{out_file}' (Audit : {count} nom(s))",
-            flush=True,
-        )
+        print(f"    [+] LOT ÉCRIT : '{out_file}' (Audit : {count} nom(s))", flush=True)
         self.audit.file_idx += 1
         self.current_chunk.clear()
         self.current_chunk_keys.clear()
         self.current_size = 0
 
     def _process_single_file(self, norm_path: str) -> bool:
-        """Lit, anonymise, audite et met en tampon une transcription unique."""
         try:
             with open(norm_path, "r", encoding="utf-8", errors="ignore") as f_in:
                 raw_text: str = f_in.read()
@@ -603,7 +603,8 @@ class DocumentAnonymizationRunner:
             print(f"[AVERTISSEMENT] Lecture impossible '{norm_path}' : {exc}", flush=True)
             return False
 
-        anon_text: str = self.anonymize_text(raw_text)
+        file_stats: Dict[str, int] = {}
+        anon_text: str = self.anonymize_text(raw_text, stats_collector=file_stats)
         anon_header_path: str = self.anonymize_text(norm_path)
         self.source_mapper.register_entry(
             anonymized_path=anon_header_path,
@@ -612,6 +613,11 @@ class DocumentAnonymizationRunner:
         )
         if not self.manual_only:
             self.audit.scan_residual_names(anon_text, norm_path)
+
+        ds = self.audit.stats
+        ds["documents_traites"] = int(ds.get("documents_traites", 0)) + 1
+        for k in ("noms_masques", "coordonnees_masquees", "identifiants_masques", "lieux_dates_masques"):
+            ds[k] = int(ds.get(k, 0)) + file_stats.get(k, 0)
 
         header: str = (
             f"\n{'#' * 72}\n"
@@ -637,14 +643,12 @@ class DocumentAnonymizationRunner:
     def anonymize_single_file(
         self, transcription_path: str, force_reprocess: bool = False
     ) -> bool:
-        """Anonymise un fichier transcription à la volée."""
         norm_path: str = os.path.normpath(transcription_path)
         if not force_reprocess and norm_path in self.audit.already_processed:
             return False
         return self._process_single_file(norm_path)
 
     def finalize(self, start_time: float) -> None:
-        """Vide le dernier tampon, génère les rapports d'audit et importe les règles sûres."""
         self.flush_batch()
         count: int = self.audit.write_report()
         self.audit.save()
@@ -672,7 +676,6 @@ class DocumentAnonymizationRunner:
         )
 
     def run(self) -> None:
-        """Exécute l'anonymisation autonome sur l'ensemble de extracted_texts/."""
         t0: float = time.time()
         if not self.initialize():
             return
@@ -689,7 +692,6 @@ class DocumentAnonymizationRunner:
         self.finalize(t0)
 
     def run_on_existing_results(self) -> None:
-        """Réapplique uniquement manual_contacts.txt sur les lots existants."""
         t0: float = time.time()
         if not self.initialize():
             return

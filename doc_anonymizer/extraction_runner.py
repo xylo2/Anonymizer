@@ -15,7 +15,7 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 class DocumentExtractionRunner:
     """
     Orchestre l'extraction des sources brutes vers transcriptions/
-    tout en collectant les numéros de téléphone et adresses e-mail découverts.
+    tout en collectant les numéros de téléphone, adresses e-mail et archives ZIP ignorées.
     """
 
     def __init__(
@@ -42,6 +42,8 @@ class DocumentExtractionRunner:
         )
         self.teams_extractor: TeamsChatExtractor = TeamsChatExtractor(config=config)
         self._seen_content_hashes: Set[str] = set()
+        self.skipped_zip_files: List[str] = []
+        self._zip_lock: threading.Lock = threading.Lock()
 
     def get_worker_count(self) -> int:
         """Retourne le nombre de threads parallèles d'extraction (1 à 4)."""
@@ -195,11 +197,16 @@ class DocumentExtractionRunner:
         ext = ext.lower()
 
         if low_name.endswith(".zip"):
-            self._log_extraction_warning(
-                f"[ARCHIVE ZIP IGNORÉE] '{norm_src}' -> veuillez dézipper manuellement."
+            with self._zip_lock:
+                if norm_src not in self.skipped_zip_files:
+                    self.skipped_zip_files.append(norm_src)
+            warn_msg: str = (
+                f"[ARCHIVE ZIP IGNORÉE] '{norm_src}' -> non analysée par sécurité "
+                "(veuillez la décompresser manuellement)."
             )
+            print(warn_msg, flush=True)
+            self._log_extraction_warning(warn_msg)
             return []
-
         if ext == ".json":
             if low_name in {"group_info.json", "user_info.json"}:
                 return []
@@ -221,6 +228,7 @@ class DocumentExtractionRunner:
             if written:
                 already_extracted.add(norm_src)
             return written
+
         if ext in {".mbox", ".eml"}:
             mail_buckets, err = self.comm_extractor.extract_emails(
                 norm_src, allowed_emails, discovered_emails

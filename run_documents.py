@@ -71,6 +71,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Exécute uniquement l'anonymisation complète depuis transcriptions/ sans extraction.",
     )
     parser.add_argument(
+        "--extract-only",
+        action="store_true",
+        help="Extrait et classe uniquement les documents nominatifs (OCR + Audio activés) sans anonymisation.",
+    )
+    parser.add_argument(
         "--reset-results",
         action="store_true",
         help="Supprime les anciens lots avant de relancer l'anonymisation complète.",
@@ -157,6 +162,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             with SystemSleepInhibitor(enabled=not args.allow_sleep):
                 anon_runner = DocumentAnonymizationRunner(config, manual_only=True)
                 anon_runner.run_on_existing_results()
+        elif args.extract_only:
+            pipeline = DocAnonymizerPipelineRunner(
+                config, prevent_sleep=not args.allow_sleep
+            )
+            pipeline.run_extract_only(force_ocr_and_audio=True)
         elif args.anonymize_only:
             pipeline = DocAnonymizerPipelineRunner(
                 config, prevent_sleep=not args.allow_sleep

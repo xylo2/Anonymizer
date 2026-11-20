@@ -77,7 +77,6 @@ class PipelineConfig:
         self.extraction_report_file: str = self._resolve_path(
             "paths", "extraction_report_file", "audits/extraction_report.txt"
         )
-
         self.first_names_file: str = self._resolve_path(
             "files", "first_names_file", "data/prenoms.txt"
         )
@@ -193,103 +192,6 @@ class PipelineConfig:
         self.domain_aliases: Dict[str, str] = {}
         self.load_external_lists()
 
-    def load_external_lists(self) -> None:
-        """Charge ou recharge les référentiels externes (prénoms, villes, exclusions)."""
-        self.known_first_names = self._load_word_set(self.first_names_file)
-        self.masked_locations = self._load_locations_set()
-        self.surname_collisions = self._load_word_set(
-            self.surname_collisions_file
-        )
-        self.excluded_words = self._load_word_set(self.excluded_words_file)
-        self.domain_aliases = self._load_domain_aliases()
-
-    def _resolve_path(self, section: str, key: str, default: str) -> str:
-        """Résout un chemin relatif par rapport à config.ini."""
-        raw_val: str = self._parser.get(section, key, fallback=default).strip()
-        if os.path.isabs(raw_val):
-            return os.path.normpath(raw_val)
-        return os.path.normpath(os.path.join(self.base_dir, raw_val))
-
-    def _load_or_create_salt(self) -> str:
-        """Charge le sel cryptographique depuis config.ini ou .secret_salt."""
-        ini_salt: str = self._parser.get(
-            "anonymization", "secret_salt", fallback=""
-        ).strip()
-        if ini_salt and ini_salt != "REMPLACER_PAR_UNE_CHAINE_ALEATOIRE_UNIQUE":
-            return ini_salt
-        salt_file: str = os.path.join(self.base_dir, ".secret_salt")
-        if os.path.exists(salt_file):
-            with open(salt_file, "r", encoding="utf-8") as f:
-                existing: str = f.read().strip()
-                if existing:
-                    return existing
-        generated: str = secrets.token_hex(32)
-        with open(salt_file, "w", encoding="utf-8") as f:
-            f.write(generated)
-        return generated
-
-    @staticmethod
-    def _load_word_set(file_path: str) -> Set[str]:
-        """Charge un fichier dictionnaire en ensemble de mots normalisés."""
-        words: Set[str] = set()
-        if not file_path or not os.path.exists(file_path):
-            return words
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                stripped: str = line.strip()
-                if not stripped or stripped.startswith("#"):
-                    continue
-                norm: str = DocumentTextUtils.normalize_word(stripped)
-                if norm:
-                    words.add(norm)
-        return words
-
-    def _load_locations_set(self) -> Set[str]:
-        """Charge les communes masquées depuis data/villes_masquees.txt + extra_locations."""
-        locs: Set[str] = self._load_word_set(self.locations_file)
-        extra: str = self._parser.get(
-            "anonymizer", "extra_locations", fallback=""
-        )
-        for item in extra.split(","):
-            norm: str = DocumentTextUtils.normalize_word(item.strip())
-            if norm:
-                locs.add(norm)
-        return locs
-
-    def _load_domain_aliases(self) -> Dict[str, str]:
-        """Charge la section [domain_aliases] en minuscules."""
-        aliases: Dict[str, str] = {}
-        if self._parser.has_section("domain_aliases"):
-            for k, v in self._parser.items("domain_aliases"):
-                clean_k: str = k.strip().lower()
-                clean_v: str = v.strip()
-                if clean_k and clean_v:
-                    aliases[clean_k] = clean_v
-        return aliases
-
-    @staticmethod
-    def _compile_custom_dates_pattern(
-        dates_list: List[str],
-    ) -> Optional[Pattern[str]]:
-        """Compile un motif regex tolérant les formats JJ/MM/AAAA, AAAA-MM-JJ et AAAAMMJJ."""
-        patterns: List[str] = []
-        for raw_d in dates_list:
-            m_fr = re.fullmatch(r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})", raw_d)
-            m_iso = re.fullmatch(r"(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})", raw_d)
-            if m_fr:
-                dd, mm, yyyy = m_fr.group(1).zfill(2), m_fr.group(2).zfill(2), m_fr.group(3)
-            elif m_iso:
-                yyyy, mm, dd = m_iso.group(1), m_iso.group(2).zfill(2), m_iso.group(3).zfill(2)
-            else:
-                continue
-            d_pat: str = str(int(dd)) if int(dd) >= 10 else f"0?{int(dd)}"
-            m_pat: str = str(int(mm)) if int(mm) >= 10 else f"0?{int(mm)}"
-            patterns.append(rf"{d_pat}[/\-.\s]{m_pat}[/\-.\s]{yyyy}")
-            patterns.append(rf"{yyyy}[/\-.\s]{m_pat}[/\-.\s]{d_pat}")
-            patterns.append(rf"{yyyy}{mm}{dd}")
-        if not patterns:
-            return None
-        return re.compile(rf"(?<!\d)(?:{'|'.join(patterns)})(?!\d)")
     def load_external_lists(self) -> None:
         """Charge ou recharge les référentiels externes (prénoms, villes, exclusions)."""
         self.known_first_names = self._load_word_set(self.first_names_file)

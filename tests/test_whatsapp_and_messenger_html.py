@@ -18,7 +18,6 @@ class TestWhatsAppAndMessengerHtml(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        """Prépare un répertoire temporaire isolé."""
         self.test_dir: str = tempfile.mkdtemp(prefix="test_wa_fbhtml_")
         self.ini_path: str = os.path.join(self.test_dir, "config.ini")
         with open(self.ini_path, "w", encoding="utf-8") as f:
@@ -42,15 +41,8 @@ class TestWhatsAppAndMessengerHtml(unittest.TestCase):
             f.write("jean.dupont@exemple.fr = Jean D.\n")
 
     def tearDown(self) -> None:
-        """Nettoie le répertoire temporaire."""
         shutil.rmtree(self.test_dir, ignore_errors=True)
-
     def test_zip_ignored_and_unzipped_whatsapp_with_messenger_html(self) -> None:
-        """
-        Vérifie qu'un .zip non décompressé est ignoré avec avertissement dans
-        audits/extraction_report.txt, et qu'un dossier WhatsApp dézippé + HTML Messenger
-        sont correctement traités.
-        """
         sources: str = os.path.join(self.test_dir, "input_documents")
         os.makedirs(sources, exist_ok=True)
 
@@ -91,7 +83,7 @@ class TestWhatsAppAndMessengerHtml(unittest.TestCase):
         report_path: str = config.extraction_report_file
         self.assertTrue(os.path.exists(report_path))
         with open(report_path, "r", encoding="utf-8") as f_rep:
-            self.assertIn("dézipper manuellement", f_rep.read())
+            self.assertIn("non analysée par sécurité", f_rep.read())
 
         self.assertTrue(os.path.isdir(os.path.join(config.transcriptions_dir, "2024-09", "Chats")))
         self.assertTrue(os.path.isdir(os.path.join(config.transcriptions_dir, "2024-09", "PDF")))

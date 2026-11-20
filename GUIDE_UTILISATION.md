@@ -1,75 +1,65 @@
-# Guide d'utilisation simple (Parents, Associations, Défenseurs Syndicaux)
+# Guide d'Utilisation Pas-à-Pas
 
-Ce guide explique comment préparer et anonymiser un dossier confidentiel (santé d'un enfant, procédure familiale, dossier prud'homal) **en 5 minutes**, sans connaissance technique particulière.
-
----
-
-## 1. Principe de sécurité et notion de « dossier »
-
-* **Tout reste sur votre ordinateur** : le logiciel fonctionne sans Internet. Vos documents originaux (`input_documents/`) ne sont jamais modifiés ni envoyés à l'extérieur.
-* **Qu'est-ce qu'un « dossier » dans ce logiciel ?**
-  * C'est un **espace de travail étanche** créé sur votre ordinateur pour une affaire précise (ex. `Dossier_Enfant` ou `Dossier_Salarie`).
-  * Chaque dossier possède ses propres documents, ses propres contacts et ses propres résultats : les noms d'un dossier ne se mélangent jamais avec ceux d'un autre.
+Ce guide accompagne pas à pas toute personne souhaitant constituer un dossier clair, chronologique et sécurisé (parcours médical/MDPH, prud'hommes, litige civil ou administratif) sans aucune compétence technique requise.
 
 ---
 
-## 2. Ouvrir le logiciel
+## ÉTAPE 0 : Écran de vigilance et choix de votre objectif
 
-* **Sur Windows** : double-cliquez sur le fichier **`Lancer_Anonymiseur.bat`**.
-* **Sur Linux** : ouvrez un terminal dans le dossier du programme et tapez **`python3 gui_anonymizer.py`** (ou double-cliquez sur `lancer_anonymiseur.sh`).
-
----
-
-## 3. Préparer son dossier (Onglet 1 : *Dossier & Documents*)
-
-1. **Créer un espace dédié** :
-   * Dans *Créer un nouveau dossier*, saisissez un nom simple sans caractères spéciaux (ex. `Dossier_Enfant` ou `Dossier_Salarie`) puis cliquez sur **Créer ce dossier**.
-2. **Importer votre carnet de contacts `.csv` (fortement recommandé)** :
-   * **Qu'est-ce qu'un fichier `.csv` ?** C'est un simple tableau exporté depuis votre messagerie contenant les noms, numéros de téléphone et adresses e-mail de vos contacts.
-   * L'importer aide considérablement le logiciel à reconnaître immédiatement vos proches, médecins, avocats ou collègues (même en cas de faute de frappe ou de scan flou).
-3. **Déposer vos pièces justificatives** :
-   * Cliquez sur **1. Ouvrir le dossier où déposer mes documents** et copiez-collez vos fichiers (ou sous-dossiers entiers) à l'intérieur.
+1. **Engagement de relecture & Licence libre (GNU GPL v3)** :
+   * Au démarrage de `python gui_anonymizer.py`, un écran rappelle qu'**aucune machine n'est infaillible** : vous devez toujours relire (au moins par sondage) vos exports avant de les transmettre à un tiers.
+   * Cliquez sur **« J'ai compris et j'accepte de relire mes exports -> Continuer »** pour accéder à l'application (ou sur *« Refuser et quitter poliment »* pour fermer le logiciel).
+2. **Choisir votre objectif** :
+   * **Option A — Mode IA (Anonymisé)** : si vous voulez analyser votre dossier avec une IA en ligne (ChatGPT, Claude, Mistral...) sans exposer votre vie privée.
+   * **Option B — Mode Avocat / Syndicat (Nominatif)** : si vous préparez le dossier final avec les vrais noms pour votre avocat, votre défenseur syndical ou le tribunal.
+   * *Astuce : vous pouvez basculer d'un mode à l'autre à tout moment via le badge en haut de la fenêtre.*
 
 ---
 
-## 4. Comment exporter vos fichiers depuis chaque service
+## ÉTAPE 1 : Préparer votre dossier et exporter vos pièces
 
-| Service | Format attendu | Comment récupérer le fichier |
-| :--- | :--- | :--- |
-| **Carnet d'adresses (Google / Outlook)** | `.csv` | • **Google Contacts** (`://google.com`) : menu de gauche -> **Exporter** -> choisir **Google CSV**.<br>• **Outlook** : *Fichier* -> *Ouvrir et exporter* -> *Importer/Exporter* -> **Exporter vers un fichier** -> **CSV**. |
-| **SMS / MMS Android** | `.xml` | Installez l'application gratuite **SMS Backup & Restore** sur Android -> **Configurer une sauvegarde** -> cochez **Messages** -> récupérez le fichier `.xml` sur votre ordinateur. |
-| **WhatsApp** | `.txt` | Ouvrez la conversation sur votre téléphone -> menu **(⋮)** -> **Plus** -> **Exporter la discussion** -> choisissez **Sans médias**. |
-| **Google Chat / Hangouts** | `.json` | Allez sur `://google.com` -> *Tout désélectionner* -> cochez uniquement **Google Chat** -> téléchargez et décompressez l'archive `.zip`. |
-| **Microsoft Teams** | `.json` ou `.vtt` | • **Discussions** : sur `://microsoft.com` -> **Télécharger vos données** -> cochez les messages Teams (format `.json`).<br>• **Transcriptions de réunions** : dans Teams -> ouvrez la réunion passée -> onglet **Enregistrement et transcription** -> **Télécharger** -> format **`.vtt`**. |
-| **Facebook Messenger & Instagram** | `.json` | Dans **Espace Comptes Meta** -> **Vos informations et autorisations** -> **Télécharger vos informations** -> cochez **Messages** -> choisissez impérativement le format **JSON** (pas HTML). |
-| **Signal** | *(Astuce `.txt` / `.pdf`)* | Signal ne propose pas d'export direct : sur ordinateur (**Signal Desktop**), sélectionnez et copiez-collez les échanges utiles dans un fichier `.txt` (ou imprimez en `.pdf`) avant de le déposer dans vos documents. |
-| **E-mails (Gmail, Outlook, Thunderbird...)** | `.mbox` ou `.eml` | • **Gmail** : `://google.com` -> cochez **Mail** (génère un fichier `.mbox`).<br>• **Thunderbird / Outlook** : glissez-déposez les messages sur le bureau (crée des fichiers `.eml`) ou exportez le dossier en `.mbox`. |
-| **Courriers, bilans, scans, audios** | `.pdf`, `.docx`, `.odt`, `.mp3`, `.m4a`, `.wav` | Copiez-collez directement vos fichiers originaux tels quels. |
+1. **Créer un espace de travail isolé (`1A`)** : saisissez un nom de dossier (ex. `Dossier_MDPH_2026` ou `Prudhommes_Employeur`) et cliquez sur **Créer**.
+2. **Exporter vos sources (`Aide & Exports ?` ou `Exporter un agenda (.ics) ?`)** :
+   * **Google Takeout (`https://google.com`)** : permet d'exporter d'un coup vos **e-mails Gmail (`.mbox`)**, vos **discussions Google Chat (`.json`)**, votre **Google Agenda (`.ics`)** et vos **Contacts (`.csv`)**. Pensez à **décompresser le `.zip`** téléchargé avant de copier les fichiers dans `input_documents/`.
+   * **Google Agenda direct (`https://google.com`)** : *Paramètres (roue dentée) -> Importer et exporter -> Exporter* (`.ics`).
+   * **SMS / MMS Android** : utilisez l'application gratuite **SMS Backup & Restore** pour générer un fichier `.xml`.
+   * **WhatsApp** : ouvrez la discussion -> *Menu -> Plus -> Exporter la discussion -> Sans médias* (`.txt`).
+   * **Documents, images et audios** : copiez directement vos PDF, Word, captures d'écran (`.jpg`, `.png`) et enregistrements vocaux (`.mp3`, `.m4a`, `.wav`) dans `input_documents/`.
+3. **Importer vos carnets de contacts `.csv` (`1C` — Mode IA uniquement)** : ajoutez vos exports Google Contacts ou Outlook `.csv` pour masquer automatiquement vos proches et praticiens.
+---
+
+## ÉTAPE 2 : Extraction, classement et tableau de bord
+
+1. Cliquez sur le bouton principal de lancement :
+   * **En Mode IA** : extrait tous les formats, applique les règles d'anonymisation, découvre automatiquement les contacts dans vos e-mails/chats et affiche le **tableau de bord** (nombre de documents traités, identités, coordonnées, identifiants sensibles et lieux/dates masqués).
+   * **En Mode Avocat** : extrait tous les documents en **conservant les vrais noms**, force la reconnaissance **OCR sur toutes les images** et la **transcription vocale sur tous les audios**.
+2. Si une archive `.zip` est présente dans `input_documents/`, un bandeau d'avertissement vous indique de la décompresser manuellement (clic droit -> *Extraire tout*).
 
 ---
 
-## 5. Lancer l'anonymisation (Onglet 2 : *Lancer l'anonymisation*)
+## ÉTAPE 3 (Mode IA) : Contrôle qualité Avant / Après
 
-1. Cliquez sur **1er passage : Extraire et anonymiser tout**.
-2. La barre de progression s'anime et le journal affiche l'avancement fichier par fichier :
-   * Les documents sont convertis en texte brut dans `extracted_texts/` et classés chronologiquement par mois (`2024-05`, `2024-06`, etc.).
-   * Toutes les données personnelles sont remplacées par des alias cohérents (`Camille D.`, `Dr M.`, `Contact_Mail_001`, `[ADRESSE_MASQUEE]`, `[NUM_SECU_MASQUE]`).
-
----
-
-## 6. Vérifier qu'aucun nom n'a échappé (Onglet 3 : *Vérifier les noms restants*)
-
-Après le traitement, le logiciel relit automatiquement tous les fichiers générés pour repérer d'éventuels noms propres oubliés.
-
-1. Allez dans l'onglet **3. Vérifier les noms restants**.
-2. Pour chaque ligne affichée :
-   * **S'il s'agit d'un vrai nom de personne** : sélectionnez la ligne et cliquez sur **Masquer ce nom (c'est une personne)**.
-   * **S'il s'agit d'un mot normal ou d'un terme médical/juridique** (ex. *Tribunal*, *Orthophoniste*) : cliquez sur **Ignorer ce mot (faux positif)**.
-3. Une fois la liste vérifiée, cliquez sur **Appliquer mes corrections (2e passage rapide)** (dure quelques secondes).
+1. L'écran **« 3. Vérifier les noms »** liste les noms propres potentiels encore présents.
+2. Sélectionnez une ligne et cliquez sur **« Voir dans le document (Avant / Après) »** (ou double-cliquez sur la ligne) :
+   * Une fenêtre dédiée affiche côte à côte l'extrait original (surligné en jaune) et le texte anonymisé (masquages en vert, candidat restant en rouge).
+   * Vous pouvez naviguer entre toutes les occurrences du nom et choisir en un clic de le **masquer** ou de l'**ignorer** (faux positif).
+3. Cliquez sur **« Appliquer et passer à l'étape 4 -> »** pour régénérer les lots propres.
 
 ---
 
-## 7. Récupérer les fichiers prêts à partager
+## ÉTAPE FINALE : Récupération & Passerelle IA -> Avocat
 
-1. Retournez dans l'onglet **1** et cliquez sur **Ouvrir le dossier des résultats anonymisés**.
-2. Vous y trouverez les dossiers `batch_01/`, `batch_02/`, etc. contenant les fichiers `.txt` anonymisés et classés par date, prêts à être lus ou confiés à un tiers / un assistant IA en toute confidentialité.
+### Parcours IA (Étape 4)
+* Récupérez vos fichiers `.txt` anonymisés dans `anonymized_results/batch_01/`, etc.
+* Utilisez le sélecteur **« Exemples de requêtes IA prêtes à copier »** (bilan médico-social, heures supplémentaires, harcèlement, maladie professionnelle, accident du travail, faute grave employeur) et cliquez sur **« Copier cette requête »**.
+* Chaque requête demande à l'IA de vous fournir en conclusion **la liste exacte des fichiers pertinents** (`# SOURCE TRANSCRIPTION : ...`).
+
+### Parcours Avocat (Étape 3)
+* Choisissez entre :
+  * **Exporter l'intégralité des pièces du dossier**
+  * **Filtrer uniquement les pièces recommandées par l'IA** (collez simplement la liste des chemins retournée par l'IA)
+* Cliquez sur **« Générer le Pack Avocat »** pour obtenir :
+  * `Recueil_Chronologique_Avocat.docx`
+  * `Bordereau_des_Pieces.csv`
+  * `Pieces_Numerotees/` (avec **l'audio ou l'image originale + sa transcription/OCR numérotés côte à côte**)
+  * `Pack_Avocat_Complet.zip`

@@ -14,9 +14,8 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 
 class AuditAndStateManager:
     """
-    Gère la persistance JSON de reprise, la pseudonymisation SHA-256
-    et la génération des rapports d'audit avec filtrage strict des faux positifs
-    et rapprochement orthographique/phonétique.
+    Gère la persistance JSON de reprise, la pseudonymisation SHA-256,
+    les statistiques du tableau de bord et les rapports d'audit.
     """
 
     PAIR_PATTERN: Pattern[str] = re.compile(
@@ -92,6 +91,7 @@ class AuditAndStateManager:
         "retour", "reorganisation", "reunions", "taper", "trancher", "union",
         "unite", "appart",
     })
+
     AMBIGUOUS_FIRST_NAMES: FrozenSet[str] = frozenset({
         "aime", "aimee", "ange", "aube", "aurore", "blanc", "blanche",
         "bon", "cerise", "clair", "claire", "clement", "constance", "desire",
@@ -107,7 +107,7 @@ class AuditAndStateManager:
         self, config: PipelineConfig, rules: ContactRulesLoader
     ) -> None:
         """
-        Initialise le gestionnaire d'état et les compteurs d'audit.
+        Initialise le gestionnaire d'état, les compteurs de statistiques et d'audit.
 
         :param config: Instance de PipelineConfig.
         :param rules: Instance de ContactRulesLoader.
@@ -122,6 +122,15 @@ class AuditAndStateManager:
         self.canonical_labels: Dict[str, str] = {}
         self.file_idx: int = 1
         self.written_batches: int = 0
+        self.stats: Dict[str, Any] = {
+            "documents_traites": 0,
+            "noms_masques": 0,
+            "coordonnees_masquees": 0,
+            "identifiants_masques": 0,
+            "lieux_dates_masques": 0,
+            "par_categorie": {},
+            "zip_ignores": [],
+        }
 
     @staticmethod
     def _phonetic_french_key(word: str) -> str:
@@ -145,7 +154,6 @@ class AuditAndStateManager:
         if len(s) > 3 and s[-1] in {"d", "s", "x"}:
             s = s[:-1]
         return s
-
     def _suggest_alias_from_fuzzy_last_name(
         self, display_name: str
     ) -> Optional[Tuple[str, str]]:
@@ -198,6 +206,7 @@ class AuditAndStateManager:
                 suggested = f"{disp_known[:1].upper()}."
             return suggested, disp_known
         return None
+
     @staticmethod
     def _format_first_name_case(token: str) -> str:
         """
@@ -236,7 +245,6 @@ class AuditAndStateManager:
         if not existing or (existing.isupper() and not display_label.isupper()):
             self.canonical_labels[norm_id] = display_label
         return norm_id, self.canonical_labels[norm_id]
-
     def _is_truncated_place_fragment(self, cleaned: str) -> bool:
         """
         Détecte un fragment de toponyme composé tronqué (ex: 'Saint-Martin-De').
@@ -361,6 +369,8 @@ class AuditAndStateManager:
             self.counters = st.get("compteurs", {"TEL": 1, "EMAIL": 1})
             self.file_idx = st.get("idx_fichier", 1)
             self.written_batches = st.get("nb_lots_ecrits", 0)
+            if isinstance(st.get("stats_anonymisation"), dict):
+                self.stats.update(st["stats_anonymisation"])
 
             raw_counts: Dict[str, int] = st.get("compteur_paires", {})
             raw_files: Dict[str, List[str]] = st.get("fichiers_par_nom", {})
@@ -374,7 +384,7 @@ class AuditAndStateManager:
             pass
 
     def save(self) -> None:
-        """Sauvegarde l'état courant sur le disque de façon atomique."""
+        """Sauvegarde l'état courant et les statistiques sur le disque de façon atomique."""
         os.makedirs(self.config.results_dir, exist_ok=True)
         exported_counts: Dict[str, int] = {
             self.canonical_labels.get(nid, nid): cnt
@@ -392,6 +402,7 @@ class AuditAndStateManager:
             "compteurs": self.counters,
             "compteur_paires": exported_counts,
             "fichiers_par_nom": exported_files,
+            "stats_anonymisation": self.stats,
         }
         DocumentTextUtils.atomic_write_text(
             self.config.resume_state_file,
