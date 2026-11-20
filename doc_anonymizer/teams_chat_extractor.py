@@ -1,312 +1,347 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
-from collections import defaultdict
-import html
+import datetime
 import json
 import os
 import re
-from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple
-from doc_anonymizer.chat_extractors import MultiPlatformChatExtractor
-from doc_anonymizer.config_manager import PipelineConfig
+from typing import Any, Dict, List, Optional, Set, Tuple
 from doc_anonymizer.text_utils import DocumentTextUtils
 
 
 class TeamsChatExtractor:
     """
-    Extrait et structure les historiques de conversations et transcriptions
-    Microsoft Teams (JSON export personnel/Graph API, HTML et WebVTT .vtt).
+    Extracteur dédié aux exports Microsoft Teams (messages.json et
+    transcriptions de réunions WebVTT .vtt).
     """
 
-    VTT_CUE_RE = re.compile(
-        r"^(\d{2}:\d{2}:\d{2}(?:\.\d{3})?)\s*-->\s*(\d{2}:\d{2}:\d{2}(?:\.\d{3})?)"
-    )
-    VTT_VOICE_RE = re.compile(r"(?is)<v\s+([^>]+)>(.*?)(?:</v>|$)")
-
-    def __init__(self, config: PipelineConfig) -> None:
-        """
-        Initialise l'extracteur Microsoft Teams.
-
-        :param config: Instance de PipelineConfig.
-        """
-        self.config: PipelineConfig = config
+    def __init__(self, config: Optional[Any] = None) -> None:
+        """Initialise l'extracteur Teams avec une configuration optionnelle."""
+        self.config: Optional[Any] = config
 
     @staticmethod
-    def _clean_teams_html_body(raw_body: str) -> str:
-        """
-        Convertit le contenu HTML d'un message Teams (dont balises <at>) en texte brut.
+    def _register_discovered_email(
+        discovered_emails: Optional[Any],
+        email_addr: str,
+        display_name: str = "",
+    ) -> None:
+        """Enregistre un e-mail découvert dans un set ou un dict selon le conteneur passé."""
+        if discovered_emails is None or not email_addr:
+            return
+        norm_m: str = DocumentTextUtils.normalize_identifier(email_addr)
+        if not norm_m:
+            return
+        if isinstance(discovered_emails, set):
+            discovered_emails.add(norm_m)
+        elif isinstance(discovered_emails, dict):
+            discovered_emails.setdefault(norm_m, display_name or norm_m)
 
-        :param raw_body: Contenu HTML ou texte brut du message.
-        :return: Texte lisible nettoyé.
-        """
-        if not raw_body:
+    def _clean_teams_html_body(
+        self,
+        raw_html: str,
+        discovered_emails: Optional[Any] = None,
+    ) -> str:
+        """Nettoie le contenu HTML Teams en préservant les mentions <at> et e-mails."""
+        if not raw_html:
             return ""
-        cleaned: str = re.sub(r"(?is)<at\b[^>]*>(.*?)</at>", r"@\1", raw_body)
-        if "\x3c" in cleaned and "\x3e" in cleaned:
-            cleaned = DocumentTextUtils.html_to_plain_text(cleaned)
-        else:
-            cleaned = html.unescape(cleaned)
-        return cleaned.strip()
+
+        extra_mails: List[str] = []
+
+        def _repl_at(m: re.Match) -> str:
+            attrs: str = m.group(1) or ""
+            label: str = m.group(2).strip()
+            m_mail = DocumentTextUtils.REGEX_EMAIL.search(attrs)
+            if m_mail:
+                mail_found: str = m_mail.group(0)
+                self._register_discovered_email(discovered_emails, mail_found, label)
+                return f"@{label} ({mail_found})" if label else mail_found
+            return f"@{label}"
+
+        cleaned: str = re.sub(
+            r"(?is)<at\b([^>]*)>(.*?)</at>",
+            _repl_at,
+            raw_html,
+        )
+        for m_any in DocumentTextUtils.REGEX_EMAIL.finditer(cleaned):
+            mail_val: str = m_any.group(0)
+            if mail_val not in extra_mails:
+                extra_mails.append(mail_val)
+            self._register_discovered_email(discovered_emails, mail_val)
+        plain: str = DocumentTextUtils.html_to_plain_text(cleaned)
+        for mv in extra_mails:
+            if mv not in plain:
+                plain = f"{plain} ({mv})".strip()
+        return plain
 
     @staticmethod
-    def _group_by_month(
-        room_title: str, entries: List[Tuple[str, int, str]]
-    ) -> Dict[str, str]:
-        """
-        Regroupe et trie chronologiquement les messages Teams par période AAAA-MM.
+    def _parse_teams_timestamp(raw_ts: Any) -> Tuple[str, str]:
+        """Convertit un horodatage ISO Teams en (AAAA-MM, AAAA-MM-JJ HH:MM:SS)."""
+        if not raw_ts:
+            return "0000-00", "Date inconnue"
+        s: str = str(raw_ts).strip()
+        m_iso = re.match(
+            r"^((?:19|20)\d{2})-(0[1-9]|1[0-2])-(0[1-9]|1\d|2\d|3)[T ](\d{2}:\d{2}:\d{2})",
+            s,
+        )
+        if m_iso:
+            month_k: str = f"{m_iso.group(1)}-{m_iso.group(2)}"
+            full_ts: str = f"{month_k}-{m_iso.group(3)} {m_iso.group(4)}"
+            return month_k, full_ts
+        try:
+            num_val: float = float(s)
+            if num_val > 1e11:
+                num_val /= 1000.0
+            dt = datetime.datetime.fromtimestamp(num_val, tz=datetime.timezone.utc)
+            return dt.strftime("%Y-%m"), dt.strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, OSError, OverflowError):
+            pass
+        return "0000-00", s
 
-        :param room_title: Nom de la discussion ou du canal Teams.
-        :param entries: Liste de tuples (période, clé_tri, bloc_texte).
-        :return: Dictionnaire période -> contenu formaté.
-        """
-        by_month: DefaultDict[str, List[Tuple[int, str]]] = defaultdict(list)
-        for period, sort_key, block in entries:
-            by_month[period].append((sort_key, block))
+    @staticmethod
+    def _extract_teams_sender(msg: Dict[str, Any]) -> Tuple[str, str]:
+        """Extrait (Nom_Affiché, Email) depuis les différents formats d'export Teams."""
+        sender_obj = msg.get("from") or msg.get("sender")
+        if isinstance(sender_obj, dict):
+            for nested_key in ("user", "application", "device"):
+                user_obj = sender_obj.get(nested_key)
+                if isinstance(user_obj, dict):
+                    disp: str = str(user_obj.get("displayName") or user_obj.get("name") or "").strip()
+                    mail: str = str(
+                        user_obj.get("email")
+                        or user_obj.get("userPrincipalName")
+                        or user_obj.get("mail")
+                        or user_obj.get("address")
+                        or ""
+                    ).strip()
+                    if disp or mail:
+                        return disp or mail, mail
+            disp_direct: str = str(
+                sender_obj.get("displayName") or sender_obj.get("name") or ""
+            ).strip()
+            mail_direct: str = str(
+                sender_obj.get("email")
+                or sender_obj.get("userPrincipalName")
+                or sender_obj.get("mail")
+                or sender_obj.get("address")
+                or ""
+            ).strip()
+            if disp_direct or mail_direct:
+                return disp_direct or mail_direct, mail_direct
 
-        output: Dict[str, str] = {}
-        for period, items in sorted(by_month.items()):
-            items.sort(key=lambda x: x)
-            header: str = (
-                "========================================\n"
-                f"MICROSOFT TEAMS : {room_title}\n"
-                "----------------------------------------\n"
-            )
-            output[period] = header + "".join(b for _, b in items) + "\n"
-        return output
+        im_name: str = str(
+            msg.get("imdisplayname") or msg.get("displayName") or msg.get("author") or ""
+        ).strip()
+        im_mail: str = str(
+            msg.get("email") or msg.get("userPrincipalName") or msg.get("mail") or ""
+        ).strip()
+        if not im_mail and isinstance(sender_obj, str) and "@" in sender_obj:
+            m_mail = DocumentTextUtils.REGEX_EMAIL.search(sender_obj)
+            if m_mail:
+                im_mail = m_mail.group(0)
+        return im_name or im_mail or "Utilisateur Teams", im_mail
+    @staticmethod
+    def _extract_teams_attachments(msg: Dict[str, Any]) -> List[str]:
+        """Liste les pièces jointes (attachments, properties.files, etc.) d'un message Teams."""
+        names: List[str] = []
+        attachments = msg.get("attachments")
+        if isinstance(attachments, list):
+            for att in attachments:
+                if isinstance(att, str) and att.strip():
+                    names.append(att.strip())
+                elif isinstance(att, dict):
+                    att_name: str = str(
+                        att.get("name")
+                        or att.get("fileName")
+                        or att.get("title")
+                        or att.get("contentUrl")
+                        or ""
+                    ).strip()
+                    if att_name:
+                        names.append(att_name)
+
+        props = msg.get("properties")
+        if isinstance(props, dict) and props.get("files"):
+            raw_files: Any = props["files"]
+            if isinstance(raw_files, str):
+                try:
+                    raw_files = json.loads(raw_files)
+                except ValueError:
+                    raw_files = []
+            if isinstance(raw_files, list):
+                for f_item in raw_files:
+                    if isinstance(f_item, dict):
+                        fn: str = str(
+                            f_item.get("fileName") or f_item.get("name") or f_item.get("title") or ""
+                        ).strip()
+                        if fn and fn not in names:
+                            names.append(fn)
+        return names
 
     @classmethod
-    def is_teams_json_payload(cls, payload: Any) -> bool:
-        """
-        Détecte si un objet JSON provient d'un export Microsoft Teams.
+    def _collect_mentions_emails(
+        cls,
+        msg: Dict[str, Any],
+        discovered_emails: Optional[Any],
+    ) -> List[str]:
+        """Extrait les adresses e-mail présentes dans la liste 'mentions' d'un message Teams."""
+        found: List[str] = []
+        mentions = msg.get("mentions")
+        if not isinstance(mentions, list):
+            return found
+        for m_item in mentions:
+            if not isinstance(m_item, dict):
+                continue
+            mentioned = m_item.get("mentioned")
+            if isinstance(mentioned, dict):
+                user_obj = mentioned.get("user")
+                if isinstance(user_obj, dict):
+                    mail: str = str(
+                        user_obj.get("email") or user_obj.get("userPrincipalName") or ""
+                    ).strip()
+                    disp: str = str(
+                        user_obj.get("displayName") or m_item.get("mentionText") or ""
+                    ).strip()
+                    if mail and "@" in mail:
+                        found.append(mail)
+                        cls._register_discovered_email(discovered_emails, mail, disp)
+        return found
 
-        :param payload: Objet JSON décodé.
-        :return: True si la structure correspond à Microsoft Teams.
-        """
-        if not isinstance(payload, dict):
-            return False
-        convs: Any = payload.get("conversations")
-        if isinstance(convs, list) and convs:
-            first_c: Any = next(iter(convs), None)
-            if isinstance(first_c, dict) and "MessageList" in first_c:
-                return True
-        if isinstance(payload.get("MessageList"), list):
-            return True
-        values: Any = payload.get("value")
-        if isinstance(values, list) and values:
-            first_v: Any = next(iter(values), None)
-            if isinstance(first_v, dict) and (
-                "createdDateTime" in first_v and "body" in first_v
-            ):
-                return True
-        return False
     def _parse_teams_message_list(
         self,
-        room_title: str,
         messages: List[Any],
-        discovered_emails: Set[str],
+        conv_title: str,
+        discovered_emails: Optional[Any] = None,
     ) -> Dict[str, str]:
-        """
-        Parse une liste de messages au format export personnel Microsoft Teams.
-
-        :param room_title: Titre du fil de discussion.
-        :param messages: Liste brute MessageList.
-        :param discovered_emails: Collecteur des e-mails découverts.
-        :return: Dictionnaire période AAAA-MM -> texte formaté.
-        """
-        entries: List[Tuple[str, int, str]] = []
+        """Regroupe et formate une liste de messages Teams par mois AAAA-MM."""
+        buckets: Dict[str, List[str]] = {}
         for msg in messages:
             if not isinstance(msg, dict):
                 continue
-            msg_type: str = str(msg.get("messagetype") or "")
-            if msg_type.startswith(("ThreadActivity/", "Event/")):
+            msg_type: str = str(msg.get("messageType") or "message").lower()
+            if msg_type not in {"message", "richtext/html", "text"}:
                 continue
 
-            sender: str = str(msg.get("displayName") or "").strip()
-            raw_from: str = str(msg.get("from") or "").strip()
-            if "@" in raw_from:
-                em_match = DocumentTextUtils.REGEX_EMAIL.search(raw_from)
-                if em_match:
-                    norm_em: str = DocumentTextUtils.normalize_identifier(em_match.group(0))
-                    if sender and len(sender.split()) >= 2:
-                        discovered_emails.add(f"{norm_em}|{sender}")
-                    else:
-                        discovered_emails.add(norm_em)
-            if not sender:
-                sender = raw_from or "Participant Teams"
-
-            body_txt: str = self._clean_teams_html_body(str(msg.get("content") or ""))
-            props: Any = msg.get("properties")
-            att_names: List[str] = []
-            if isinstance(props, dict) and isinstance(props.get("files"), str):
-                try:
-                    files_list: Any = json.loads(props["files"])
-                    if isinstance(files_list, list):
-                        for f_item in files_list:
-                            if isinstance(f_item, dict) and f_item.get("fileName"):
-                                att_names.append(str(f_item["fileName"]).strip())
-                except Exception:
-                    pass
-            att_line: str = (
-                f"[Pièce(s) jointe(s) Teams : {', '.join(att_names)}]\n"
-                if att_names
-                else ""
+            raw_ts: Any = (
+                msg.get("createdDateTime")
+                or msg.get("originalarrivaltime")
+                or msg.get("composetime")
             )
-            if not body_txt and not att_line:
+            month_key, ts_str = self._parse_teams_timestamp(raw_ts)
+            sender_name, sender_email = self._extract_teams_sender(msg)
+            self._register_discovered_email(discovered_emails, sender_email, sender_name)
+
+            mention_mails: List[str] = self._collect_mentions_emails(msg, discovered_emails)
+            body_txt: str = self._clean_teams_html_body(
+                str(msg.get("content") or ""), discovered_emails
+            )
+            attachments: List[str] = self._extract_teams_attachments(msg)
+            if not body_txt and not attachments:
                 continue
 
-            period, dt_str, sort_k = MultiPlatformChatExtractor.parse_human_timestamp(
-                str(msg.get("originalarrivaltime") or "")
+            sender_label: str = (
+                f"{sender_name} ({sender_email})"
+                if sender_email and sender_email.lower() not in sender_name.lower()
+                else sender_name
             )
-            block: str = (
-                f"[{dt_str}] DE : {sender}\n"
-                f"{att_line}{body_txt}\n"
-                "----------------------------------------\n"
+            block_lines: List[str] = [f"[{ts_str}] DE : {sender_label}"]
+            for mm in mention_mails:
+                if mm not in body_txt and mm not in sender_label:
+                    block_lines.append(f"[Mention Teams : {mm}]")
+            if attachments:
+                block_lines.append(f"[Pièce(s) jointe(s) Teams : {', '.join(attachments)}]")
+            if body_txt:
+                block_lines.append(body_txt)
+            block_lines.append("-" * 40)
+
+            buckets.setdefault(month_key, []).append("\n".join(block_lines))
+
+        rendered: Dict[str, str] = {}
+        for month_key, entries in sorted(buckets.items()):
+            header: str = (
+                f"{'=' * 40}\n"
+                f"MICROSOFT TEAMS : {conv_title}\n"
+                f"{'-' * 40}\n"
             )
-            entries.append((period, sort_k, block))
-
-        return self._group_by_month(room_title, entries)
-
-    def _parse_teams_graph_values(
-        self,
-        room_title: str,
-        values: List[Any],
-        discovered_emails: Set[str],
-    ) -> Dict[str, str]:
-        """
-        Parse un export JSON issu de l'API Microsoft Graph (/chats/.../messages).
-
-        :param room_title: Titre du canal ou de la conversation.
-        :param values: Liste des objets messages Graph API.
-        :param discovered_emails: Collecteur des adresses e-mail rencontrées.
-        :return: Dictionnaire période AAAA-MM -> texte formaté.
-        """
-        entries: List[Tuple[str, int, str]] = []
-        for item in values:
-            if not isinstance(item, dict):
-                continue
-            from_obj: Any = item.get("from")
-            sender: str = "Participant Teams"
-            if isinstance(from_obj, dict) and isinstance(from_obj.get("user"), dict):
-                user_obj: Dict[str, Any] = from_obj["user"]
-                sender = str(user_obj.get("displayName") or sender).strip()
-                raw_upn: str = str(user_obj.get("userPrincipalName") or "").strip()
-                if "@" in raw_upn:
-                    norm_upn: str = DocumentTextUtils.normalize_identifier(raw_upn)
-                    discovered_emails.add(
-                        f"{norm_upn}|{sender}" if len(sender.split()) >= 2 else norm_upn
-                    )
-
-            body_obj: Any = item.get("body")
-            raw_content: str = (
-                str(body_obj.get("content") or "")
-                if isinstance(body_obj, dict)
-                else str(body_obj or "")
+            rendered[month_key] = header + "\n".join(entries) + "\n"
+        return rendered
+    @staticmethod
+    def is_teams_json_payload(payload: Any) -> bool:
+        """Détermine si un objet JSON désérialisé correspond à un export Microsoft Teams."""
+        if isinstance(payload, dict):
+            if isinstance(payload.get("conversations"), list):
+                return True
+            msgs = payload.get("messages")
+            if isinstance(msgs, list) and any(
+                isinstance(m, dict)
+                and any(
+                    k in m
+                    for k in ("messageType", "createdDateTime", "originalarrivaltime", "imdisplayname")
+                )
+                for m in msgs[:5]
+            ):
+                return True
+        elif isinstance(payload, list) and any(
+            isinstance(m, dict)
+            and any(
+                k in m
+                for k in ("messageType", "createdDateTime", "originalarrivaltime", "imdisplayname")
             )
-            body_txt: str = self._clean_teams_html_body(raw_content)
-            if not body_txt:
-                continue
+            for m in payload[:5]
+        ):
+            return True
+        return False
 
-            period, dt_str, sort_k = MultiPlatformChatExtractor.parse_human_timestamp(
-                str(item.get("createdDateTime") or "")
-            )
-            block: str = (
-                f"[{dt_str}] DE : {sender}\n"
-                f"{body_txt}\n"
-                "----------------------------------------\n"
-            )
-            entries.append((period, sort_k, block))
-
-        return self._group_by_month(room_title, entries)
     def extract_teams_json(
         self,
         file_path: str,
-        payload: Dict[str, Any],
-        discovered_emails: Set[str],
+        payload: Any,
+        discovered_emails: Optional[Dict[str, str]] = None,
     ) -> Dict[str, str]:
-        """
-        Extrait toutes les conversations contenues dans un fichier JSON Microsoft Teams.
+        """Extrait un export JSON Microsoft Teams (conversations ou messages plats)."""
+        all_buckets: Dict[str, List[str]] = {}
+        base_title: str = os.path.splitext(os.path.basename(file_path))
 
-        :param file_path: Chemin vers le fichier JSON.
-        :param payload: Contenu JSON décodé.
-        :param discovered_emails: Collecteur des e-mails découverts.
-        :return: Dictionnaire période AAAA-MM -> texte formaté.
-        """
-        file_stem, _ = os.path.splitext(os.path.basename(file_path))
-        default_title: str = file_stem or "Discussion Teams"
-        merged_by_month: DefaultDict[str, List[str]] = defaultdict(list)
-
-        if isinstance(payload.get("conversations"), list):
+        if isinstance(payload, dict) and isinstance(payload.get("conversations"), list):
             for conv in payload["conversations"]:
                 if not isinstance(conv, dict):
                     continue
                 c_title: str = (
-                    str(conv.get("displayName") or "").strip()
-                    or str(conv.get("id") or "").strip()
-                    or default_title
+                    str(conv.get("displayName") or conv.get("id") or base_title).strip()
                 )
-                sub: Dict[str, str] = self._parse_teams_message_list(
-                    c_title, conv.get("MessageList", []), discovered_emails
-                )
-                for per, blk in sub.items():
-                    merged_by_month[per].append(blk)
-        elif isinstance(payload.get("MessageList"), list):
-            c_title = str(payload.get("displayName") or "").strip() or default_title
+                msgs = conv.get("MessageList") or conv.get("messages") or []
+                if isinstance(msgs, list):
+                    sub = self._parse_teams_message_list(msgs, c_title, discovered_emails)
+                    for mk, txt in sub.items():
+                        all_buckets.setdefault(mk, []).append(txt)
+        elif isinstance(payload, dict) and isinstance(payload.get("messages"), list):
             sub = self._parse_teams_message_list(
-                c_title, payload["MessageList"], discovered_emails
+                payload["messages"], base_title, discovered_emails
             )
-            for per, blk in sub.items():
-                merged_by_month[per].append(blk)
-        elif isinstance(payload.get("value"), list):
-            sub = self._parse_teams_graph_values(
-                default_title, payload["value"], discovered_emails
-            )
-            for per, blk in sub.items():
-                merged_by_month[per].append(blk)
+            for mk, txt in sub.items():
+                all_buckets.setdefault(mk, []).append(txt)
+        elif isinstance(payload, list):
+            sub = self._parse_teams_message_list(payload, base_title, discovered_emails)
+            for mk, txt in sub.items():
+                all_buckets.setdefault(mk, []).append(txt)
 
-        return {per: "".join(blocks) for per, blocks in sorted(merged_by_month.items())}
+        return {mk: "\n".join(chunks) for mk, chunks in sorted(all_buckets.items())}
 
-    def extract_teams_vtt(self, file_path: str) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Extrait la transcription d'une réunion Microsoft Teams au format WebVTT (.vtt).
-
-        :param file_path: Chemin vers le fichier .vtt.
-        :return: Tuple (texte_transcription_formate, erreur_ou_None).
-        """
-        file_name: str = os.path.basename(file_path)
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                lines: List[str] = f.read().splitlines()
-
-            out_lines: List[str] = []
-            cur_time: str = ""
-            for raw_ln in lines:
-                stripped: str = raw_ln.strip()
-                if not stripped or stripped == "WEBVTT" or stripped.isdigit():
-                    continue
-                m_cue = self.VTT_CUE_RE.match(stripped)
-                if m_cue:
-                    cur_time = m_cue.group(1)[:8]
-                    continue
-                m_voice = self.VTT_VOICE_RE.match(stripped)
-                if m_voice:
-                    speaker: str = html.unescape(m_voice.group(1)).strip()
-                    spoken: str = DocumentTextUtils.html_to_plain_text(m_voice.group(2)).strip()
-                    if spoken:
-                        prefix: str = f"[{cur_time}] " if cur_time else ""
-                        out_lines.append(f"{prefix}{speaker} : {spoken}")
-                elif not stripped.startswith(("NOTE", "STYLE", "REGION")):
-                    plain_ln: str = DocumentTextUtils.html_to_plain_text(stripped).strip()
-                    if plain_ln:
-                        prefix = f"[{cur_time}] " if cur_time else ""
-                        out_lines.append(f"{prefix}{plain_ln}")
-
-            if not out_lines:
-                return None, "Transcription VTT Teams vide"
-
-            header: str = (
-                "========================================\n"
-                f"TRANSCRIPTION RÉUNION TEAMS : {file_name}\n"
-                "----------------------------------------\n"
-            )
-            return header + "\n".join(out_lines) + "\n\n", None
-        except Exception as exc:
-            return None, f"Erreur lecture VTT Teams ({exc})"
+    @staticmethod
+    def extract_teams_vtt(
+        file_path: str, raw_vtt: Optional[str] = None
+    ) -> Tuple[str, str]:
+        """Extrait une transcription de réunion Teams WebVTT (.vtt) et retourne (texte, période)."""
+        content: str = raw_vtt or ""
+        if raw_vtt is None:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f_in:
+                content = f_in.read()
+        base_name: str = os.path.basename(file_path)
+        period: str = DocumentTextUtils.resolve_file_period(content, base_name, file_path)
+        parsed_dialogue: str = DocumentTextUtils.parse_teams_vtt_content(content)
+        if not parsed_dialogue:
+            return "", period
+        header: str = (
+            f"{'=' * 40}\n"
+            f"TRANSCRIPTION RÉUNION TEAMS : {base_name}\n"
+            f"{'-' * 40}\n"
+        )
+        return f"{header}{parsed_dialogue}\n", period

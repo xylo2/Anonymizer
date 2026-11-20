@@ -219,7 +219,7 @@ class DocumentAnonymizationRunner:
                 for t in sorted_targets
             ]
             self.fast_replacer_regex = re.compile(
-                rf"(?<![A-Za-zÀ-ÿ0-9_])(?:{'|'.join(patterns)})(?![A-Za-zÀ-ÿ0-9_])",
+                rf"(?<![A-Za-zÀ-ÿ0-9])(?:{'|'.join(patterns)})(?![A-Za-zÀ-ÿ0-9])",
                 re.IGNORECASE,
             )
 
@@ -236,17 +236,18 @@ class DocumentAnonymizationRunner:
             r"Mlle\.?|Mademoiselle|M\.|Mr\.?|Monsieur|Famille)"
         )
         cap_word: str = r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]{2,25}"
+        upper_surname: str = r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{2,25}(?:[\s\-](?:DE|DU|DES|LE|LA|LES|[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{2,25})){0,3}"
         self.title_first_last_regex = re.compile(
-            rf"\b({titles_pat})[ \t]+({cap_word}(?:[ \t\-]{cap_word}){{0,2}})[ \t]+({cap_word})\b"
+            rf"(?<![A-Za-zÀ-ÿ0-9])({titles_pat})[ \t]+({cap_word}(?:[ \t\-]{cap_word}){{0,2}})[ \t]+({cap_word})(?![A-Za-zÀ-ÿ0-9])"
         )
         self.title_last_name_regex = re.compile(
-            rf"\b({titles_pat})[ \t]*({cap_word})\b"
+            rf"(?<![A-Za-zÀ-ÿ0-9])({titles_pat})[ \t]*({cap_word})(?![A-Za-zÀ-ÿ0-9])"
         )
         self.auto_first_last_regex = re.compile(
-            rf"\b({cap_word}(?:[ \t\-]{cap_word})?)[ \t]+({cap_word})\b"
+            rf"(?<![A-Za-zÀ-ÿ0-9])({cap_word}(?:[ \t\-_]{cap_word})?)[ \t_]+({cap_word})(?![A-Za-zÀ-ÿ0-9])"
         )
         self.auto_last_first_regex = re.compile(
-            rf"\b([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{{3,25}})[ \t]+({cap_word})\b"
+            rf"(?<![A-Za-zÀ-ÿ0-9])({upper_surname})[ \t_]+({cap_word}(?:[\-]{cap_word})?)(?![A-Za-zÀ-ÿ0-9])"
         )
 
         safe_locs: List[str] = sorted(
@@ -274,7 +275,7 @@ class DocumentAnonymizationRunner:
                 loc_branches.append(f"(?:{cap_form}|{up_form})")
             if loc_branches:
                 self.locations_regex = re.compile(
-                    rf"(?<![A-Za-zÀ-ÿ0-9_])(?:{'|'.join(loc_branches)})(?![A-Za-zÀ-ÿ0-9_])"
+                    rf"(?<![A-Za-zÀ-ÿ0-9])(?:{'|'.join(loc_branches)})(?![A-Za-zÀ-ÿ0-9])"
                 )
         self.regex_compiled = True
     def _replace_fast_target(self, match: re.Match) -> str:
@@ -346,9 +347,10 @@ class DocumentAnonymizationRunner:
             return match.group(0)
         return f"{title} {last[:1].upper()}."
     def _replace_auto_first_last(self, match: re.Match) -> str:
-        """Abrège 'Charlotte Lemaitre' ou 'Jean-Eudes Lemoine'."""
+        """Abrège 'Charlotte Lemaitre', 'Maël_Sobréro' ou 'Jean-Eudes Lemoine'."""
         firsts: str = match.group(1)
         last: str = match.group(2)
+        sep: str = "_" if "_" in match.group(0) else " "
         norm_last: str = DocumentTextUtils.normalize_word(last)
         if (
             norm_last.upper() in self.SAFE_UPPER_WORDS
@@ -368,14 +370,16 @@ class DocumentAnonymizationRunner:
                     return f"{t1} {t2} {last[:1].upper()}."
 
         if self._is_known_first_name(firsts):
-            return f"{firsts} {last[:1].upper()}."
+            return f"{firsts}{sep}{last[:1].upper()}."
         return match.group(0)
 
     def _replace_auto_last_first(self, match: re.Match) -> str:
-        """Abrège 'BERNARD Nadia' en 'B. Nadia'."""
+        """Abrège 'BERNARD Nadia', 'GOULLET DE RUGY Marc' ou 'Michèle_SOBRÉRO'."""
         last_upper: str = match.group(1)
         first: str = match.group(2)
+        sep: str = "_" if "_" in match.group(0) else " "
         norm_last: str = DocumentTextUtils.normalize_word(last_upper)
+        first_token: str = next(iter(re.split(r"[\s\-]+", first)), first)
         if (
             last_upper in self.SAFE_UPPER_WORDS
             or norm_last in self.config.excluded_words
@@ -384,8 +388,8 @@ class DocumentAnonymizationRunner:
             or self._is_known_first_name(last_upper)
         ):
             return match.group(0)
-        if self._is_known_first_name(first):
-            return f"{last_upper[:1].upper()}. {first}"
+        if self._is_known_first_name(first_token):
+            return f"{last_upper[:1].upper()}.{sep}{first}"
         return match.group(0)
 
     def _replace_email_with_alias(self, match: re.Match) -> str:
@@ -399,7 +403,8 @@ class DocumentAnonymizationRunner:
     def _replace_phone_with_alias(self, match: re.Match) -> str:
         """Remplace un numéro de téléphone par son alias connu ou génère TEL_XXX."""
         raw_tel: str = match.group(0)
-        norm_tel: str = DocumentTextUtils._normalize_fr_phone(raw_tel)
+        cleaned_tel: str = re.sub(r"[\s.\-/,]+", "", raw_tel)
+        norm_tel: str = DocumentTextUtils._normalize_fr_phone(cleaned_tel)
         if norm_tel and norm_tel in self.rules.target_phones:
             return self.rules.target_phones[norm_tel]
         return self._get_or_create_token(raw_tel, "TEL")
@@ -432,7 +437,20 @@ class DocumentAnonymizationRunner:
             flags=re.IGNORECASE,
         )
         res = re.sub(
-            r"\b(MME|MR|DR|MLLE|ENFANT|Enfant)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç]{2,})",
+            r"\b([0-2]\d:[0-5]\d)([A-Za-zÀ-ÿ])",
+            r"\1 \2",
+            res,
+        )
+        res = re.sub(
+            r"\b(DOCTEUR|Docteur|MADAME|Madame|MONSIEUR|Monsieur|MME|Mme|MR|Mr|DR|Dr|MLLE|Mlle|ENFANT|Enfant)"
+            r"(?!EYFUS\b)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç\-]{2,})",
+            r"\1 \2",
+            res,
+        )
+        res = re.sub(
+            r"\b((?:Dr\.?|Docteur|Pr\.?|Professeur|Mme\.?|Madame|M\.|Mr\.?|Monsieur|Mlle\.?|Mademoiselle)"
+            r"[ \t]+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][a-zéèêëàâäîïôöùûüç]{2,})"
+            r"([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{3,25})\b",
             r"\1 \2",
             res,
         )
@@ -447,10 +465,6 @@ class DocumentAnonymizationRunner:
         res = DocumentTextUtils.REGEX_GLUED_PERSON_BIRTH_DATE.sub(r"\1[DATE_MASQUEE]", res)
         res = DocumentTextUtils.REGEX_BIRTH_DATE.sub(r"\1[JOUR_MOIS_MASQUES]/\2", res)
         res = DocumentTextUtils.REGEX_ID_DOC_DATES.sub(r"\1[DATE_TITRE_MASQUEE]", res)
-
-        if self.config.mask_ssn:
-            res = DocumentTextUtils.REGEX_SSN.sub("[NUM_SECU_MASQUE]", res)
-            res = DocumentTextUtils.REGEX_SSN_OCR_GLUED.sub("[NUM_SECU_MASQUE]", res)
 
         if self.config.mask_financial_and_admin_ids:
             res = DocumentTextUtils.REGEX_IBAN.sub("[IBAN_MASQUE]", res)
@@ -469,6 +483,10 @@ class DocumentAnonymizationRunner:
 
         if self.fast_replacer_regex:
             res = self.fast_replacer_regex.sub(self._replace_fast_target, res)
+
+        if self.config.mask_ssn:
+            res = DocumentTextUtils.REGEX_SSN.sub("[NUM_SECU_MASQUE]", res)
+            res = DocumentTextUtils.REGEX_SSN_OCR_GLUED.sub("[NUM_SECU_MASQUE]", res)
         if self.config.mask_addresses:
             res = DocumentTextUtils.REGEX_STREET_ADDRESS.sub("[ADRESSE_MASQUEE]", res)
             res = DocumentTextUtils.REGEX_POSTAL_CITY.sub("[ADRESSE_MASQUEE]", res)

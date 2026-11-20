@@ -27,6 +27,9 @@ Le pipeline s'appuie sur **quatre fichiers de règles complémentaires** au form
 2. **`output_contacts/discovered_email_contacts.txt`** *(généré automatiquement)* : alimenté après chaque extraction depuis les en-têtes de courriels.
 3. **`output_contacts/discovered_chat_contacts.txt`** *(généré automatiquement)* : alimenté à partir des participants détectés dans les messageries instantanées.
 4. **`output_contacts/manual_contacts.txt`** *(géré par vous, jamais écrasé)* : créé automatiquement au premier lancement. Ajoutez-y vos règles personnalisées au format `Prénom Nom = Alias` (ou `Prénom Nom = ` pour utiliser `--complete-manual`), vos variantes OCR collées (`DUPONTCAMILLE = Camille D.`) ainsi que les dates sensibles (`14/07/1985 = [DATE_MASQUEE]`).
+
+---
+
 ## 3. Exécution des pipelines depuis la racine
 
 ```bash
@@ -46,17 +49,32 @@ python run_documents.py --anonymize-only --reset-results
 
 ---
 
-## 4. Exploitation des rapports d'audit (`audits/`)
+## 4. Exploitation des rapports d'audit et correspondances (`audits/`)
 
 À chaque lot écrit dans **`anonymized_results/`**, les rapports sont mis à jour dans **`audits/`** avec filtrage strict des référentiels situés dans **`data/`** (`mots_exclus.txt`, `collisions_noms.txt`, `villes_masquees.txt`, `prenoms.txt`) :
 
 * **`audits/residual_names_audit.txt`** *(rapport détaillé)* : regroupe les paires `Nom Prénom` et `Prénom Nom` sous une entrée canonique classée par priorité (`5+ occurrences`, `2 à 4 occurrences`, `1 occurrence`), avec suggestion phonétique `(Proche de '...')`.
 * **`audits/residual_names_copy.txt`** *(rapport épuré)* : contient uniquement les lignes au format `Prénom Nom = ` prêtes à coller dans `output_contacts/manual_contacts.txt`.
+* **`audits/source_files_mapping.json`** *(dictionnaire de traçabilité)* : relie chaque chemin anonymisé (`# SOURCE TRANSCRIPTION : ...`) au fichier extrait brut (`extracted_file` dans `extracted_texts/`), au fichier source initial (`original_source_file` dans `input_documents/`) et au lot final (`batch_file`).
 * **`audits/extraction_report.txt`** : liste les éventuels fichiers illisibles ou archives `.zip` ignorées lors de l'extraction.
 
 ---
 
-## 5. Compléter et appliquer les contacts manuels
+## 5. Retrouver et copier les transcriptions brutes (`--copy-unmasked`)
+
+Lorsqu'un lot anonymisé révèle un fichier à vérifier, vous pouvez copier automatiquement les transcriptions `.txt` non anonymisées correspondantes dans un dossier dédié à partir d'un fichier liste (`.txt` ou `.md`, acceptant des chemins bruts, puces `- ...`, backticks `` `...` `` ou en-têtes `# SOURCE TRANSCRIPTION : ...`) :
+
+```bash
+# Via le lanceur principal (dossier de sortie par défaut : transcriptions_non_anonymisees)
+python run_documents.py --copy-unmasked liste_fichiers_a_revoir.md --unmasked-dir fichiers_a_revoir
+
+# Ou directement via l'utilitaire dédié (avec chemins passés en arguments ou fichier liste)
+python tools/copy_unmasked_transcriptions.py --list-file liste_fichiers_a_revoir.md -o fichiers_a_revoir
+```
+
+---
+
+## 6. Compléter et appliquer les contacts manuels
 
 ```bash
 # Prévisualiser ou compléter les lignes vides dans output_contacts/manual_contacts.txt
@@ -69,7 +87,11 @@ python run_documents.py --complete-manual --manual-only
 
 ---
 
-## 6. Générer la version PDF de ce guide
+## 7. Générer la version PDF des guides
 
 ```bash
+# Générer le PDF paginé du guide d'utilisation
 python tools/generate_pdf_guide.py docs/GUIDE_UTILISATION.md -o docs/GUIDE_UTILISATION.pdf
+
+# Générer également le PDF paginé de l'architecture technique
+python tools/generate_pdf_guide.py docs/ARCHITECTURE.md -o docs/ARCHITECTURE.pdf

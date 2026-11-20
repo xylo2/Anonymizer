@@ -39,7 +39,7 @@ python run_documents.py --anonymize-only
 python run_documents.py --anonymize-only --reset-results
 ```
 
-### 4. Boucle d'audit et règles manuelles
+### 4. Boucle d'audit, règles manuelles et récupération des bruts
 
 ```bash
 # Compléter automatiquement les lignes 'Prénom Nom = ' ajoutées dans output_contacts/manual_contacts.txt
@@ -47,6 +47,11 @@ python run_documents.py --complete-manual
 
 # Réappliquer uniquement output_contacts/manual_contacts.txt sur les lots existants
 python run_documents.py --manual-only
+
+# Copier les transcriptions brutes (.txt) correspondant à une liste de fichiers anonymisés
+python run_documents.py --copy-unmasked liste_fichiers_a_revoir.md --unmasked-dir transcriptions_a_revoir
+```
+
 ## Format unifié des règles (`Identifiant_Brut = Alias`)
 
 Tous les fichiers de correspondance dans **`output_contacts/`** utilisent désormais le même sens de lecture (`Donnée_Sensible_À_Masquer = Valeur_De_Remplacement`) :
@@ -67,14 +72,15 @@ Tous les fichiers de correspondance dans **`output_contacts/`** utilisent désor
 * **`anonymized_results/`** : lots finaux anonymisés (`batch_XX/anonymized_part_XXX.txt`) et état de reprise `.anonymization_state.json`.
 * **`data/`** : référentiels lexicaux (`prenoms.txt`, `villes_masquees.txt`, `collisions_noms.txt`, `mots_exclus.txt`).
 * **`output_contacts/`** : annuaire unifié (`contacts.txt`), règles manuelles (`manual_contacts.txt`), contacts découverts et fichiers intermédiaires (`.intermediates/`).
-* **`audits/`** : rapports d'audit (`residual_names_audit.txt`, `residual_names_copy.txt`), rapport d'erreurs d'extraction (`extraction_report.txt`) et listes d'identifiants.
-* **`docs/`** & **`tools/`** : documentation complète et utilitaires CLI (`complete_manual_contacts.py`, `restore_transcription_names.py`, `sync_contacts.py`, `generate_pdf_guide.py`).
+* **`audits/`** : rapports d'audit (`residual_names_audit.txt`, `residual_names_copy.txt`), table de correspondance JSON (`source_files_mapping.json`), rapport d'erreurs d'extraction (`extraction_report.txt`) et listes d'identifiants.
+* **`docs/`** & **`tools/`** : documentation complète et utilitaires CLI (`copy_unmasked_transcriptions.py`, `complete_manual_contacts.py`, `restore_transcription_names.py`, `sync_contacts.py`, `generate_pdf_guide.py`).
 
 ## Documentation et tests
 
-* **Guides complets** : [`docs/GUIDE_UTILISATION.md`](docs/GUIDE_UTILISATION.md) et [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — génération PDF paginée :
+* **Guides complets** : [`docs/GUIDE_UTILISATION.md`](docs/GUIDE_UTILISATION.md) et [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — génération des versions PDF paginées :
   ```bash
   python tools/generate_pdf_guide.py docs/GUIDE_UTILISATION.md -o docs/GUIDE_UTILISATION.pdf
+  python tools/generate_pdf_guide.py docs/ARCHITECTURE.md -o docs/ARCHITECTURE.pdf
   ```
 * **Tests unitaires et couverture de code** :
   ```bash

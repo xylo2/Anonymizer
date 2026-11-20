@@ -30,23 +30,29 @@ L'écosystème repose sur **deux sous-projets autonomes** (`google_contacts_pars
 |        +-> [.intermediates/*]    |   | Masquage & Audit temps réel   |
 |        +-> [output_contacts/     |   |        |                      |
 |             contacts.txt]        |   |        +-> [batch_XX/*.txt]   |
-+----------------------------------+   |        +-> [audits/*.txt]     |
++----------------------------------+   |        +-> [audits/*.txt,     |
+
+                                       |             *.json]           |
                                        +-------------------------------+
+```
+
 ## 2. Socle commun (`common/`), utilitaires (`tools/`) et répertoires
 
 * **`common/core_utils.py` (`SharedCoreUtils`)** : normalisation Unicode (NFKD), téléphones français (`0XXXXXXXXX`), suppression des alias `+...` sur les e-mails, écriture atomique sur disque et inhibition de mise en veille.
+* **`doc_anonymizer/source_mapping_manager.py` (`SourceMappingManager`)** : maintient `audits/source_files_mapping.json` reliant chaque chemin anonymisé (`# SOURCE TRANSCRIPTION : ...`) au fichier extrait brut (`extracted_texts/`), au fichier source initial (`input_documents/`) et au lot final (`batch_XX/`).
 * **`tools/`** :
+  * `copy_unmasked_transcriptions.py` (`UnmaskedTranscriptionCopier`) : copie les transcriptions `.txt` brutes (`extracted_texts/`) correspondant à une liste de fichiers anonymisés en exploitant `audits/source_files_mapping.json` (avec repli par comparaison anonymisée).
   * `complete_manual_contacts.py` (`ManualContactsAutoCompleter`) : complète automatiquement les lignes `Prénom Nom = ` vides dans `output_contacts/manual_contacts.txt`.
   * `sync_contacts.py` (`ContactsSynchronizer`) : synchronise `output_contacts/contacts.txt` en préservant `manual_contacts.txt`.
   * `restore_transcription_names.py` (`TranscriptionNameRestorer`) : restaure les noms d'origine dans `extracted_texts/` et reclasse par période `AAAA-MM`.
   * `generate_pdf_guide.py` (`MarkdownPdfConverter`) : convertit les `.md` en `.pdf` paginés via PyMuPDF.
 * **`data/`** : référentiels lexicaux partagés (`prenoms.txt`, `villes_masquees.txt`, `collisions_noms.txt`, `mots_exclus.txt`).
 * **`output_contacts/`** : annuaire unifié final (`contacts.txt` au format `Identifiant_Brut = Alias`), règles manuelles (`manual_contacts.txt`), contacts découverts (`discovered_email_contacts.txt`, `discovered_chat_contacts.txt`) et fichiers de travail dans `.intermediates/`.
-* **`audits/`** : rapports d'audit (`residual_names_audit.txt`, `residual_names_copy.txt`), rapport d'extraction (`extraction_report.txt`) et listes d'identifiants rencontrés (`all_found_emails.txt`, `all_sms_numbers.txt`).
+* **`audits/`** : rapports d'audit (`residual_names_audit.txt`, `residual_names_copy.txt`), table de correspondance JSON (`source_files_mapping.json`), rapport d'extraction (`extraction_report.txt`) et listes d'identifiants rencontrés (`all_found_emails.txt`, `all_sms_numbers.txt`).
 
 ---
 
 ## 3. Persistance et reprise incrémentale
 
 * **Extraction (`extracted_texts/`)** : `.extraction_state.txt` (chemins déjà extraits), `.sms_state.txt` (numéros SMS traités) et `.email_state.txt`.
-* **Anonymisation (`anonymized_results/`)** : `.anonymization_state.json` mémorise l'avancement à chaque lot écrit (`batch_XX/anonymized_part_XXX.txt`) et les jetons déterministes (`TEL_XXX`, `EMAIL_XXX`).
+* **Anonymisation (`anonymized_results/`)** : `.anonymization_state.json` mémorise l'avancement à chaque lot écrit (`batch_XX/anonymized_part_XXX.txt`) et les jetons déterministes (`TEL_XXX`, `EMAIL_XXX`), tandis que `audits/source_files_mapping.json` conserve la traçabilité complète des fichiers sources et extraits.
