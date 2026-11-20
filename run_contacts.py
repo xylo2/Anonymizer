@@ -1,10 +1,12 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
 import argparse
+import configparser
 import importlib
 import os
 import sys
-from typing import List, Optional
+from typing import List, Optional, Tuple
+from doc_anonymizer.chat_prescanner import ChatContactPrescanner
 from doc_anonymizer.contact_merger import ContactCatalogMerger
 
 ROOT_DIR: str = os.path.dirname(os.path.abspath(__file__))
@@ -51,10 +53,21 @@ def _load_contacts_backend():
     raise ModuleNotFoundError("Impossible de localiser le package de traitement des contacts.")
 
 
+def _resolve_sources_dir(ini_path: str) -> str:
+    """Résout le dossier sources_dir depuis config.ini (par défaut input_documents)."""
+    abs_ini: str = os.path.abspath(ini_path)
+    base_dir: str = os.path.dirname(abs_ini)
+    parser = configparser.ConfigParser()
+    if os.path.isfile(abs_ini):
+        parser.read(abs_ini, encoding="utf-8")
+    rel_src: str = parser.get("paths", "sources_dir", fallback="input_documents").strip()
+    return os.path.abspath(os.path.join(base_dir, rel_src))
+
+
 def main(argv: Optional[List[str]] = None) -> int:
-    """Point d'entrée CLI pour l'extraction, l'anonymisation et la fusion des contacts."""
+    """Point d'entrée CLI pour l'extraction, le pré-scan des chats et la fusion des contacts."""
     parser = argparse.ArgumentParser(
-        description="Extraction, anonymisation et unification des contacts (CSV + chats + e-mails)."
+        description="Extraction, pré-scan et unification des contacts (CSV + chats + e-mails)."
     )
     parser.add_argument(
         "--config",
@@ -76,6 +89,22 @@ def main(argv: Optional[List[str]] = None) -> int:
             out_dir: str = os.path.dirname(os.path.abspath(final_file))
             disc_chats: str = os.path.join(out_dir, "discovered_chat_contacts.txt")
             disc_emails: str = os.path.join(out_dir, "discovered_email_contacts.txt")
+            sources_dir: str = _resolve_sources_dir(args.config)
+
+            prescanner = ChatContactPrescanner(
+                sources_dir=sources_dir,
+                discovered_chats_file=disc_chats,
+                discovered_emails_file=disc_emails,
+                contacts_file=final_file,
+                known_first_names=getattr(config, "known_first_names", set()),
+            )
+            pre_chats, pre_emails = prescanner.prescan_sources()
+            if pre_chats > 0 or pre_emails > 0:
+                print(
+                    f"[PRÉ-SCAN DOCUMENTS] +{pre_chats} contact(s) de chat et "
+                    f"+{pre_emails} adresse(s) e-mail détecté(s) dans '{sources_dir}'."
+                )
+
             merger = ContactCatalogMerger(
                 contacts_file=final_file,
                 discovered_chats_file=disc_chats,
