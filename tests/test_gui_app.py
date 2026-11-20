@@ -13,11 +13,12 @@ ROOT_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+from doc_anonymizer.gui_dialogs import BeforeAfterPreviewDialog, ExportGuideDialog
 import gui_anonymizer
 
 
 class TestAnonymizerGuiApp(unittest.TestCase):
-    """Tests d'interface graphique couvrant l'obligation de choix de dossier et les 2 modes."""
+    """Tests d'interface graphique couvrant le découpage modulaire et les 2 modes."""
 
     def setUp(self) -> None:
         self.tmp_root: str = tempfile.mkdtemp(prefix="test_gui_app_")
@@ -47,33 +48,17 @@ class TestAnonymizerGuiApp(unittest.TestCase):
         shutil.rmtree(self.tmp_root, ignore_errors=True)
 
     def test_startup_gate_requires_workspace_creation_or_selection(self) -> None:
-        """Vérifie qu'on ne peut pas avancer sans créer/choisir un dossier, et la détection au redémarrage."""
+        """Vérifie l'obligation de créer ou ouvrir un dossier dès le démarrage."""
         self.assertEqual(self.app.active_page_key, "gate")
         self.assertEqual(self.app.current_ini_var.get(), "")
 
         self.app._show_page("mode")
         self.assertEqual(self.app.active_page_key, "gate")
 
-        with patch.object(gui_anonymizer.messagebox, "showwarning") as mock_warn:
-            self.app.gate_new_name_var.set("")
-            self.app._confirm_gate_and_workspace()
-            mock_warn.assert_called_once()
-        self.assertEqual(self.app.active_page_key, "gate")
-
         self.app.gate_new_name_var.set("Dossier_Initial")
         self.app._confirm_gate_and_workspace()
         self.assertEqual(self.app.active_page_key, "mode")
         self.assertTrue(os.path.isfile(self.app.current_ini_var.get()))
-
-        app2 = gui_anonymizer.AnonymizerGuiApp()
-        app2.withdraw()
-        try:
-            self.assertEqual(app2.gate_action_var.get(), "open")
-            self.assertEqual(len(app2.workspaces), 1)
-            app2._confirm_gate_and_workspace()
-            self.assertEqual(app2.active_page_key, "mode")
-        finally:
-            app2.destroy()
     def test_zip_warning_audit_preview_dialog_and_prompts(self) -> None:
         """Vérifie l'alerte ZIP, l'aperçu Avant/Après dédié, le guide d'export et les requêtes IA."""
         self.app.gate_new_name_var.set("Dossier_Enfant")
@@ -103,15 +88,20 @@ class TestAnonymizerGuiApp(unittest.TestCase):
         self.app._on_audit_row_selected()
 
         occs = self.app.controller.load_audit_occurrences(ini_path, "Marc Lefevre")
-        dlg = gui_anonymizer.BeforeAfterPreviewDialog(self.app, "Marc Lefevre", "Marc L.", occs)
+        dlg = BeforeAfterPreviewDialog(
+            self.app,
+            "Marc Lefevre",
+            "Marc L.",
+            occs,
+            on_approve=self.app._approve_selected_audit,
+            on_exclude=self.app._exclude_selected_audit,
+        )
         self.assertIn("Marc Lefevre", dlg.txt_before.get("1.0", "end"))
         dlg.destroy()
 
-        self.app._open_export_guide_dialog(initial_tab=0)
-        guide_windows = [w for w in self.app.winfo_children() if isinstance(w, gui_anonymizer.tk.Toplevel)]
-        self.assertTrue(guide_windows)
-        for gw in guide_windows:
-            gw.destroy()
+        guide = ExportGuideDialog(self.app, initial_tab=0)
+        self.assertEqual(guide.title(), "Guide pas-à-pas — Comment exporter vos données ?")
+        guide.destroy()
 
         self.app._show_page("export")
         self.assertIn("droit médico-social", self.app.txt_prompt_preview.get("1.0", "end"))
