@@ -1,5 +1,7 @@
 # Guide d'Utilisation Pas-à-Pas
 
+> **Voir aussi :** [Documentation technique détaillée (`docs/GUIDE_UTILISATION.md`)](docs/GUIDE_UTILISATION.md) • [Architecture technique](docs/ARCHITECTURE.md)
+
 Ce guide accompagne pas à pas toute personne souhaitant constituer un dossier clair, chronologique et sécurisé (parcours médical/MDPH, prud'hommes, litige civil ou administratif) sans aucune compétence technique requise.
 
 ---
@@ -26,6 +28,7 @@ Ce guide accompagne pas à pas toute personne souhaitant constituer un dossier c
    * **WhatsApp** : ouvrez la discussion -> *Menu -> Plus -> Exporter la discussion -> Sans médias* (`.txt`).
    * **Documents, images et audios** : copiez directement vos PDF, Word, captures d'écran (`.jpg`, `.png`) et enregistrements vocaux (`.mp3`, `.m4a`, `.wav`) dans `input_documents/`.
 3. **Importer vos carnets de contacts `.csv` (`1C` — Mode IA uniquement)** : ajoutez vos exports Google Contacts ou Outlook `.csv` pour masquer automatiquement vos proches et praticiens.
+
 ---
 
 ## ÉTAPE 2 : Extraction, classement et tableau de bord
@@ -39,22 +42,22 @@ Ce guide accompagne pas à pas toute personne souhaitant constituer un dossier c
 
 ## ÉTAPE 3 (Mode IA) : Contrôle qualité Avant / Après
 
-1. L'écran **« 3. Vérifier les noms »** liste les noms propres potentiels encore présents.
+1. L'écran **« 4. Vérifier les noms »** liste les noms propres potentiels encore présents (issus de `audits/residual_names_copy.txt`).
 2. Sélectionnez une ligne et cliquez sur **« Voir dans le document (Avant / Après) »** (ou double-cliquez sur la ligne) :
    * Une fenêtre dédiée affiche côte à côte l'extrait original (surligné en jaune) et le texte anonymisé (masquages en vert, candidat restant en rouge).
-   * Vous pouvez naviguer entre toutes les occurrences du nom et choisir en un clic de le **masquer** ou de l'**ignorer** (faux positif).
+   * Vous pouvez naviguer entre toutes les occurrences du nom et choisir en un clic de le **masquer** (ajout dans `output_contacts/manual_contacts.txt`) ou de l'**ignorer** (ajout dans `data/mots_exclus.txt`).
 3. Cliquez sur **« Appliquer et passer à l'étape 4 -> »** pour régénérer les lots propres.
 
 ---
 
 ## ÉTAPE FINALE : Récupération & Passerelle IA -> Avocat
 
-### Parcours IA (Étape 4)
+### Parcours IA (Étape 5)
 * Récupérez vos fichiers `.txt` anonymisés dans `anonymized_results/batch_01/`, etc.
 * Utilisez le sélecteur **« Exemples de requêtes IA prêtes à copier »** (bilan médico-social, heures supplémentaires, harcèlement, maladie professionnelle, accident du travail, faute grave employeur) et cliquez sur **« Copier cette requête »**.
 * Chaque requête demande à l'IA de vous fournir en conclusion **la liste exacte des fichiers pertinents** (`# SOURCE TRANSCRIPTION : ...`).
 
-### Parcours Avocat (Étape 3)
+### Parcours Avocat (Étape 4)
 * Choisissez entre :
   * **Exporter l'intégralité des pièces du dossier**
   * **Filtrer uniquement les pièces recommandées par l'IA** (collez simplement la liste des chemins retournée par l'IA)

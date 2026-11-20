@@ -1,6 +1,6 @@
 # Guide d'utilisation — Extraction et Anonymisation de Documents
 
-> **Navigation :** [← Retour au README](../README.md) | [Architecture technique](ARCHITECTURE.md) | **Guides d'export :** [Contacts & E-mails](exports/CONTACTS_ET_EMAILS.md) • [Google Chat & Teams](exports/MESSAGERIES_PRO.md) • [WhatsApp, Messenger & Signal](exports/MESSAGERIES_PERSO.md)
+> **Navigation :** [← Retour au README](../README.md) | [Guide pas-à-pas](../GUIDE_UTILISATION.md) | [Architecture technique](ARCHITECTURE.md) | **Guides d'export :** [Contacts & E-mails](exports/CONTACTS_ET_EMAILS.md) • [Google Chat & Teams](exports/MESSAGERIES_PRO.md) • [WhatsApp, Messenger & Signal](exports/MESSAGERIES_PERSO.md)
 
 Ce projet extrait le texte de documents hétérogènes (PDF natifs ou scannés, Word, Excel, PowerPoint, ODT, RTF, HTML, images, agendas ICS, SMS/MMS XML, e-mails `.mbox`/`.eml`, messageries instantanées et enregistrements audio) et les anonymise localement avant analyse.
 
@@ -23,8 +23,8 @@ Ce projet extrait le texte de documents hétérogènes (PDF natifs ou scannés, 
 
 Le pipeline s'appuie sur **quatre fichiers de règles complémentaires** au format unifié **`Identifiant_Brut = Alias`** regroupés dans **`output_contacts/`** :
 
-1. **`output_contacts/contacts.txt`** *(généré automatiquement)* : produit par `python run_contacts.py` depuis vos exports CSV (ex. `camille.dupont@exemple.fr=Camille D.`). Les étapes intermédiaires sont conservées dans `output_contacts/.intermediates/`.
-2. **`output_contacts/discovered_email_contacts.txt`** *(généré automatiquement)* : alimenté après chaque extraction depuis les en-têtes de courriels.
+1. **`output_contacts/contacts.txt`** *(généré automatiquement)* : produit par `python run_contacts.py` depuis vos exports CSV (ex. `camille.dupont@exemple.fr=Camille D.`), enrichi par le pré-scan des chats et e-mails. Les étapes intermédiaires sont conservées dans `output_contacts/.intermediates/` (`indexed_contacts.txt`, `anonymized_contacts.txt`, `deduplicated_contacts.txt`, `contact_surnames.txt`, `suggested_first_names.txt`).
+2. **`output_contacts/discovered_email_contacts.txt`** *(généré automatiquement)* : alimenté depuis les en-têtes de courriels et `audits/all_found_emails.txt`.
 3. **`output_contacts/discovered_chat_contacts.txt`** *(généré automatiquement)* : alimenté à partir des participants détectés dans les messageries instantanées.
 4. **`output_contacts/manual_contacts.txt`** *(géré par vous, jamais écrasé)* : créé automatiquement au premier lancement. Ajoutez-y vos règles personnalisées au format `Prénom Nom = Alias` (ou `Prénom Nom = ` pour utiliser `--complete-manual`), vos variantes OCR collées (`DUPONTCAMILLE = Camille D.`) ainsi que les dates sensibles (`14/07/1985 = [DATE_MASQUEE]`).
 
@@ -33,6 +33,10 @@ Le pipeline s'appuie sur **quatre fichiers de règles complémentaires** au form
 ## 3. Exécution des pipelines depuis la racine
 
 ```bash
+# Interface graphique complète (recommandée)
+python gui_anonymizer.py
+
+# Ou en ligne de commande :
 # Étape A : Générer l'index unifié des contacts (Identifiant_Brut = Alias)
 python run_contacts.py
 
@@ -42,9 +46,12 @@ python run_documents.py
 # Étape C : Exécuter uniquement l'anonymisation complète depuis extracted_texts/
 python run_documents.py --anonymize-only
 python run_documents.py --anonymize-only --reset-results
+
+# Étape D : Extraction nominative seule (OCR + Audio forcés, sans anonymisation)
+python run_documents.py --extract-only
 ```
 
-* Les transcriptions brutes sont enregistrées dans `extracted_texts/AAAA-MM/<Catégorie>/` (suivies par `.extraction_state.txt` et `.sms_state.txt`).
+* Les transcriptions brutes sont enregistrées dans `extracted_texts/AAAA-MM/<Catégorie>/` (suivies par `.extraction_state.txt`, `.sms_state.txt` et `.email_state.txt`).
 * Les lots anonymisés sont écrits dans `anonymized_results/batch_XX/anonymized_part_XXX.txt` (suivies par `.anonymization_state.json`).
 
 ---
@@ -57,6 +64,7 @@ python run_documents.py --anonymize-only --reset-results
 * **`audits/residual_names_copy.txt`** *(rapport épuré)* : contient uniquement les lignes au format `Prénom Nom = ` prêtes à coller dans `output_contacts/manual_contacts.txt`.
 * **`audits/source_files_mapping.json`** *(dictionnaire de traçabilité)* : relie chaque chemin anonymisé (`# SOURCE TRANSCRIPTION : ...`) au fichier extrait brut (`extracted_file` dans `extracted_texts/`), au fichier source initial (`original_source_file` dans `input_documents/`) et au lot final (`batch_file`).
 * **`audits/extraction_report.txt`** : liste les éventuels fichiers illisibles ou archives `.zip` ignorées lors de l'extraction.
+* **`audits/all_found_emails.txt` et `audits/all_sms_numbers.txt`** : recensent respectivement les adresses e-mail et numéros de téléphone détectés lors de l'extraction.
 
 ---
 
