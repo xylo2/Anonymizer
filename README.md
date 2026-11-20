@@ -1,87 +1,95 @@
-# Extraction et anonymisation locale de contacts et documents
+# Anonymiseur Local de Documents Confidentiels
 
-Suite d'outils Python **100 % locale** permettant d'extraire, structurer et anonymiser des carnets d'adresses (Google Contacts / Outlook CSV) ainsi que des corpus documentaires hétérogènes (PDF natifs/OCR, bureautique, e-mails, SMS/MMS, messageries instantanées, audio, images, agendas).
+Outil **100 % local et hors-ligne** (Windows & Linux) permettant d'extraire, de classer chronologiquement (`AAAA-MM`) et d'anonymiser des dossiers documentaires volumineux et hétérogènes (santé, affaires familiales, démarches prud'homales, litiges administratifs) avant toute analyse ou partage sécurisé.
 
-> **Documentation :** [Guide d'utilisation](docs/GUIDE_UTILISATION.md) | [Architecture technique](docs/ARCHITECTURE.md) | **Guides d'export :** [Contacts & E-mails](docs/exports/CONTACTS_ET_EMAILS.md) • [Google Chat & Teams](docs/exports/MESSAGERIES_PRO.md) • [WhatsApp, Messenger & Signal](docs/exports/MESSAGERIES_PERSO.md)
+Aucun document, contact ou enregistrement audio n'est envoyé sur Internet.
+
+---
+
+## Points forts
+
+* **Multi-formats natif** : PDF natifs et scannés (OCR Tesseract), documents Word/LibreOffice (`.docx`, `.odt`), tableaux (`.xlsx`, `.ods`, `.csv`), e-mails (`.mbox`, `.eml`), SMS/MMS Android (`SMS Backup & Restore` `.xml`), messageries instantanées (Google Chat, WhatsApp, Facebook/Instagram, Microsoft Teams `.json` / `.vtt`), pages Web/HTML et fichiers audio/vidéo (transcription locale via `faster-whisper`).
+* **Anonymisation cohérente et intelligente** :
+  * Abréviation stable des personnes (`Prénom N.`) avec gestion automatique des homonymes (`Jean D.`, `Jean Du.`, `Jean Du-2`).
+  * Extraction automatique des noms de famille depuis `contacts.txt`, détection des formes collées OCR (`PrénomNom` / `NomPrénom`), des titres médicaux/civils (`Dr`, `Docteur`, `Mme`, `Me`), des initiales (`I. NOM`) et des noms composés.
+  * Masquage des adresses e-mail (`Contact_Mail_001` / `EMAIL_001`), numéros de téléphone (`Contact_Tel_001` / `TEL_001`, y compris dictés à l'oral), numéros de Sécurité sociale (NIR), IBAN/BIC, références fiscales/CAF/CNI, plaques d'immatriculation, zones MRZ, adresses postales, communes et dates de naissance.
+* **Double mode d'utilisation (Windows & Linux)** :
+  * **Interface graphique simple** (`gui_anonymizer.py`) : création de dossiers isolés par affaire/salarié/enfant, dépôt des documents, barre de progression et validation visuelle des noms restants en 1 clic.
+  * **Ligne de commande** (`run_documents.py`, `run_contacts.py`) : traitement automatisable et options avancées (`--anonymize-only`, `--reset-results`, `--config`).
+* **Audit intégré** : génère automatiquement la liste des noms potentiels résiduels (`audits/residual_names_copy.txt`) prêts à être approuvés ou ignorés.
+
+---
+
+## Prérequis système (Windows & Linux)
+
+### 1. Python 3.10+ et bibliothèques Python
+```bash
+pip install pypdf pdf2image pytesseract pillow python-docx odfpy openpyxl faster-whisper
+```
+*(Sous Linux Debian/Ubuntu, installez également `python3-tk` si `tkinter` n'est pas préinstallé : `sudo apt install python3-tk`.)*
+
+### 2. Outils système externes (pour PDF scannés et audio)
+* **Tesseract OCR** (langue française `fra`) + **Poppler** (`pdftoppm`) pour les PDF images/scannés.
+* **FFmpeg** pour la conversion et transcription des fichiers audio/vidéo.
 
 ---
 
 ## Démarrage rapide
 
-### 1. Installation
+### Option A — Interface graphique (recommandé)
+* **Sous Windows** : double-cliquez sur **`Lancer_Anonymiseur.bat`** (ou lancez `python gui_anonymizer.py`).
+* **Sous Linux / macOS** : lancez **`./lancer_anonymiseur.sh`** ou **`python3 gui_anonymizer.py`**.
 
+L'interface s'organise en **3 onglets** :
+1. **Dossier & Documents** : sélectionnez le dossier principal ou créez un dossier isolé (ex. `Dossier_Salarie_A`, `Suivi_Medical`), ouvrez `input_documents/` pour y déposer vos fichiers et importez éventuellement un export `.csv` de contacts.
+2. **Extraction & Anonymisation** : lancez le traitement complet ou une ré-anonymisation rapide.
+3. **Vérification des noms restants** : validez en 1 clic les noms résiduels détectés par l'audit (*Masquer ce nom* ou *Ignorer ce mot*), puis cliquez sur *Appliquer les corrections*.
+
+### Option B — Ligne de commande (Windows & Linux)
 ```bash
-python -m venv .venv
-.venv\Scripts\Activate.ps1   # Windows PowerShell
-# source .venv/bin/activate  # Linux / macOS
-pip install -r requirements.txt
-```
-
-### 2. Préparation des exports sources
-
-Déposez vos fichiers CSV dans **`input_contacts/`** et vos autres documents/dossiers décompressés dans **`input_documents/`** en suivant les guides pas-à-pas dédiés :
-
-* **[Export Contacts, Courriels & SMS](docs/exports/CONTACTS_ET_EMAILS.md)** : Google Contacts, Microsoft Outlook/365, Gmail (`.mbox`), `.eml` et SMS/MMS Android (`.xml`).
-* **[Export Messageries Professionnelles](docs/exports/MESSAGERIES_PRO.md)** : Google Chat (`messages.json`) et Microsoft Teams (`messages.json` & transcriptions `.vtt`).
-* **[Export Messageries Personnelles](docs/exports/MESSAGERIES_PERSO.md)** : WhatsApp (archive `.zip` **dézippée manuellement** ou `.txt`), Messenger (`.json` / `.html`) et Signal (`.json`).
-
-### 3. Exécution des pipelines
-
-```bash
-# Étape 1 : Générer output_contacts/contacts.txt au format unifié Identifiant_Brut = Alias
+# 1. Extraire et anonymiser un carnet d'adresses CSV (Google Contacts / Outlook)
 python run_contacts.py
 
-# Étape 2 : Extraire input_documents/ et produire les lots anonymisés dans anonymized_results/
+# 2. Extraire tous les documents sources et produire les lots anonymisés
 python run_documents.py
 
-# Variante : Lancer uniquement l'anonymisation complète depuis extracted_texts/ (sans extraction)
-python run_documents.py --anonymize-only
+# 3. Ré-anonymiser uniquement (rapide, après ajout de règles dans manual_contacts.txt)
 python run_documents.py --anonymize-only --reset-results
+
+# 4. Cibler un dossier isolé spécifique
+python run_documents.py --config dossiers/Mon_Dossier/config.ini
 ```
 
-### 4. Boucle d'audit, règles manuelles et récupération des bruts
+---
+
+## Structure du projet
+
+```text
+├── gui_anonymizer.py              # Interface graphique Tkinter (Windows & Linux)
+├── Lancer_Anonymiseur.bat         # Lanceur double-clic Windows
+├── lancer_anonymiseur.sh          # Lanceur shell Linux / macOS
+├── run_documents.py               # Point d'entrée CLI du pipeline documentaire
+├── run_contacts.py                # Point d'entrée CLI du pipeline contacts CSV
+├── config.ini                     # Configuration principale
+├── GUIDE_UTILISATION.md           # Guide pas-à-pas grand public (parents, syndicats)
+├── data/                          # Dictionnaires partagés (prénoms, villes, exclusions)
+├── input_documents/               # Documents bruts à traiter
+├── input_contacts/                # Exports CSV de contacts bruts
+├── output_contacts/               # Règles générées (contacts.txt, manual_contacts.txt...)
+├── extracted_texts/               # Transcriptions brutes classées par mois (AAAA-MM)
+├── anonymized_results/            # Lots finaux anonymisés (batch_XX/anonymized_part_XXX.txt)
+├── audits/                        # Rapports de vérification des noms résiduels
+├── dossiers/                      # Espaces isolés créés depuis l'interface graphique
+├── doc_anonymizer/                # Modules du moteur documentaire et de l'interface
+├── contacts_anonymizer/           # Modules de traitement des contacts CSV
+└── tests/                         # Suite de tests unitaires et d'intégration
+```
+
+---
+
+## Exécution des tests
 
 ```bash
-# Compléter automatiquement les lignes 'Prénom Nom = ' ajoutées dans output_contacts/manual_contacts.txt
-python run_documents.py --complete-manual
-
-# Réappliquer uniquement output_contacts/manual_contacts.txt sur les lots existants
-python run_documents.py --manual-only
-
-# Copier les transcriptions brutes (.txt) correspondant à une liste de fichiers anonymisés
-python run_documents.py --copy-unmasked liste_fichiers_a_revoir.md --unmasked-dir transcriptions_a_revoir
-```
-
-## Format unifié des règles (`Identifiant_Brut = Alias`)
-
-Tous les fichiers de correspondance dans **`output_contacts/`** utilisent désormais le même sens de lecture (`Donnée_Sensible_À_Masquer = Valeur_De_Remplacement`) :
-
-* **`output_contacts/contacts.txt`** (généré par `run_contacts.py`) :
-  ```ini
-  camille.dupont@exemple.fr=Camille D.
-  06 12 34 56 78=Camille D.
-  ```
-* **`output_contacts/discovered_email_contacts.txt`** & **`discovered_chat_contacts.txt`** : enrichis automatiquement depuis les en-têtes `.mbox`/`.eml` et les historiques de chats.
-* **`output_contacts/manual_contacts.txt`** (géré manuellement, jamais écrasé) : règles d'exceptions, variantes OCR collées (`DUPONTCAMILLE = Camille D.`) et dates de naissance sensibles (`14/07/1985 = [DATE_MASQUEE]`).
-
-## Organisation des dossiers
-
-* **`input_contacts/`** : dépôt des fichiers CSV Google Contacts / Outlook.
-* **`input_documents/`** : dépôt des documents et dossiers décompressés à traiter.
-* **`extracted_texts/`** : transcriptions brutes extraites, classées par mois (`AAAA-MM/<Catégorie>/`), avec les fichiers de suivi `.extraction_state.txt`, `.sms_state.txt` et `.email_state.txt`.
-* **`anonymized_results/`** : lots finaux anonymisés (`batch_XX/anonymized_part_XXX.txt`) et état de reprise `.anonymization_state.json`.
-* **`data/`** : référentiels lexicaux (`prenoms.txt`, `villes_masquees.txt`, `collisions_noms.txt`, `mots_exclus.txt`).
-* **`output_contacts/`** : annuaire unifié (`contacts.txt`), règles manuelles (`manual_contacts.txt`), contacts découverts et fichiers intermédiaires (`.intermediates/`).
-* **`audits/`** : rapports d'audit (`residual_names_audit.txt`, `residual_names_copy.txt`), table de correspondance JSON (`source_files_mapping.json`), rapport d'erreurs d'extraction (`extraction_report.txt`) et listes d'identifiants.
-* **`docs/`** & **`tools/`** : documentation complète et utilitaires CLI (`copy_unmasked_transcriptions.py`, `complete_manual_contacts.py`, `restore_transcription_names.py`, `sync_contacts.py`, `generate_pdf_guide.py`).
-
-## Documentation et tests
-
-* **Guides complets** : [`docs/GUIDE_UTILISATION.md`](docs/GUIDE_UTILISATION.md) et [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — génération des versions PDF paginées :
-  ```bash
-  python tools/generate_pdf_guide.py docs/GUIDE_UTILISATION.md -o docs/GUIDE_UTILISATION.pdf
-  python tools/generate_pdf_guide.py docs/ARCHITECTURE.md -o docs/ARCHITECTURE.pdf
-  ```
-* **Tests unitaires et couverture de code** :
-  ```bash
-  python tests/run_all_tests.py
+python tests/run_all_tests.py
+# Ou avec résumé compact copié automatiquement dans le presse-papiers :
+python tools/run_tests_clip.py
