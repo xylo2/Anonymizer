@@ -136,12 +136,12 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
         for child in self.nav_container.winfo_children():
             child.destroy()
         self.nav_buttons.clear()
-        if self.active_page_key in {"gate", "mode"} or not self.current_ini_var.get():
+        if self.active_page_key == "gate" or not self.current_ini_var.get():
             return
         nav_items = (
-            [("setup", "1. Préparer mon dossier"), ("run", "2. Extraire & Classer"), ("export", "3. Pack Avocat Nominatif")]
+            [("setup", "1. Préparer mon dossier"), ("mode", "2. Choisir l'objectif"), ("run", "3. Extraire & Classer"), ("export", "4. Pack Avocat Nominatif")]
             if self.workflow_mode == "lawyer"
-            else [("setup", "1. Préparer mon dossier"), ("run", "2. Analyser & Anonymiser"), ("audit", "3. Vérifier les noms"), ("export", "4. Récupérer & Requêtes IA")]
+            else [("setup", "1. Préparer mon dossier"), ("mode", "2. Choisir l'objectif"), ("run", "3. Analyser & Anonymiser"), ("audit", "4. Vérifier les noms"), ("export", "5. Récupérer & Requêtes IA")]
         )
         for key, label in nav_items:
             btn = tk.Button(
@@ -156,11 +156,11 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
             key = "gate"
         titles = {
             "gate": "Vigilance Humaine, Licence (GNU GPL v3) & Choix du Dossier",
-            "mode": "Choisir votre objectif : Pré-analyse IA ou Dossier Avocat",
             "setup": "Étape 1 — Préparer mon dossier et déposer mes pièces",
-            "run": "Étape 2 — Extraction et traitement des documents",
-            "audit": "Étape 3 — Vérifier les noms restants (Avant / Après)",
-            "export": "Étape 3 — Générer le Pack Avocat Nominatif" if self.workflow_mode == "lawyer" else "Étape 4 — Récupérer les fichiers anonymisés & Requêtes IA",
+            "mode": "Étape 2 — Choisir votre objectif : Pré-analyse IA ou Dossier Avocat",
+            "run": "Étape 3 — Extraction et traitement des documents",
+            "audit": "Étape 4 — Vérifier les noms restants (Avant / Après)",
+            "export": "Étape 4 — Générer le Pack Avocat Nominatif" if self.workflow_mode == "lawyer" else "Étape 5 — Récupérer les fichiers anonymisés & Requêtes IA",
         }
         self.active_page_key = key
         self._rebuild_sidebar_nav()
@@ -190,7 +190,7 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
             self.mode_badge_var.set("Mode : IA (Anonymisé)")
             self.btn_switch_mode.configure(bg="#dcfce7", fg="#166534")
         if navigate:
-            self._show_page("setup")
+            self._show_page("run")
 
     def _quit_politely(self) -> None:
         messagebox.showinfo("Fermeture de l'application", "Merci de votre visite.\n\nAucun fichier n'a été lu ni modifié. L'application va maintenant se fermer.")
@@ -222,7 +222,7 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
                 return
             _, selected_ini = self.workspaces[idx]
             self._refresh_workspaces(select_ini=selected_ini)
-            self._show_page("mode")
+            self._show_page("setup")
             return
         raw_name: str = self.gate_new_name_var.get().strip()
         if not raw_name:
@@ -232,12 +232,12 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
             ini_path: str = self.controller.create_workspace(raw_name)
             self.gate_new_name_var.set("")
             self._refresh_workspaces(select_ini=ini_path)
-            self._show_page("mode")
+            self._show_page("setup")
         except (ValueError, OSError) as exc:
             messagebox.showerror("Erreur", str(exc))
 
     def _update_setup_mode_visibility(self) -> None:
-        self.card_csv.pack_forget() if self.workflow_mode == "lawyer" else self.card_csv.pack(fill="x", pady=(0, 10))
+        self.card_csv.pack(fill="x", pady=(0, 10))
         self._refresh_workspace_counters()
 
     def _update_export_mode_visibility(self) -> None:
@@ -389,7 +389,10 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
         st: str = "normal" if enabled else "disabled"
         self.btn_main_run.configure(state=st)
         self.btn_fast_reanon.configure(state=st)
-        self.btn_stop.configure(state="disabled" if enabled else "normal")
+        if enabled:
+            self.btn_stop.configure(state="disabled", bg=UI_COLORS["secondary"], fg="#64748b")
+        else:
+            self.btn_stop.configure(state="normal", bg="#dc2626", fg="#ffffff")
 
     def _stop_current_job(self) -> None:
         if self.current_proc is not None and self.current_proc.poll() is None:

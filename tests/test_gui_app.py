@@ -18,7 +18,7 @@ import gui_anonymizer
 
 
 class TestAnonymizerGuiApp(unittest.TestCase):
-    """Tests d'interface graphique couvrant le découpage modulaire et les 2 modes."""
+    """Tests d'interface graphique couvrant le parcours Accueil -> Étape 1 -> Choix Mode -> Traitement."""
 
     def setUp(self) -> None:
         self.tmp_root: str = tempfile.mkdtemp(prefix="test_gui_app_")
@@ -47,18 +47,25 @@ class TestAnonymizerGuiApp(unittest.TestCase):
         gui_anonymizer.ROOT_DIR = self._orig_root
         shutil.rmtree(self.tmp_root, ignore_errors=True)
 
-    def test_startup_gate_requires_workspace_creation_or_selection(self) -> None:
-        """Vérifie l'obligation de créer ou ouvrir un dossier dès le démarrage."""
+    def test_startup_gate_then_step1_then_mode_choice(self) -> None:
+        """Vérifie que l'accueil mène à l'étape 1 (préparation), puis au choix du mode IA/Avocat."""
         self.assertEqual(self.app.active_page_key, "gate")
         self.assertEqual(self.app.current_ini_var.get(), "")
 
-        self.app._show_page("mode")
+        self.app._show_page("setup")
         self.assertEqual(self.app.active_page_key, "gate")
 
         self.app.gate_new_name_var.set("Dossier_Initial")
         self.app._confirm_gate_and_workspace()
-        self.assertEqual(self.app.active_page_key, "mode")
+        self.assertEqual(self.app.active_page_key, "setup")
         self.assertTrue(os.path.isfile(self.app.current_ini_var.get()))
+
+        self.app._show_page("mode")
+        self.assertEqual(self.app.active_page_key, "mode")
+
+        self.app._set_workflow_mode("lawyer", navigate=True)
+        self.assertEqual(self.app.active_page_key, "run")
+        self.assertEqual(list(self.app.nav_buttons.keys()), ["setup", "mode", "run", "export"])
     def test_zip_warning_audit_preview_dialog_and_prompts(self) -> None:
         """Vérifie l'alerte ZIP, l'aperçu Avant/Après dédié, le guide d'export et les requêtes IA."""
         self.app.gate_new_name_var.set("Dossier_Enfant")
@@ -106,15 +113,25 @@ class TestAnonymizerGuiApp(unittest.TestCase):
         self.app._show_page("export")
         self.assertIn("droit médico-social", self.app.txt_prompt_preview.get("1.0", "end"))
 
-    def test_stop_button_terminates_active_process(self) -> None:
-        """Vérifie que le bouton Arrêter interrompt proprement le processus enfant."""
+    def test_stop_button_contrast_and_process_termination(self) -> None:
+        """Vérifie la lisibilité du bouton Arrêter (inactif vs actif) et l'arrêt du processus."""
+        self.assertEqual(str(self.app.btn_stop["state"]), "disabled")
+        self.assertEqual(str(self.app.btn_stop["fg"]), "#64748b")
+
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
         self.app.current_proc = mock_proc
         self.app._set_buttons_state(False)
         self.assertEqual(str(self.app.btn_stop["state"]), "normal")
+        self.assertEqual(str(self.app.btn_stop["bg"]), "#dc2626")
+        self.assertEqual(str(self.app.btn_stop["fg"]), "#ffffff")
+
         self.app._stop_current_job()
         mock_proc.terminate.assert_called_once()
+
+        self.app._set_buttons_state(True)
+        self.assertEqual(str(self.app.btn_stop["state"]), "disabled")
+        self.assertEqual(str(self.app.btn_stop["fg"]), "#64748b")
 
 
 if __name__ == "__main__":

@@ -104,10 +104,10 @@ class GuiPagesMixin:
         parent = self.pages["mode"]
         make_card(
             parent,
-            title="Quel est votre besoin aujourd'hui ?",
+            title="Étape 2 — Quel est votre objectif pour ce dossier ?",
             subtitle=(
-                "Choisissez votre parcours selon le destinataire de vos documents. "
-                "Vous pourrez basculer d'un mode à l'autre à tout moment depuis la barre du haut."
+                "Vos pièces sont prêtes. Choisissez maintenant le traitement selon le destinataire de vos documents "
+                "(vous pourrez changer de mode à tout moment depuis la barre du haut)."
             ),
         )
         cols = tk.Frame(parent, bg=UI_COLORS["bg"])
@@ -226,7 +226,7 @@ class GuiPagesMixin:
 
         self.card_csv = make_card(
             parent,
-            title="1C — Ajouter vos carnets de contacts (.csv) & Aide exports",
+            title="1C — Ajouter vos carnets de contacts (.csv) [Optionnel — utile pour le Mode IA]",
             subtitle="Importez vos exports Google Contacts ou Outlook (.csv) pour masquer immédiatement proches, collègues et médecins.",
         )
         row_csv = tk.Frame(self.card_csv, bg=UI_COLORS["card"])
@@ -247,8 +247,8 @@ class GuiPagesMixin:
         nav_next.pack(fill="x", pady=(4, 0))
         make_styled_button(
             nav_next,
-            text="Passer à l'étape 2 : Lancer l'analyse ->",
-            command=lambda: self._show_page("run"),  # type: ignore[attr-defined]
+            text="Étape suivante : Choisir l'objectif (IA ou Avocat) ->",
+            command=lambda: self._show_page("mode"),  # type: ignore[attr-defined]
             variant="primary",
         ).pack(side="right")
     def _build_page_run(self) -> None:
@@ -278,7 +278,7 @@ class GuiPagesMixin:
         self.btn_fast_reanon.pack(side="left", padx=(0, 8))
 
         self.btn_stop = make_styled_button(row_btn, text="Arrêter", command=self._stop_current_job, variant="danger")  # type: ignore[attr-defined]
-        self.btn_stop.configure(state="disabled")
+        self.btn_stop.configure(state="disabled", bg=UI_COLORS["secondary"], fg="#64748b")
         self.btn_stop.pack(side="right")
 
         self.progress = ttk.Progressbar(card_ctrl, mode="indeterminate")

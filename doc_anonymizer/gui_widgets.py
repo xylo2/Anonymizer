@@ -119,6 +119,7 @@ def make_styled_button(
         command=command,  # type: ignore[arg-type]
         bg=bg,
         fg=fg,
+        disabledforeground="#64748b",
         activebackground=hover_bg,
         activeforeground=fg,
         relief="flat",
