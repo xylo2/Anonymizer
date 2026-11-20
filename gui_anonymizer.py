@@ -656,22 +656,30 @@ class AnonymizerGuiApp(tk.Tk):
 
         card_out = self._make_card(
             parent,
-            title="Étape 1C — Récupérer vos fichiers anonymisés (une fois le traitement terminé)",
+            title="Étape 1C — Récupérer vos fichiers anonymisés (pour IA ou pour un avocat)",
         )
         btn_row2 = tk.Frame(card_out, bg=self.COLORS["card"])
         btn_row2.pack(fill="x", pady=(6, 0))
 
         self._make_button(
             btn_row2,
-            text="Ouvrir les résultats anonymisés",
+            text="Résultats .txt (pour IA)",
             command=lambda: self._open_workspace_folder("results_dir"),
             variant="secondary",
-            tooltip="Ouvre le dossier 'anonymized_results' contenant les fichiers texte nettoyés et classés par mois.",
+            tooltip="Ouvre le dossier 'anonymized_results' contenant les lots .txt optimisés pour une IA.",
         ).pack(side="left", padx=(0, 8))
 
         self._make_button(
             btn_row2,
-            text="Voir mes règles manuelles",
+            text="Pack Avocat (.docx + Bordereau + ZIP)",
+            command=self._export_lawyer_pack,
+            variant="success",
+            tooltip="Génère un recueil chronologique Word (.docx), un bordereau CSV de pièces numérotées et une archive ZIP prêts à transmettre à un avocat.",
+        ).pack(side="left", padx=(0, 8))
+
+        self._make_button(
+            btn_row2,
+            text="Règles manuelles",
             command=lambda: self._open_workspace_file("manual_contacts_file"),
             variant="secondary",
             tooltip="Ouvre le fichier 'manual_contacts.txt' contenant les règles spécifiques à ce dossier.",
@@ -679,7 +687,7 @@ class AnonymizerGuiApp(tk.Tk):
 
         self._make_button(
             btn_row2,
-            text="Étape 2 : Lancer l'anonymisation ->",
+            text="Étape 2 : Lancer ->",
             command=lambda: self._show_page("run"),
             variant="primary",
             tooltip="Passe à l'étape 2 pour démarrer l'extraction et l'anonymisation.",
@@ -955,6 +963,37 @@ class AnonymizerGuiApp(tk.Tk):
         ini_path: str = self.current_ini_var.get()
         if ini_path:
             self._open_path_in_os(self.controller.resolve_workspace_paths(ini_path)[key])
+
+    def _export_lawyer_pack(self) -> None:
+        """Génère le recueil Word + Bordereau CSV + ZIP et ouvre le dossier généré."""
+        ini_path: str = self.current_ini_var.get()
+        if not ini_path:
+            return
+        paths = self.controller.resolve_workspace_paths(ini_path)
+        res_dir: str = paths["results_dir"]
+        if not os.path.isdir(res_dir) or not any(
+            fn.lower().endswith(".txt") for _, _, files in os.walk(res_dir) for fn in files
+        ):
+            messagebox.showinfo(
+                "Aucun résultat à exporter",
+                "Lancez d'abord l'anonymisation (Étape 2) avant de générer le Pack Avocat.",
+            )
+            return
+        from doc_anonymizer.dossier_exporter import LawyerDossierExporter
+
+        ws_dir: str = os.path.dirname(os.path.abspath(ini_path))
+        export_dir: str = os.path.join(ws_dir, "pack_avocat")
+        count, out_folder = LawyerDossierExporter(res_dir, export_dir).export_lawyer_pack()
+        self.status_var.set(f"Pack Avocat généré ({count} pièce(s)) : {out_folder}")
+        messagebox.showinfo(
+            "Pack Avocat prêt",
+            f"{count} pièce(s) numérotée(s) et classée(s) chronologiquement !\n\n"
+            f"Fichiers créés dans :\n{out_folder}\n"
+            f"• Recueil_Chronologique_Avocat.docx\n"
+            f"• Bordereau_des_Pieces.csv\n"
+            f"• Pack_Avocat_Complet.zip",
+        )
+        self._open_path_in_os(out_folder)
 
     def _refresh_workspace_counters(self) -> None:
         ini_path: str = self.current_ini_var.get()
