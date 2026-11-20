@@ -36,9 +36,7 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
         self.mode_badge_var: tk.StringVar = tk.StringVar(value="Objectif : IA (Anonymisé)")
         self.workspace_choice_var: tk.StringVar = tk.StringVar()
         self.new_ws_name_var: tk.StringVar = tk.StringVar()
-        self.status_var: tk.StringVar = tk.StringVar(
-            value="Prêt — Survolez un bouton pour afficher son aide."
-        )
+        self.status_var: tk.StringVar = tk.StringVar(value="Prêt — Survolez un bouton pour afficher son aide.")
         self.is_running: bool = False
         self.current_proc: Optional[subprocess.Popen] = None
         self.pages: Dict[str, tk.Frame] = {}
@@ -50,7 +48,7 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
         self._build_layout()
         self._refresh_workspaces()
         if skip_startup_gate and self.workspaces:
-            _, first_ini = self.workspaces
+            _, first_ini = next(iter(self.workspaces))
             self._refresh_workspaces(select_ini=first_ini)
             self._set_workflow_mode("ia", navigate=True)
         else:
@@ -70,16 +68,7 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
         self.nav_container = tk.Frame(self.sidebar, bg=UI_COLORS["sidebar"])
         self.nav_container.pack(fill="x")
 
-        tk.Label(
-            self.sidebar,
-            text="100 % LOCAL & HORS-LIGNE\nVos fichiers restent sur ce PC",
-            bg="#1e293b",
-            fg="#86efac",
-            font=("Segoe UI", 8),
-            justify="left",
-            padx=12,
-            pady=10,
-        ).pack(side="bottom", fill="x", padx=12, pady=14)
+        tk.Label(self.sidebar, text="100 % LOCAL & HORS-LIGNE\nVos fichiers restent sur ce PC", bg="#1e293b", fg="#86efac", font=("Segoe UI", 8), justify="left", padx=12, pady=10).pack(side="bottom", fill="x", padx=12, pady=14)
         main_area = tk.Frame(shell, bg=UI_COLORS["bg"])
         main_area.pack(side="left", fill="both", expand=True)
 
@@ -90,27 +79,9 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
         self.page_heading_var = tk.StringVar(value="Engagement de relecture & Licence")
         tk.Label(top_bar, textvariable=self.page_heading_var, bg="#ffffff", fg=UI_COLORS["text"], font=("Segoe UI", 11, "bold")).pack(side="left", padx=18)
 
-        make_styled_button(
-            top_bar,
-            text="Aide & Exports ?",
-            command=self._show_export_guide_popup,
-            variant="secondary",
-            tooltip="Affiche comment exporter vos fichiers (Agenda .ics, CSV, SMS, WhatsApp, Teams, Messenger, Gmail).",
-        ).pack(side="right", padx=(6, 16))
+        make_styled_button(top_bar, text="Aide & Exports ?", command=self._show_export_guide_popup, variant="secondary", tooltip="Affiche comment exporter vos fichiers.").pack(side="right", padx=(6, 16))
 
-        self.btn_switch_mode = tk.Button(
-            top_bar,
-            textvariable=self.mode_badge_var,
-            command=lambda: self._show_page("mode"),
-            bg="#fef3c7",
-            fg="#92400e",
-            relief="flat",
-            bd=0,
-            padx=10,
-            pady=4,
-            cursor="hand2",
-            font=("Segoe UI", 8, "bold"),
-        )
+        self.btn_switch_mode = tk.Button(top_bar, textvariable=self.mode_badge_var, command=lambda: self._show_page("mode"), bg="#fef3c7", fg="#92400e", relief="flat", bd=0, padx=10, pady=4, cursor="hand2", font=("Segoe UI", 8, "bold"))
         self.btn_switch_mode.pack(side="right", padx=6)
 
         tk.Label(top_bar, textvariable=self.active_ws_badge_var, bg="#e0f2fe", fg="#0369a1", font=("Segoe UI", 8, "bold"), padx=10, pady=4).pack(side="right", padx=6)
@@ -144,13 +115,10 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
             else [("setup", "1. Préparer mon dossier"), ("mode", "2. Choisir l'objectif"), ("run", "3. Analyser & Anonymiser"), ("audit", "4. Vérifier les noms"), ("export", "5. Récupérer & Requêtes IA")]
         )
         for key, label in nav_items:
-            btn = tk.Button(
-                self.nav_container, text=f"  {label}", anchor="w", bg=UI_COLORS["sidebar"], fg="#e2e8f0",
-                activebackground=UI_COLORS["sidebar_hover"], activeforeground="#ffffff", relief="flat", bd=0,
-                padx=14, pady=11, cursor="hand2", font=("Segoe UI", 9, "bold"), command=lambda k=key: self._show_page(k),
-            )
+            btn = tk.Button(self.nav_container, text=f"  {label}", anchor="w", bg=UI_COLORS["sidebar"], fg="#e2e8f0", activebackground=UI_COLORS["sidebar_hover"], activeforeground="#ffffff", relief="flat", bd=0, padx=14, pady=11, cursor="hand2", font=("Segoe UI", 9, "bold"), command=lambda k=key: self._show_page(k))
             btn.pack(fill="x", padx=10, pady=3)
             self.nav_buttons[key] = btn
+
     def _show_page(self, key: str) -> None:
         if key != "gate" and not self.current_ini_var.get():
             key = "gate"
@@ -177,7 +145,6 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
             self._refresh_dashboard_cards()
         elif key == "export":
             self._update_export_mode_visibility()
-
     def _set_workflow_mode(self, mode: str, navigate: bool = True) -> None:
         if not self.current_ini_var.get():
             self._show_page("gate")
@@ -258,7 +225,8 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
             self.clipboard_clear()
             self.clipboard_append(txt)
             self.status_var.set("Requête IA copiée dans le presse-papiers !")
-            messagebox.showinfo("Copié", "La requête IA a été copiée. Collez-la dans votre assistant IA avec vos fichiers anonymisés.")
+            messagebox.showinfo("Copié", "La requête IA a été copiée.")
+
     def _toggle_log_panel(self) -> None:
         self.log_visible = not self.log_visible
         self.log_text.pack(fill="both", expand=True) if self.log_visible else self.log_text.pack_forget()
@@ -268,7 +236,6 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
         self.log_text.insert("end", line + "\n")
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
-
     def _refresh_dashboard_cards(self) -> None:
         if self.workflow_mode == "lawyer":
             self.btn_main_run.configure(text="Extraire et classer chronologiquement (OCR + Audio)")
@@ -289,7 +256,7 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
         self.stat_vars["locs"].set(str(st.get("lieux_dates_masques", 0)))
         zips: List[str] = st.get("zip_ignores") or self.controller.detect_zip_files(ini_path)
         if zips:
-            self.dash_zip_var.set(f"ATTENTION : {len(zips)} archive(s) .zip ignorée(s) par sécurité ({', '.join(os.path.basename(z) for z in zips[:4])}). Décompressez-les puis relancez.")
+            self.dash_zip_var.set(f"ATTENTION : {len(zips)} archive(s) .zip ignorée(s) par sécurité ({', '.join(os.path.basename(z) for z in zips[:4])}).")
             self.lbl_dash_zip.pack(fill="x", pady=(8, 0))
         else:
             self.lbl_dash_zip.pack_forget()
@@ -320,6 +287,7 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
         self._refresh_audit_list()
         self._refresh_workspace_counters()
         self._refresh_dashboard_cards()
+
     def _on_workspace_selected(self, _event: object = None) -> None:
         idx: int = self.combo_ws.current()
         if 0 <= idx < len(self.workspaces):
@@ -342,7 +310,6 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
             messagebox.showinfo("Dossier créé", "Votre nouvel espace est prêt !")
         except (ValueError, OSError) as exc:
             messagebox.showerror("Erreur", str(exc))
-
     def _open_path_in_os(self, target_path: str) -> None:
         if not os.path.exists(target_path):
             messagebox.showinfo("Information", f"Aucun fichier généré pour le moment :\n{target_path}")
@@ -367,7 +334,7 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
         self.docs_summary_var.set(f"Documents sources déposés dans ce dossier : {doc_count} fichier(s).")
         zips = self.controller.detect_zip_files(ini_path)
         if zips:
-            self.zip_warning_var.set(f"ATTENTION : {len(zips)} fichier(s) .zip détecté(s) ({', '.join(os.path.basename(z) for z in zips[:4])}). Décompressez-les d'abord.")
+            self.zip_warning_var.set(f"ATTENTION : {len(zips)} fichier(s) .zip détecté(s) ({', '.join(os.path.basename(z) for z in zips[:4])}).")
             self.lbl_zip_warning.pack(anchor="w", fill="x", pady=(8, 0))
         else:
             self.lbl_zip_warning.pack_forget()
@@ -384,15 +351,13 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
             for csv_file in csv_files:
                 self.controller.import_contacts_csv(ini_path, str(csv_file))
             self._refresh_workspace_counters()
-            self.status_var.set(f"{len(csv_files)} carnet(s) CSV ajouté(s) — prêts pour l'étape 2.")
+            self.status_var.set(f"{len(csv_files)} carnet(s) CSV ajouté(s).")
+
     def _set_buttons_state(self, enabled: bool) -> None:
         st: str = "normal" if enabled else "disabled"
         self.btn_main_run.configure(state=st)
         self.btn_fast_reanon.configure(state=st)
-        if enabled:
-            self.btn_stop.configure(state="disabled", bg=UI_COLORS["secondary"], fg="#64748b")
-        else:
-            self.btn_stop.configure(state="normal", bg="#dc2626", fg="#ffffff")
+        self.btn_stop.configure(state="disabled", bg=UI_COLORS["secondary"], fg="#64748b") if enabled else self.btn_stop.configure(state="normal", bg="#dc2626", fg="#ffffff")
 
     def _stop_current_job(self) -> None:
         if self.current_proc is not None and self.current_proc.poll() is None:
@@ -422,7 +387,6 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
             cmds.append(self.controller.build_cli_command(ini_path, "full"))
         else:
             cmds.append(self.controller.build_cli_command(ini_path, mode))
-
         def _worker() -> None:
             env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
             ret: int = 0
@@ -470,42 +434,46 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
             self.audit_tree.insert("", "end", values=(cand, alias))
         self.audit_count_var.set(f"{len(candidates)} élément(s) à vérifier dans ce dossier.")
 
-    def _on_audit_row_selected(self, _event: object = None) -> None:
-        sel = self.audit_tree.selection()
-        if sel:
-            vals = tuple(self.audit_tree.item(next(iter(sel)), "values"))
-            if len(vals) >= 2:
-                self.audit_alias_edit_var.set(str(vals))
-
-    def _open_before_after_preview(self) -> None:
+    def _get_selected_audit_pair(self) -> Optional[Tuple[str, str]]:
         sel = self.audit_tree.selection()
         if not sel:
-            messagebox.showinfo("Sélection requise", "Cliquez d'abord sur une ligne du tableau.")
-            return
+            return None
         vals = tuple(self.audit_tree.item(next(iter(sel)), "values"))
         if len(vals) >= 2:
-            cand_txt = str(vals).strip()
-            alias_txt = self.audit_alias_edit_var.get().strip() or str(vals).strip()
-            occs = self.controller.load_audit_occurrences(self.current_ini_var.get(), cand_txt)
-            BeforeAfterPreviewDialog(self, cand_txt, alias_txt, occs, on_approve=self._approve_selected_audit, on_exclude=self._exclude_selected_audit)
+            cand_txt, alias_txt = vals
+            return str(cand_txt).strip(), str(alias_txt).strip()
+        return None
+
+    def _on_audit_row_selected(self, _event: object = None) -> None:
+        pair = self._get_selected_audit_pair()
+        if pair is not None:
+            _, alias_txt = pair
+            self.audit_alias_edit_var.set(alias_txt)
+
+    def _open_before_after_preview(self) -> None:
+        pair = self._get_selected_audit_pair()
+        if pair is None:
+            messagebox.showinfo("Sélection requise", "Cliquez d'abord sur une ligne du tableau.")
+            return
+        cand_txt, default_alias = pair
+        alias_txt: str = self.audit_alias_edit_var.get().strip() or default_alias
+        occs = self.controller.load_audit_occurrences(self.current_ini_var.get(), cand_txt)
+        BeforeAfterPreviewDialog(self, cand_txt, alias_txt, occs, on_approve=self._approve_selected_audit, on_exclude=self._exclude_selected_audit)
 
     def _approve_selected_audit(self) -> None:
-        sel = self.audit_tree.selection()
-        if sel:
-            vals = tuple(self.audit_tree.item(next(iter(sel)), "values"))
-            if len(vals) >= 2:
-                cand_txt = str(vals).strip()
-                alias_txt = self.audit_alias_edit_var.get().strip() or str(vals).strip()
-                self.controller.approve_audit_mask(self.current_ini_var.get(), cand_txt, alias_txt)
-                self._refresh_audit_list()
+        pair = self._get_selected_audit_pair()
+        if pair is not None:
+            cand_txt, default_alias = pair
+            alias_txt: str = self.audit_alias_edit_var.get().strip() or default_alias
+            self.controller.approve_audit_mask(self.current_ini_var.get(), cand_txt, alias_txt)
+            self._refresh_audit_list()
 
     def _exclude_selected_audit(self) -> None:
-        sel = self.audit_tree.selection()
-        if sel:
-            vals = tuple(self.audit_tree.item(next(iter(sel)), "values"))
-            if vals:
-                self.controller.exclude_audit_false_positive(self.current_ini_var.get(), str(next(iter(vals))).strip())
-                self._refresh_audit_list()
+        pair = self._get_selected_audit_pair()
+        if pair is not None:
+            cand_txt, _ = pair
+            self.controller.exclude_audit_false_positive(self.current_ini_var.get(), cand_txt)
+            self._refresh_audit_list()
 
     def _apply_audit_and_go_export(self) -> None:
         self._start_job("anonymize_only", go_export_after=True)
@@ -523,14 +491,7 @@ class AnonymizerGuiApp(GuiPagesMixin, tk.Tk):
                 messagebox.showwarning("Aucune pièce reconnue", "Aucun chemin valide trouvé dans la liste collée.")
                 return
         from doc_anonymizer.dossier_exporter import LawyerDossierExporter
-        exporter = LawyerDossierExporter(
-            results_dir=paths["results_dir"],
-            export_dir=os.path.join(os.path.dirname(os.path.abspath(ini_path)), "pack_avocat"),
-            transcriptions_dir=paths["transcriptions_dir"],
-            sources_dir=paths["sources_dir"],
-            mapping_file=paths["mapping_file"],
-            selected_extracted_files=selected_set,
-        )
+        exporter = LawyerDossierExporter(results_dir=paths["results_dir"], export_dir=os.path.join(os.path.dirname(os.path.abspath(ini_path)), "pack_avocat"), transcriptions_dir=paths["transcriptions_dir"], sources_dir=paths["sources_dir"], mapping_file=paths["mapping_file"], selected_extracted_files=selected_set)
         count, out_folder = exporter.export_lawyer_pack()
         if count == 0:
             messagebox.showinfo("Aucune pièce extraite", "Lancez d'abord l'étape 2 avant de générer le Pack Avocat.")

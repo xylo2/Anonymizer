@@ -9,11 +9,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 class AnonymizerGuiController:
-    """
-    Contrôleur métier indépendant de l'interface graphique pour gérer les
-    dossiers isolés, l'audit Avant/Après, le tableau de bord et la passerelle
-    entre le mode IA (anonymisé) et le mode Avocat (nominatif).
-    """
+    """Contrôleur métier indépendant de l'interface graphique."""
 
     AI_PROMPT_TEMPLATES: List[Tuple[str, str]] = [
         (
@@ -74,10 +70,9 @@ class AnonymizerGuiController:
     @staticmethod
     def sanitize_workspace_name(raw_name: str) -> str:
         cleaned: str = re.sub(r"[^A-Za-zÀ-ÿ0-9_\-]+", "_", (raw_name or "").strip())
-        cleaned = re.sub(r"_+", "_", cleaned).strip("_")
-        return cleaned
+        return re.sub(r"_+", "_", cleaned).strip("_")
+
     def list_workspaces(self) -> List[Tuple[str, str]]:
-        """Retourne uniquement les espaces de travail isolés créés dans dossiers/."""
         found: List[Tuple[str, str]] = []
         if os.path.isdir(self.workspaces_dir):
             for entry in sorted(os.listdir(self.workspaces_dir)):
@@ -86,53 +81,30 @@ class AnonymizerGuiController:
                 if os.path.isdir(sub_dir) and os.path.isfile(sub_ini):
                     found.append((entry, sub_ini))
         return found
-
     def create_workspace(self, raw_name: str) -> str:
         safe_name: str = self.sanitize_workspace_name(raw_name)
         if not safe_name:
             raise ValueError("Le nom du dossier ne peut pas être vide.")
-
         ws_dir: str = os.path.join(self.workspaces_dir, safe_name)
-        for sub in (
-            "input_documents",
-            "input_contacts",
-            "output_contacts",
-            "extracted_texts",
-            "anonymized_results",
-            "audits",
-        ):
+        for sub in ("input_documents", "input_contacts", "output_contacts", "extracted_texts", "anonymized_results", "audits"):
             os.makedirs(os.path.join(ws_dir, sub), exist_ok=True)
-
         manual_file: str = os.path.join(ws_dir, "output_contacts", "manual_contacts.txt")
         if not os.path.exists(manual_file):
             with open(manual_file, "w", encoding="utf-8") as f_man:
                 f_man.write("# Règles manuelles spécifiques à ce dossier (Identifiant = Alias)\n")
-
-        shared_first_names: str = os.path.join(self.shared_data_dir, "prenoms.txt")
-        shared_excluded: str = os.path.join(self.shared_data_dir, "mots_exclus.txt")
-        shared_collisions: str = os.path.join(self.shared_data_dir, "collisions_noms.txt")
-        shared_cities: str = os.path.join(self.shared_data_dir, "villes.txt")
-
         ini_path: str = os.path.join(ws_dir, "config.ini")
         if not os.path.exists(ini_path):
             ini_content: str = (
-                "[paths]\n"
-                "root_dir = .\n"
-                "sources_dir = input_documents\n"
-                "transcriptions_dir = extracted_texts\n"
-                "results_dir = anonymized_results\n"
-                "input_contacts_dir = input_contacts\n"
-                "contacts_file = output_contacts/contacts.txt\n"
-                "discovered_emails_file = output_contacts/discovered_email_contacts.txt\n"
-                "discovered_chats_file = output_contacts/discovered_chat_contacts.txt\n"
-                "manual_contacts_file = output_contacts/manual_contacts.txt\n"
-                "audit_report_file = audits/residual_names_audit.txt\n"
-                "audit_copy_file = audits/residual_names_copy.txt\n"
-                "\n[files]\n"
-                f"first_names_file = {shared_first_names}\n"
-                f"excluded_words_file = {shared_excluded}\n"
-                f"surname_collisions_file = {shared_collisions}\n"
-                f"masked_locations_file = {shared_cities}\n"
+                "[paths]\nroot_dir = .\nsources_dir = input_documents\ntranscriptions_dir = extracted_texts\n"
+                "results_dir = anonymized_results\ninput_contacts_dir = input_contacts\n"
+                "contacts_file = output_contacts/contacts.txt\ndiscovered_contacts_file = output_contacts/discovered_email_contacts.txt\n"
+                "discovered_chats_file = output_contacts/discovered_chat_contacts.txt\nmanual_contacts_file = output_contacts/manual_contacts.txt\n"
+                "audit_report_file = audits/residual_names_audit.txt\naudit_copy_file = audits/residual_names_copy.txt\n"
+                "\n[files]\ncsv_directory = input_contacts\n"
+                f"first_names_file = {os.path.join(self.shared_data_dir, 'prenoms.txt')}\n"
+                f"excluded_words_file = {os.path.join(self.shared_data_dir, 'mots_exclus.txt')}\n"
+                f"surname_collisions_file = {os.path.join(self.shared_data_dir, 'collisions_noms.txt')}\n"
+                f"locations_file = {os.path.join(self.shared_data_dir, 'villes_masquees.txt')}\n"
             )
             with open(ini_path, "w", encoding="utf-8") as f_ini:
                 f_ini.write(ini_content)
@@ -142,8 +114,7 @@ class AnonymizerGuiController:
     def resolve_workspace_paths(ini_path: str) -> Dict[str, str]:
         ws_root: str = os.path.dirname(os.path.abspath(ini_path))
         return {
-            "workspace_root": ws_root,
-            "ini_path": os.path.abspath(ini_path),
+            "workspace_root": ws_root, "ini_path": os.path.abspath(ini_path),
             "sources_dir": os.path.join(ws_root, "input_documents"),
             "transcriptions_dir": os.path.join(ws_root, "extracted_texts"),
             "input_contacts_dir": os.path.join(ws_root, "input_contacts"),
@@ -154,62 +125,39 @@ class AnonymizerGuiController:
             "state_file": os.path.join(ws_root, "anonymized_results", ".anonymization_state.json"),
             "mapping_file": os.path.join(ws_root, "audits", "source_files_mapping.json"),
         }
+
     def detect_zip_files(self, ini_path: str) -> List[str]:
-        """Retourne la liste triée des archives .zip présentes dans input_documents/."""
-        paths: Dict[str, str] = self.resolve_workspace_paths(ini_path)
-        src_dir: str = paths["sources_dir"]
+        src_dir: str = self.resolve_workspace_paths(ini_path)["sources_dir"]
         if not os.path.isdir(src_dir):
             return []
-        found: List[str] = []
-        for root_p, _, files in os.walk(src_dir):
-            for fn in sorted(files):
-                if fn.lower().endswith(".zip") and not fn.startswith("."):
-                    found.append(os.path.join(root_p, fn))
-        return found
+        return [os.path.join(r, fn) for r, _, fs in os.walk(src_dir) for fn in sorted(fs) if fn.lower().endswith(".zip") and not fn.startswith(".")]
 
     def load_dashboard_stats(self, ini_path: str) -> Dict[str, Any]:
-        """Lit les statistiques d'anonymisation/extraction depuis .anonymization_state.json."""
         default_stats: Dict[str, Any] = {
-            "documents_traites": 0,
-            "documents_extraits": 0,
-            "noms_masques": 0,
-            "coordonnees_masquees": 0,
-            "identifiants_masques": 0,
-            "lieux_dates_masques": 0,
+            "documents_traites": 0, "documents_extraits": 0, "noms_masques": 0,
+            "coordonnees_masquees": 0, "identifiants_masques": 0, "lieux_dates_masques": 0,
             "zip_ignores": self.detect_zip_files(ini_path),
         }
-        paths: Dict[str, str] = self.resolve_workspace_paths(ini_path)
-        state_path: str = paths["state_file"]
-        if not os.path.isfile(state_path):
-            return default_stats
-        try:
-            with open(state_path, "r", encoding="utf-8") as f_in:
-                payload = json.load(f_in)
-            st = payload.get("stats_anonymisation")
-            if isinstance(st, dict):
-                default_stats.update(st)
-        except Exception:
-            pass
+        state_path: str = self.resolve_workspace_paths(ini_path)["state_file"]
+        if os.path.isfile(state_path):
+            try:
+                with open(state_path, "r", encoding="utf-8") as f_in:
+                    st = json.load(f_in).get("stats_anonymisation")
+                if isinstance(st, dict):
+                    default_stats.update(st)
+            except Exception:
+                pass
         return default_stats
-
-    def load_audit_occurrences(
-        self, ini_path: str, candidate: str, context_lines: int = 4
-    ) -> List[Dict[str, str]]:
-        """
-        Retourne toutes les occurrences d'un candidat d'audit avec leur extrait brut
-        et leur extrait anonymisé côte à côte pour la fenêtre Avant/Après.
-        """
+    def load_audit_occurrences(self, ini_path: str, candidate: str, context_lines: int = 4) -> List[Dict[str, str]]:
         from doc_anonymizer.anonymization_runner import DocumentAnonymizationRunner
         from doc_anonymizer.config_manager import PipelineConfig
 
         paths: Dict[str, str] = self.resolve_workspace_paths(ini_path)
-        state_path: str = paths["state_file"]
         target_files: List[str] = []
-        if os.path.isfile(state_path):
+        if os.path.isfile(paths["state_file"]):
             try:
-                with open(state_path, "r", encoding="utf-8") as f_in:
-                    st = json.load(f_in)
-                files_map = st.get("fichiers_par_nom", {})
+                with open(paths["state_file"], "r", encoding="utf-8") as f_in:
+                    files_map = json.load(f_in).get("fichiers_par_nom", {})
                 if isinstance(files_map, dict):
                     for k_name, flist in files_map.items():
                         if k_name.strip().lower() == candidate.strip().lower() and isinstance(flist, list):
@@ -217,150 +165,86 @@ class AnonymizerGuiController:
                             break
             except Exception:
                 pass
-
         if not target_files and os.path.isdir(paths["transcriptions_dir"]):
-            for root_p, _, files in os.walk(paths["transcriptions_dir"]):
-                for fn in sorted(files):
-                    if fn.lower().endswith(".txt"):
-                        target_files.append(os.path.join(root_p, fn))
+            target_files = [os.path.join(r, fn) for r, _, fs in os.walk(paths["transcriptions_dir"]) for fn in sorted(fs) if fn.lower().endswith(".txt")]
 
-        cfg = PipelineConfig(ini_path)
-        runner = DocumentAnonymizationRunner(cfg)
+        runner = DocumentAnonymizationRunner(PipelineConfig(ini_path))
         runner.initialize()
-
         tokens: List[str] = [re.escape(t) for t in candidate.strip().split() if t]
-        if len(tokens) == 2:
-            pat = re.compile(
-                rf"\b(?:{tokens[0]}\s+{tokens[1]}|{tokens[1]}\s+{tokens[0]})\b",
-                re.IGNORECASE,
-            )
-        else:
-            pat = re.compile(rf"\b{re.escape(candidate.strip())}\b", re.IGNORECASE)
-
+        pat = re.compile(rf"\b(?:{tokens[0]}\s+{tokens[1]}|{tokens[1]}\s+{tokens[0]})\b", re.IGNORECASE) if len(tokens) == 2 else re.compile(rf"\b{re.escape(candidate.strip())}\b", re.IGNORECASE)
         occurrences: List[Dict[str, str]] = []
         for fpath in target_files:
             try:
-                with open(fpath, "r", encoding="utf-8", errors="ignore") as f_txt:
-                    lines: List[str] = f_txt.read().splitlines()
+                lines: List[str] = open(fpath, "r", encoding="utf-8", errors="ignore").read().splitlines()
             except OSError:
                 continue
             for idx, ln in enumerate(lines):
                 if pat.search(ln):
-                    start_i: int = max(0, idx - context_lines)
-                    end_i: int = min(len(lines), idx + context_lines + 1)
-                    raw_excerpt: str = "\n".join(lines[start_i:end_i])
-                    anon_excerpt: str = runner.anonymize_text(raw_excerpt)
-                    occurrences.append({
-                        "file_label": os.path.basename(fpath),
-                        "file_path": fpath,
-                        "line_num": str(idx + 1),
-                        "raw_excerpt": raw_excerpt,
-                        "anon_excerpt": anon_excerpt,
-                    })
+                    raw_ex: str = "\n".join(lines[max(0, idx - context_lines) : min(len(lines), idx + context_lines + 1)])
+                    occurrences.append({"file_label": os.path.basename(fpath), "file_path": fpath, "line_num": str(idx + 1), "raw_excerpt": raw_ex, "anon_excerpt": runner.anonymize_text(raw_ex)})
                     if len(occurrences) >= 25:
                         return occurrences
         return occurrences
-    def resolve_ai_selected_extracted_files(
-        self, ini_path: str, ai_response_text: str
-    ) -> Set[str]:
-        """
-        Extrait les chemins anonymisés mentionnés dans la réponse de l'IA et les résout
-        en chemins de transcriptions brutes nominatives (extracted_texts/*.txt).
-        """
+
+    def resolve_ai_selected_extracted_files(self, ini_path: str, ai_response_text: str) -> Set[str]:
         from doc_anonymizer.config_manager import PipelineConfig
         from tools.copy_unmasked_transcriptions import UnmaskedTranscriptionCopier
 
         paths: Dict[str, str] = self.resolve_workspace_paths(ini_path)
-        raw_targets: List[str] = []
-        for m_bt in re.findall(r"`([^`\r\n]+?\.txt)`", ai_response_text or "", re.IGNORECASE):
-            raw_targets.append(m_bt.strip())
-        for m_hdr in re.findall(
-            r"#\s*SOURCE TRANSCRIPTION\s*:\s*(.+?\.txt)",
-            ai_response_text or "",
-            re.IGNORECASE,
-        ):
-            raw_targets.append(m_hdr.strip())
+        raw_targets: List[str] = re.findall(r"`([^`\r\n]+?\.txt)`", ai_response_text or "", re.IGNORECASE)
+        raw_targets.extend(re.findall(r"#\s*SOURCE TRANSCRIPTION\s*:\s*(.+?\.txt)", ai_response_text or "", re.IGNORECASE))
         for line in (ai_response_text or "").splitlines():
             cleaned: str = re.sub(r"^[\-\*\•\d\.\)\s]+", "", line.strip()).strip("`\"' ")
             if cleaned.lower().endswith(".txt") and ("/" in cleaned or "\\" in cleaned):
                 raw_targets.append(cleaned)
-
-        unique_targets: List[str] = list(dict.fromkeys(raw_targets))
+        unique_targets: List[str] = list(dict.fromkeys(t.strip() for t in raw_targets if t.strip()))
         if not unique_targets:
             return set()
-
-        cfg = PipelineConfig(ini_path)
-        copier = UnmaskedTranscriptionCopier(config=cfg, mapping_file=paths["mapping_file"])
+        copier = UnmaskedTranscriptionCopier(config=PipelineConfig(ini_path), mapping_file=paths["mapping_file"])
         json_lookup = copier._load_json_mapping()
         resolved: Set[str] = set()
         for tgt in unique_targets:
             norm_k: str = os.path.normpath(tgt).lower()
-            src_p: Optional[str] = json_lookup.get(norm_k) or json_lookup.get(os.path.basename(norm_k))
-            if not src_p or not os.path.exists(src_p):
-                src_p = copier._resolve_via_fallback(tgt)
+            src_p: Optional[str] = json_lookup.get(norm_k) or json_lookup.get(os.path.basename(norm_k)) or copier._resolve_via_fallback(tgt)
             if src_p and os.path.exists(src_p):
                 resolved.add(os.path.normpath(src_p))
         return resolved
 
     def import_contacts_csv(self, ini_path: str, csv_source_path: str) -> str:
-        """Copie un fichier CSV de contacts dans le dossier input_contacts du profil."""
         if not csv_source_path or not os.path.isfile(csv_source_path):
             raise FileNotFoundError("Fichier CSV introuvable.")
         paths: Dict[str, str] = self.resolve_workspace_paths(ini_path)
         os.makedirs(paths["input_contacts_dir"], exist_ok=True)
-        dest_path: str = os.path.join(
-            paths["input_contacts_dir"], os.path.basename(csv_source_path)
-        )
+        dest_path: str = os.path.join(paths["input_contacts_dir"], os.path.basename(csv_source_path))
         if os.path.abspath(csv_source_path) != os.path.abspath(dest_path):
             shutil.copy2(csv_source_path, dest_path)
         return dest_path
 
     def load_audit_candidates(self, ini_path: str) -> List[Tuple[str, str]]:
-        """Lit audits/residual_names_copy.txt et retourne [(Nom_Détecté, Alias_Suggéré), ...]."""
-        paths: Dict[str, str] = self.resolve_workspace_paths(ini_path)
-        audit_copy: str = paths["audit_copy_file"]
+        audit_copy: str = self.resolve_workspace_paths(ini_path)["audit_copy_file"]
         candidates: List[Tuple[str, str]] = []
-        if not os.path.isfile(audit_copy):
-            return candidates
-        with open(audit_copy, "r", encoding="utf-8", errors="ignore") as f_in:
-            for raw_line in f_in:
+        if os.path.isfile(audit_copy):
+            for raw_line in open(audit_copy, "r", encoding="utf-8", errors="ignore"):
                 line: str = raw_line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                left, right = line.split("=", 1)
-                cand: str = left.strip()
-                alias: str = right.strip()
-                if cand and alias:
-                    candidates.append((cand, alias))
+                if line and not line.startswith("#") and "=" in line:
+                    left, right = line.split("=", 1)
+                    if left.strip() and right.strip():
+                        candidates.append((left.strip(), right.strip()))
         return candidates
 
     def _remove_line_from_audit(self, audit_copy_path: str, target_left: str) -> None:
         if not os.path.isfile(audit_copy_path):
             return
-        kept_lines: List[str] = []
-        with open(audit_copy_path, "r", encoding="utf-8", errors="ignore") as f_in:
-            for raw_line in f_in:
-                stripped: str = raw_line.strip()
-                if stripped and not stripped.startswith("#") and "=" in stripped:
-                    left_part, _ = stripped.split("=", 1)
-                    if left_part.strip().lower() == target_left.strip().lower():
-                        continue
-                kept_lines.append(raw_line)
+        kept: List[str] = [ln for ln in open(audit_copy_path, "r", encoding="utf-8", errors="ignore") if not (ln.strip() and not ln.strip().startswith("#") and "=" in ln and ln.split("=", 1)[0].strip().lower() == target_left.strip().lower())]
         with open(audit_copy_path, "w", encoding="utf-8") as f_out:
-            f_out.writelines(kept_lines)
+            f_out.writelines(kept)
 
     def approve_audit_mask(self, ini_path: str, candidate: str, alias: str) -> None:
         paths: Dict[str, str] = self.resolve_workspace_paths(ini_path)
         manual_path: str = paths["manual_contacts_file"]
         os.makedirs(os.path.dirname(manual_path), exist_ok=True)
-        existing_keys: set[str] = set()
-        if os.path.isfile(manual_path):
-            with open(manual_path, "r", encoding="utf-8", errors="ignore") as f_in:
-                for ln in f_in:
-                    if "=" in ln and not ln.strip().startswith("#"):
-                        k, _ = ln.split("=", 1)
-                        existing_keys.add(k.strip().lower())
-        if candidate.strip().lower() not in existing_keys:
+        existing = {ln.split("=", 1)[0].strip().lower() for ln in open(manual_path, "r", encoding="utf-8", errors="ignore") if "=" in ln and not ln.strip().startswith("#")} if os.path.isfile(manual_path) else set()
+        if candidate.strip().lower() not in existing:
             with open(manual_path, "a", encoding="utf-8") as f_out:
                 f_out.write(f"\n{candidate.strip()} = {alias.strip()}\n")
         self._remove_line_from_audit(paths["audit_copy_file"], candidate)
@@ -369,19 +253,8 @@ class AnonymizerGuiController:
         paths: Dict[str, str] = self.resolve_workspace_paths(ini_path)
         excl_path: str = os.path.join(self.shared_data_dir, "mots_exclus.txt")
         os.makedirs(os.path.dirname(excl_path), exist_ok=True)
-        existing_words: set[str] = set()
-        if os.path.isfile(excl_path):
-            with open(excl_path, "r", encoding="utf-8", errors="ignore") as f_in:
-                for ln in f_in:
-                    w: str = ln.strip().lower()
-                    if w and not w.startswith("#"):
-                        existing_words.add(w)
-        tokens: List[str] = [
-            t.strip().lower()
-            for t in re.split(r"[\s'\-]+", candidate.strip())
-            if len(t.strip()) >= 3
-        ]
-        new_tokens: List[str] = [t for t in tokens if t not in existing_words]
+        existing = {ln.strip().lower() for ln in open(excl_path, "r", encoding="utf-8", errors="ignore") if ln.strip() and not ln.strip().startswith("#")} if os.path.isfile(excl_path) else set()
+        new_tokens = [t.strip().lower() for t in re.split(r"[\s'\-]+", candidate.strip()) if len(t.strip()) >= 3 and t.strip().lower() not in existing]
         if new_tokens:
             with open(excl_path, "a", encoding="utf-8") as f_out:
                 for tok in new_tokens:
@@ -390,13 +263,7 @@ class AnonymizerGuiController:
 
     def build_cli_command(self, ini_path: str, mode: str) -> List[str]:
         if mode == "contacts":
-            script: str = os.path.join(self.project_root, "run_contacts.py")
-            return [sys.executable, script, "--config", ini_path]
+            return [sys.executable, os.path.join(self.project_root, "run_contacts.py"), "--config", ini_path]
         script = os.path.join(self.project_root, "run_documents.py")
-        if mode == "extract_only":
-            return [sys.executable, script, "--config", ini_path, "--extract-only"]
-        if mode == "anonymize_only":
-            return [sys.executable, script, "--config", ini_path, "--anonymize-only", "--reset-results"]
-        if mode == "full_reset":
-            return [sys.executable, script, "--config", ini_path, "--reset-results"]
-        return [sys.executable, script, "--config", ini_path]
+        flags = {"extract_only": ["--extract-only"], "anonymize_only": ["--anonymize-only", "--reset-results"], "full_reset": ["--reset-results"]}.get(mode, [])
+        return [sys.executable, script, "--config", ini_path, *flags]
