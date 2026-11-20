@@ -2,7 +2,7 @@
 
 import os
 import re
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from doc_anonymizer.text_utils import DocumentTextUtils
 
 
@@ -20,7 +20,7 @@ class ContactCatalogMerger:
         contacts_file: str,
         discovered_chats_file: str = "",
         discovered_emails_file: str = "",
-        known_first_names: Set[str] | None = None,
+        known_first_names: Optional[Set[str]] = None,
     ) -> None:
         self.contacts_file: str = contacts_file
         self.discovered_chats_file: str = discovered_chats_file
@@ -138,7 +138,7 @@ class ContactCatalogMerger:
         if added_count > 0:
             os.makedirs(os.path.dirname(self.contacts_file), exist_ok=True)
             sorted_entries: List[Tuple[str, str]] = sorted(
-                merged_map.values(), key=lambda item: item.lower()
+                merged_map.values(), key=lambda item: next(iter(item)).lower()
             )
             with open(self.contacts_file, "w", encoding="utf-8") as f_out:
                 f_out.write("# CATALOGUE UNIFIÉ DES CONTACTS (CSV + CHATS + E-MAILS)\n")

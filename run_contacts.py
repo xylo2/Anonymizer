@@ -1,45 +1,93 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
 import argparse
+import importlib
 import os
 import sys
-from contacts_anonymizer.config_manager import ContactsConfig
-from contacts_anonymizer.pipeline_runner import ContactsPipelineRunner
+from typing import List, Optional
 from doc_anonymizer.contact_merger import ContactCatalogMerger
 
+ROOT_DIR: str = os.path.dirname(os.path.abspath(__file__))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
-def main() -> int:
+
+def _load_contacts_backend():
+    """Détecte et importe dynamiquement les modules config_manager et pipeline_runner des contacts."""
+    candidates: List[str] = [
+        "contacts",
+        "contacts_pipeline",
+        "contact_pipeline",
+        "contacts_extractor",
+        "contacts_manager",
+    ]
+    for entry in sorted(os.listdir(ROOT_DIR)):
+        full_p: str = os.path.join(ROOT_DIR, entry)
+        if (
+            os.path.isdir(full_p)
+            and entry != "doc_anonymizer"
+            and os.path.isfile(os.path.join(full_p, "pipeline_runner.py"))
+            and entry not in candidates
+        ):
+            candidates.insert(0, entry)
+
+    for pkg_name in candidates:
+        try:
+            cfg_mod = importlib.import_module(f"{pkg_name}.config_manager")
+            run_mod = importlib.import_module(f"{pkg_name}.pipeline_runner")
+            cfg_cls = next(
+                getattr(cfg_mod, attr)
+                for attr in dir(cfg_mod)
+                if attr.endswith("Config") and not attr.startswith("_")
+            )
+            run_cls = next(
+                getattr(run_mod, attr)
+                for attr in dir(run_mod)
+                if attr.endswith("PipelineRunner") and not attr.startswith("_")
+            )
+            return cfg_cls, run_cls
+        except (ModuleNotFoundError, StopIteration):
+            continue
+    raise ModuleNotFoundError("Impossible de localiser le package de traitement des contacts.")
+
+
+def main(argv: Optional[List[str]] = None) -> int:
     """Point d'entrée CLI pour l'extraction, l'anonymisation et la fusion des contacts."""
     parser = argparse.ArgumentParser(
-        description="Extraction, anonymisation et unifications des contacts (CSV + chats + e-mails)."
+        description="Extraction, anonymisation et unification des contacts (CSV + chats + e-mails)."
     )
     parser.add_argument(
         "--config",
         default="config.ini",
         help="Chemin vers le fichier de configuration config.ini (défaut : config.ini).",
     )
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args(argv)
 
-    config = ContactsConfig(args.config)
-    runner = ContactsPipelineRunner(config)
+    cfg_cls, run_cls = _load_contacts_backend()
+    config = cfg_cls(args.config)
+    runner = run_cls(config)
     ret_code: int = runner.run_all()
 
     if ret_code == 0:
-        out_dir: str = os.path.dirname(os.path.abspath(config.final_contacts_file))
-        disc_chats: str = os.path.join(out_dir, "discovered_chat_contacts.txt")
-        disc_emails: str = os.path.join(out_dir, "discovered_email_contacts.txt")
-        merger = ContactCatalogMerger(
-            contacts_file=config.final_contacts_file,
-            discovered_chats_file=disc_chats,
-            discovered_emails_file=disc_emails,
-            known_first_names=config.known_first_names,
+        final_file: str = getattr(config, "final_contacts_file", "") or getattr(
+            config, "contacts_file", ""
         )
-        added, total = merger.merge_all()
-        if added > 0:
-            print(
-                f"[FUSION CONTACTS] +{added} contact(s) issu(s) des chats/e-mails fusionné(s) "
-                f"dans '{config.final_contacts_file}' (total : {total})."
+        if final_file:
+            out_dir: str = os.path.dirname(os.path.abspath(final_file))
+            disc_chats: str = os.path.join(out_dir, "discovered_chat_contacts.txt")
+            disc_emails: str = os.path.join(out_dir, "discovered_email_contacts.txt")
+            merger = ContactCatalogMerger(
+                contacts_file=final_file,
+                discovered_chats_file=disc_chats,
+                discovered_emails_file=disc_emails,
+                known_first_names=getattr(config, "known_first_names", set()),
             )
+            added, total = merger.merge_all()
+            if added > 0:
+                print(
+                    f"[FUSION CONTACTS] +{added} contact(s) issu(s) des chats/e-mails fusionné(s) "
+                    f"dans '{final_file}' (total : {total})."
+                )
     return ret_code
 
 
