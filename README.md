@@ -14,7 +14,7 @@ Aucun document, contact ou enregistrement audio n'est envoyé sur Internet.
   * Extraction automatique des noms de famille depuis `contacts.txt`, détection des formes collées OCR (`PrénomNom` / `NomPrénom`), des titres médicaux/civils (`Dr`, `Docteur`, `Mme`, `Me`), des initiales (`I. NOM`) et des noms composés.
   * Masquage des adresses e-mail (`Contact_Mail_001` / `EMAIL_001`), numéros de téléphone (`Contact_Tel_001` / `TEL_001`, y compris dictés à l'oral), numéros de Sécurité sociale (NIR), IBAN/BIC, références fiscales/CAF/CNI, plaques d'immatriculation, zones MRZ, adresses postales, communes et dates de naissance.
 * **Double mode d'utilisation (Windows & Linux)** :
-  * **Interface graphique simple** (`gui_anonymizer.py`) : création de dossiers isolés par affaire/salarié/enfant, dépôt des documents, barre de progression et validation visuelle des noms restants en 1 clic.
+  * **Interface graphique guidée** (`gui_anonymizer.py`) : création de dossiers isolés par affaire/salarié/enfant, dépôt des documents, barre de progression et validation visuelle des noms restants en 1 clic.
   * **Ligne de commande** (`run_documents.py`, `run_contacts.py`) : traitement automatisable et options avancées (`--anonymize-only`, `--reset-results`, `--config`).
 * **Audit intégré** : génère automatiquement la liste des noms potentiels résiduels (`audits/residual_names_copy.txt`) prêts à être approuvés ou ignorés.
 
@@ -40,14 +40,9 @@ pip install pypdf pdf2image pytesseract pillow python-docx odfpy openpyxl faster
 * **Sous Windows** : double-cliquez sur **`Lancer_Anonymiseur.bat`** (ou lancez `python gui_anonymizer.py`).
 * **Sous Linux / macOS** : lancez **`./lancer_anonymiseur.sh`** ou **`python3 gui_anonymizer.py`**.
 
-L'interface s'organise en **3 onglets** :
-1. **Dossier & Documents** : sélectionnez le dossier principal ou créez un dossier isolé (ex. `Dossier_Salarie_A`, `Suivi_Medical`), ouvrez `input_documents/` pour y déposer vos fichiers et importez éventuellement un export `.csv` de contacts.
-2. **Extraction & Anonymisation** : lancez le traitement complet ou une ré-anonymisation rapide.
-3. **Vérification des noms restants** : validez en 1 clic les noms résiduels détectés par l'audit (*Masquer ce nom* ou *Ignorer ce mot*), puis cliquez sur *Appliquer les corrections*.
-
 ### Option B — Ligne de commande (Windows & Linux)
 ```bash
-# 1. Extraire et anonymiser un carnet d'adresses CSV (Google Contacts / Outlook)
+# 1. Extraire, pré-scanner les chats/e-mails et unifier les contacts
 python run_contacts.py
 
 # 2. Extraire tous les documents sources et produire les lots anonymisés
@@ -69,9 +64,10 @@ python run_documents.py --config dossiers/Mon_Dossier/config.ini
 ├── Lancer_Anonymiseur.bat         # Lanceur double-clic Windows
 ├── lancer_anonymiseur.sh          # Lanceur shell Linux / macOS
 ├── run_documents.py               # Point d'entrée CLI du pipeline documentaire
-├── run_contacts.py                # Point d'entrée CLI du pipeline contacts CSV
+├── run_contacts.py                # Point d'entrée CLI du pipeline contacts + pré-scan
 ├── config.ini                     # Configuration principale
 ├── GUIDE_UTILISATION.md           # Guide pas-à-pas grand public (parents, syndicats)
+├── LICENSE                        # Licence GNU GPL v3 (copyleft fort)
 ├── data/                          # Dictionnaires partagés (prénoms, villes, exclusions)
 ├── input_documents/               # Documents bruts à traiter
 ├── input_contacts/                # Exports CSV de contacts bruts
@@ -81,7 +77,6 @@ python run_documents.py --config dossiers/Mon_Dossier/config.ini
 ├── audits/                        # Rapports de vérification des noms résiduels
 ├── dossiers/                      # Espaces isolés créés depuis l'interface graphique
 ├── doc_anonymizer/                # Modules du moteur documentaire et de l'interface
-├── contacts_anonymizer/           # Modules de traitement des contacts CSV
 └── tests/                         # Suite de tests unitaires et d'intégration
 ```
 
@@ -93,3 +88,10 @@ python run_documents.py --config dossiers/Mon_Dossier/config.ini
 python tests/run_all_tests.py
 # Ou avec résumé compact copié automatiquement dans le presse-papiers :
 python tools/run_tests_clip.py
+```
+
+---
+
+## Licence
+
+Ce programme est un logiciel libre distribué sous licence **GNU General Public License v3.0 (GPL-3.0)** — voir le fichier [`LICENSE`](LICENSE). Toute redistribution, modifiée ou non, doit conserver cette licence et mettre à disposition le code source complet.
