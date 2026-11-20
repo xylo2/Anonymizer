@@ -199,14 +199,7 @@ class GuiPagesMixin:
             command=lambda: self._open_workspace_folder("sources_dir"),  # type: ignore[attr-defined]
             variant="primary",
         ).pack(side="left", padx=(0, 8))
-        make_styled_button(row_docs, text="Actualiser le compteur", command=self._refresh_workspace_counters, variant="secondary").pack(side="left", padx=(0, 8))  # type: ignore[attr-defined]
-        make_styled_button(
-            row_docs,
-            text="Exporter un agenda (.ics) ?",
-            command=self._show_calendar_export_popup,  # type: ignore[attr-defined]
-            variant="secondary",
-            tooltip="Explique comment exporter votre calendrier Google, Outlook ou Apple au format .ics.",
-        ).pack(side="right")
+        make_styled_button(row_docs, text="Actualiser le compteur", command=self._refresh_workspace_counters, variant="secondary").pack(side="left")  # type: ignore[attr-defined]
 
         self.docs_summary_var = tk.StringVar(value="Documents sources déposés : 0 fichier.")
         tk.Label(card_files, textvariable=self.docs_summary_var, bg=UI_COLORS["card"], fg="#0f172a", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(8, 0))
@@ -226,7 +219,7 @@ class GuiPagesMixin:
 
         self.card_csv = make_card(
             parent,
-            title="1C — Ajouter vos carnets de contacts (.csv) [Optionnel — utile pour le Mode IA]",
+            title="1C — Ajouter vos carnets de contacts (.csv) & Aide exports",
             subtitle="Importez vos exports Google Contacts ou Outlook (.csv) pour masquer immédiatement proches, collègues et médecins.",
         )
         row_csv = tk.Frame(self.card_csv, bg=UI_COLORS["card"])
