@@ -21,7 +21,7 @@ Ce guide explique comment préparer et anonymiser un dossier confidentiel (sant�
 ## 3. Préparer son dossier (Onglet 1 : *Dossier & Documents*)
 
 1. **Créer un espace dédié** :
-   * Dans *Nouveau dossier*, saisissez un nom clair sans espaces spéciaux (ex. `Garde_Leo` ou `Prudhommes_Dupont`) puis cliquez sur **Créer ce dossier**.
+   * Dans *Nouveau dossier*, saisissez un nom clair sans espaces spéciaux (ex. `Dossier_Enfant` ou `Dossier_Salarie`) puis cliquez sur **Créer ce dossier**.
 2. **Déposer les pièces du dossier** :
    * Cliquez sur **Ouvrir le dossier des documents sources**.
    * Copiez-collez à l'intérieur tous vos fichiers : comptes rendus médicaux PDF, scans, courriers, exports d'e-mails (`.mbox`), sauvegardes SMS (`.xml`), discussions WhatsApp/Teams/Google Chat, ou enregistrements vocaux (`.mp3`, `.m4a`, `.wav`).
@@ -33,28 +33,28 @@ Ce guide explique comment préparer et anonymiser un dossier confidentiel (sant�
 
 ## 4. Lancer l'anonymisation (Onglet 2 : *Extraction & Anonymisation*)
 
-1. Cliquez sur **Lancer l'extraction et l'anonymisation**.
+1. Cliquez sur **1er passage : Extraire et anonymiser tout**.
 2. La barre de progression s'anime et le journal affiche l'avancement fichier par fichier :
    * Les documents sont d'abord convertis en texte brut dans `extracted_texts/` et classés par mois (`2024-05`, `2024-06`, etc.).
-   * Toutes les données personnelles sont ensuite remplacées par des alias cohérents (`Aurélie S.`, `Dr M.`, `Contact_Mail_001`, `[ADRESSE_MASQUEE]`, `[NUM_SECU_MASQUE]`).
+   * Toutes les données personnelles sont ensuite remplacées par des alias cohérents (`Camille D.`, `Dr M.`, `Contact_Mail_001`, `[ADRESSE_MASQUEE]`, `[NUM_SECU_MASQUE]`).
 3. À la fin, le message **`[OK] Traitement terminé.`** s'affiche.
 
 ---
 
-## 5. Vérifier qu'aucun nom n'a échappé (Onglet 3 : *Vérification des noms restants*)
+## 5. Vérifier qu'aucun nom n'a échappé (Onglet 3 : *Vérifier les noms restants*)
 
 Après le traitement, le logiciel relit automatiquement tous les fichiers générés pour repérer d'éventuels noms propres oubliés (fautes de frappe, noms rares, mauvaise qualité de scan).
 
-1. Allez dans l'onglet **3. Vérification des noms restants**.
+1. Allez dans l'onglet **3. Vérifier les noms restants**.
 2. Pour chaque ligne affichée :
-   * **S'il s'agit d'un vrai nom de personne** : sélectionnez la ligne et cliquez sur **Masquer ce nom (ajouter aux règles)**.
-   * **S'il s'agit d'un mot normal ou d'un terme médical/juridique** (ex. *Tribunal*, *Ophtalmologiste*) : cliquez sur **Ignorer (mot courant / faux positif)**.
-3. Une fois la liste vérifiée, cliquez sur **Appliquer les corrections (Ré-anonymiser)**.
+   * **S'il s'agit d'un vrai nom de personne** : sélectionnez la ligne et cliquez sur **Masquer ce nom (c'est une personne)**.
+   * **S'il s'agit d'un mot normal ou d'un terme médical/juridique** (ex. *Tribunal*, *Orthophoniste*) : cliquez sur **Ignorer ce mot (faux positif)**.
+3. Une fois la liste vérifiée, cliquez sur **Appliquer mes corrections (2e passage rapide)**.
    * Cette seconde passe est **très rapide** (quelques secondes) car elle ne relit pas les PDF ni les audios.
 
 ---
 
 ## 6. Récupérer les fichiers prêts à partager
 
-1. Retournez dans l'onglet **1** et cliquez sur **Ouvrir le dossier des lots anonymisés (`anonymized_results`)**.
+1. Retournez dans l'onglet **1** et cliquez sur **Ouvrir le dossier des résultats anonymisés**.
 2. Vous y trouverez les dossiers `batch_01/`, `batch_02/`, etc. contenant les fichiers `.txt` anonymisés et classés chronologiquement, prêts à être lus ou confiés à un tiers / un assistant IA en toute confidentialité.

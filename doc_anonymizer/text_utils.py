@@ -51,7 +51,7 @@ class DocumentTextUtils:
         "universite", "ecole", "college", "lycee", "creche", "hopital",
         "clinique", "laboratoire", "pharmacie", "banque", "assurance",
         "mutuelle", "caisse", "urssaf", "acoss", "cpam", "caf", "carsat",
-        "france", "paris", "caen", "normandie", "calvados", "sarl", "sas",
+        "france", "paris", "lyon", "marseille", "sarl", "sas",
         "sa", "eurl", "sci", "selarl", "scp", "scm", "gie", "gip",
         "accueil", "contact", "secretariat", "administration", "support",
         "client", "clients", "presse", "communication", "marketing",

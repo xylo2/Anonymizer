@@ -28,9 +28,9 @@ class ContactRulesLoader:
         "autre", "autres", "meme", "memes", "tel", "telle", "tels", "telles",
         "quel", "quelle", "quels", "quelles", "chaque", "aucun", "aucune",
         "certain", "certaine", "certains", "certaines", "plusieurs",
-        "paris", "caen", "lyon", "marseille", "lille", "nantes", "bordeaux",
-        "toulouse", "rennes", "nice", "strasbourg", "montpellier", "normandie",
-        "calvados", "manche", "orne", "eure", "seine", "france", "europe",
+        "paris", "lyon", "marseille", "lille", "nantes", "bordeaux",
+        "toulouse", "rennes", "nice", "strasbourg", "montpellier",
+        "france", "europe",
         "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
         "janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet",
         "aout", "septembre", "octobre", "novembre", "decembre",
@@ -82,9 +82,7 @@ class ContactRulesLoader:
         "masquer", "proteger", "sauvegarder", "restaurer", "copier", "coller",
         "couper", "ouvrir", "imprimer", "scanner", "telecharger", "installer",
         "configurer", "tester", "corriger", "resoudre", "ameliorer", "optimiser",
-        "boulon", "fresney", "cingal", "laize", "bretteville", "ifs", "herouville",
-        "mondeville", "fleury", "bayeux", "falaise", "lisieux", "vire", "honfleur",
-        "deauville", "trouville", "cabourg", "ouistreham", "courseulles",
+        "fiers", "fier", "fiere", "fieres",
     }
     def __init__(self, config: PipelineConfig, manual_only: bool = False) -> None:
         """Initialise le chargeur de règles de contacts."""
