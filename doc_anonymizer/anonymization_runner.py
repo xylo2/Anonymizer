@@ -235,34 +235,54 @@ class DocumentAnonymizationRunner:
             r"(?:Dr\.?|Docteur|Pr\.?|Professeur|Me\.?|Ma[îi]tre|Mme\.?|Madame|"
             r"Mlle\.?|Mademoiselle|M\.|Mr\.?|Monsieur|Famille)"
         )
-        cap_word: str = r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]{2,25}"
-        upper_surname: str = r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{2,25}(?:[\s\-](?:DE|DU|DES|LE|LA|LES|[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]{2,25})){0,3}"
+        cap_word: str = r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\-]+"
+        upper_word: str = r"[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]+"
+        part_upper: str = rf"(?:DE|DU|DES|LE|LA|LES|{upper_word})"
+        upper_surname: str = rf"{upper_word}(?:[\s\-]{part_upper})?(?:[\s\-]{part_upper})?"
         self.title_first_last_regex = re.compile(
-            rf"(?<![A-Za-zÀ-ÿ0-9])({titles_pat})[ \t]+({cap_word}(?:[ \t\-]{cap_word}){{0,2}})[ \t]+({cap_word})(?![A-Za-zÀ-ÿ0-9])"
+            rf"(?<![A-Za-zÀ-ÿ0-9])({titles_pat})[ \t]+({cap_word}[ \t\-]{cap_word}|{cap_word})[ \t]+({cap_word})(?![A-Za-zÀ-ÿ0-9])"
         )
         self.title_last_name_regex = re.compile(
             rf"(?<![A-Za-zÀ-ÿ0-9])({titles_pat})[ \t]*({cap_word})(?![A-Za-zÀ-ÿ0-9])"
         )
+        self.auto_first_double_upper_regex = re.compile(
+            rf"(?<![A-Za-zÀ-ÿ0-9])({cap_word})[ \t]+({upper_word})[ \t]+({upper_word})(?![A-Za-zÀ-ÿ0-9])"
+        )
         self.auto_first_last_regex = re.compile(
-            rf"(?<![A-Za-zÀ-ÿ0-9])({cap_word}(?:[ \t\-_]{cap_word})?)[ \t_]+({cap_word})(?![A-Za-zÀ-ÿ0-9])"
+            rf"(?<![A-Za-zÀ-ÿ0-9])(?:({cap_word}[ \t]+{cap_word})[ \t]+({cap_word})|({cap_word})[ \t_]+({cap_word}))(?![A-Za-zÀ-ÿ0-9])(?![ \t]+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]\.)"
         )
         self.auto_last_first_regex = re.compile(
             rf"(?<![A-Za-zÀ-ÿ0-9])({upper_surname})[ \t_]+({cap_word}(?:[\-]{cap_word})?)(?![A-Za-zÀ-ÿ0-9])"
         )
+        self.initial_last_name_regex = re.compile(
+            rf"(?<![A-Za-zÀ-ÿ0-9])([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ])\.[ \t]*({cap_word})(?![A-Za-zÀ-ÿ0-9])"
+        )
 
+        extra_cs_locs: Set[str] = set(self.CASE_SENSITIVE_LOCATIONS) | {
+            "fiers", "fier", "fiere", "fieres", "vers", "car", "bon", "fort",
+            "clair", "claire", "grand", "petit", "haut", "bas", "saint", "sainte",
+            "mont", "val", "pont", "port", "bois", "champ", "champs", "cour",
+            "cours", "tour", "tours", "forge", "forges", "roche", "roches",
+            "pierre", "pierres", "croix", "eglise", "chapelle", "moulin",
+            "chateau", "parc", "lac", "mer", "ile", "iles", "cap", "baie",
+            "plage", "dune", "dunes", "lande", "landes", "plaine", "vallee",
+            "col", "pic", "puy", "roc", "saut", "pas", "garde", "bastide",
+            "maison", "maisons", "grange", "granges", "ferme", "fermes",
+            "clos", "pre", "pres", "prat", "mas", "fresnes", "aulnay", "ormes",
+            "tilleuls", "chenes", "pins", "sapins", "saules", "peupliers",
+            "bouleaux", "noyers", "pommiers", "cerisiers", "vignes", "roses", "lilas",
+        }
         safe_locs: List[str] = sorted(
             loc
             for loc in self.config.masked_locations
-            if len(loc) >= 3
-            and loc not in self.rules.COMMON_WORD_COLLISIONS
-            and loc not in self.config.excluded_words
+            if len(loc) >= 3 and loc not in self.config.excluded_words
         )
         if safe_locs:
             ci_locs: List[str] = [
-                loc for loc in safe_locs if loc not in self.CASE_SENSITIVE_LOCATIONS
+                loc for loc in safe_locs if loc not in extra_cs_locs
             ]
             cs_locs: List[str] = [
-                loc for loc in safe_locs if loc in self.CASE_SENSITIVE_LOCATIONS
+                loc for loc in safe_locs if loc in extra_cs_locs
             ]
             loc_branches: List[str] = []
             if ci_locs:
@@ -278,78 +298,93 @@ class DocumentAnonymizationRunner:
                     rf"(?<![A-Za-zÀ-ÿ0-9])(?:{'|'.join(loc_branches)})(?![A-Za-zÀ-ÿ0-9])"
                 )
         self.regex_compiled = True
-    def _replace_fast_target(self, match: re.Match) -> str:
-        """Remplace une cible reconnue en ignorant les vrais toponymes composés."""
-        matched_text: str = match.group(0)
-        full_str: str = match.string
-        start_idx: int = match.start()
-        end_idx: int = match.end()
-
-        prefix_ctx: str = full_str[max(0, start_idx - 10):start_idx]
-        suffix_ctx: str = full_str[end_idx:min(len(full_str), end_idx + 15)]
-        if re.search(r"(?i)\b(?:st|ste|saint|sainte)[\s\-]$", prefix_ctx):
-            return matched_text
-        if re.match(r"^(?i)-(?:de|du|des|sur|sous|en|la|le|les)\b", suffix_ctx):
-            return matched_text
-        if re.match(r"^\s+(?:sur|sous)\s+[A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ]", suffix_ctx):
-            return matched_text
-
-        norm: str = DocumentTextUtils.normalize_word(matched_text)
-        alias: Optional[str] = self.fast_replacer_map.get(norm)
-        if alias:
-            return alias
-        compact: str = re.sub(r"[\s\-'\u2019]+", "", norm)
-        for k_norm, val_alias in self.fast_replacer_map.items():
-            if re.sub(r"[\s\-'\u2019]+", "", k_norm) == compact:
-                return val_alias
-        return matched_text
-
     def _is_known_first_name(self, token: str) -> bool:
-        """Vérifie si un jeton est un prénom connu (simple ou composé type Jean-Eudes)."""
+        """Vérifie si un jeton (simple ou composé par espace/tiret) est un prénom reconnu."""
         norm: str = DocumentTextUtils.normalize_word(token)
-        if not norm or norm.upper() in self.SAFE_UPPER_WORDS or norm in self.config.excluded_words:
+        if not norm:
             return False
         if self.rules.is_first_name(token):
             return True
+        if "-" in norm:
+            hyphen_parts: List[str] = [p for p in norm.split("-") if p]
+            if len(hyphen_parts) >= 2 and self.rules.is_first_name(next(iter(hyphen_parts))):
+                return True
+        sub_tokens: List[str] = [p for p in re.split(r"[\s_]+", norm) if p]
+        if len(sub_tokens) == 2:
+            first_sub: str = next(iter(sub_tokens))
+            second_sub: str = sub_tokens[-1]
+            if (
+                self._is_known_first_name(first_sub)
+                and second_sub not in self.config.excluded_words
+                and second_sub not in self.config.masked_locations
+            ):
+                return True
         if not self.config.known_first_names:
             return len(norm) >= 2 and norm not in self.config.masked_locations
         return False
 
+    def _replace_fast_target(self, match: re.Match) -> str:
+        """Remplace une cible exacte/OCR du dictionnaire par son alias."""
+        raw: str = match.group(0)
+        norm: str = DocumentTextUtils.normalize_word(raw)
+        if norm in self.fast_replacer_map:
+            return self.fast_replacer_map[norm]
+        return raw
+
     def _replace_title_first_last(self, match: re.Match) -> str:
-        """Abrège 'Dr Jean Philippe Bernard' en 'Dr Jean Philippe B.'."""
+        """Abrège 'Docteur Evelyne Moreau' -> 'Docteur Evelyne M.' et 'Dr Jean Pierre Bernard' -> 'Dr Jean P. B.'."""
         title: str = match.group(1)
         firsts: str = match.group(2)
         last: str = match.group(3)
         norm_last: str = DocumentTextUtils.normalize_word(last)
-        if (
-            norm_last.upper() in self.SAFE_UPPER_WORDS
-            or norm_last in self.config.excluded_words
-            or norm_last in self.config.masked_locations
-            or norm_last in self.VERBS_AND_PRONOUNS_FOLLOWING_FIRSTNAME
-        ):
+        if norm_last.upper() in self.SAFE_UPPER_WORDS or norm_last in self.config.excluded_words:
             return match.group(0)
         first_tokens: List[str] = [t for t in re.split(r"[\s\-]+", firsts) if t]
         if first_tokens and self._is_known_first_name(next(iter(first_tokens))):
+            if len(first_tokens) >= 2 and " " in firsts:
+                first_kept: str = next(iter(first_tokens))
+                mid_initials: str = " ".join(f"{p[:1].upper()}." for p in first_tokens[1:])
+                return f"{title} {first_kept} {mid_initials} {last[:1].upper()}."
             return f"{title} {firsts} {last[:1].upper()}."
         return match.group(0)
 
     def _replace_title_last_name(self, match: re.Match) -> str:
-        """Abrège 'Dr Lamotte' ou 'DrLAMOTTE' en 'Dr L.'."""
+        """Abrège 'Dr Lemaitre', 'Famille VASSEUR' ou 'DocteurHivet'."""
         title: str = match.group(1)
         last: str = match.group(2)
         norm_last: str = DocumentTextUtils.normalize_word(last)
         if (
             norm_last.upper() in self.SAFE_UPPER_WORDS
             or norm_last in self.config.excluded_words
+            or norm_last in self.config.surname_collisions
             or norm_last in self.config.masked_locations
             or self._is_known_first_name(last)
         ):
             return match.group(0)
         return f"{title} {last[:1].upper()}."
+
+    def _replace_auto_first_double_upper(self, match: re.Match) -> str:
+        """Abrège 'Nelly ABITBOL CANO' en 'Nelly A. C.'."""
+        first: str = match.group(1)
+        last1: str = match.group(2)
+        last2: str = match.group(3)
+        if not self._is_known_first_name(first):
+            return match.group(0)
+        for lp in (last1, last2):
+            norm_lp: str = DocumentTextUtils.normalize_word(lp)
+            if (
+                norm_lp.upper() in self.SAFE_UPPER_WORDS
+                or norm_lp in self.config.excluded_words
+                or norm_lp in self.config.surname_collisions
+                or norm_lp in self.config.masked_locations
+                or self._is_known_first_name(lp)
+            ):
+                return match.group(0)
+        return f"{first} {last1[:1].upper()}. {last2[:1].upper()}."
     def _replace_auto_first_last(self, match: re.Match) -> str:
-        """Abrège 'Charlotte Lemaitre', 'Maël_Sobréro' ou 'Jean-Eudes Lemoine'."""
-        firsts: str = match.group(1)
-        last: str = match.group(2)
+        """Abrège 'Charlotte Lemaitre', 'Maël_Sobréro' ou 'Jean Eudes Moreau'."""
+        firsts: str = match.group(1) or match.group(3) or ""
+        last: str = match.group(2) or match.group(4) or ""
         sep: str = "_" if "_" in match.group(0) else " "
         norm_last: str = DocumentTextUtils.normalize_word(last)
         if (
@@ -392,6 +427,22 @@ class DocumentAnonymizationRunner:
             return f"{last_upper[:1].upper()}.{sep}{first}"
         return match.group(0)
 
+    def _replace_initial_last_name(self, match: re.Match) -> str:
+        """Abrège 'V. COLLIN', 'C. BOUZ' ou 'J. Smagge' en 'I. N.'."""
+        initial: str = match.group(1)
+        last: str = match.group(2)
+        norm_last: str = DocumentTextUtils.normalize_word(last)
+        if (
+            norm_last.upper() in self.SAFE_UPPER_WORDS
+            or norm_last in self.config.excluded_words
+            or norm_last in self.config.surname_collisions
+            or norm_last in self.config.masked_locations
+            or norm_last in self.rules.COMMON_WORD_COLLISIONS
+            or self._is_known_first_name(last)
+        ):
+            return match.group(0)
+        return f"{initial}. {last[:1].upper()}."
+
     def _replace_email_with_alias(self, match: re.Match) -> str:
         """Remplace une adresse e-mail par son alias connu ou génère EMAIL_XXX."""
         raw_mail: str = match.group(0)
@@ -423,6 +474,9 @@ class DocumentAnonymizationRunner:
                 res = self.fast_replacer_regex.sub(self._replace_fast_target, res)
             return res
 
+        if self.config.mask_financial_and_admin_ids:
+            res = re.sub(r"\b[A-Z0-9]{10,}<{2,}[A-Z0-9<]{10,}\b", "[MRZ_IDENTITE_MASQUEE]", res)
+
         css_stash: List[str] = []
 
         def _stash_css(m_css: re.Match) -> str:
@@ -442,8 +496,8 @@ class DocumentAnonymizationRunner:
             res,
         )
         res = re.sub(
-            r"\b(DOCTEUR|Docteur|MADAME|Madame|MONSIEUR|Monsieur|MME|Mme|MR|Mr|DR|Dr|MLLE|Mlle|ENFANT|Enfant)"
-            r"(?!EYFUS\b)([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç\-]{2,})",
+            r"\b(SOCIETE|Societe|SOCIÉTÉ|Société|EAEA|IDFRA|DOCTEUR|Docteur|MADAME|Madame|MONSIEUR|Monsieur|MME|Mme|MR|Mr|DR|Dr|MLLE|Mlle|ENFANT|Enfant)"
+            r"(?!EYFUS\b)_?([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç\-]{2,})",
             r"\1 \2",
             res,
         )
@@ -479,7 +533,6 @@ class DocumentAnonymizationRunner:
             res = DocumentTextUtils.REGEX_LICENSE_PLATE.sub("[PLAQUE_IMMAT_MASQUEE]", res)
             res = DocumentTextUtils.REGEX_ACCESS_CODES.sub("[CODE_ACCES_MASQUE]", res)
             res = DocumentTextUtils.REGEX_ADMIN_REFS.sub("[REF_ADMIN_MASQUEE]", res)
-            res = re.sub(r"\b[A-Z0-9]{10,}<{2,}[A-Z0-9<]{10,}\b", "[MRZ_IDENTITE_MASQUEE]", res)
 
         if self.fast_replacer_regex:
             res = self.fast_replacer_regex.sub(self._replace_fast_target, res)
@@ -497,10 +550,14 @@ class DocumentAnonymizationRunner:
             res = self.title_first_last_regex.sub(self._replace_title_first_last, res)
         if self.title_last_name_regex:
             res = self.title_last_name_regex.sub(self._replace_title_last_name, res)
+        if getattr(self, "auto_first_double_upper_regex", None):
+            res = self.auto_first_double_upper_regex.sub(self._replace_auto_first_double_upper, res)
         if self.auto_first_last_regex:
             res = self.auto_first_last_regex.sub(self._replace_auto_first_last, res)
         if self.auto_last_first_regex:
             res = self.auto_last_first_regex.sub(self._replace_auto_last_first, res)
+        if getattr(self, "initial_last_name_regex", None):
+            res = self.initial_last_name_regex.sub(self._replace_initial_last_name, res)
         if self.config.mask_urls:
             res = DocumentTextUtils.REGEX_URL.sub("[URL_MASQUEE]", res)
 

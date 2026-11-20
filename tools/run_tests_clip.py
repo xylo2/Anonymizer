@@ -59,14 +59,31 @@ def _clean_noise_banners(text: str) -> str:
 
 
 def compact_error_report(raw_output: str) -> str:
-    """Réduit la taille du rapport d'erreurs unittest tout en gardant le contexte exact."""
+    """Extrait uniquement les blocs FAIL/ERROR et le bilan final, sans les logs intermédiaires."""
     lines: List[str] = raw_output.splitlines()
-    sep_idx: int = next((i for i, ln in enumerate(lines) if ln.startswith("=" * 20)), 0)
-    relevant: List[str] = lines[sep_idx:]
+    start_idx: Optional[int] = next(
+        (
+            i
+            for i, ln in enumerate(lines)
+            if ln.startswith("=" * 20)
+            and i + 1 < len(lines)
+            and lines[i + 1].lstrip().startswith(("FAIL:", "ERROR:"))
+        ),
+        None,
+    )
+    if start_idx is None:
+        tail: List[str] = [ln.strip() for ln in lines[-12:] if ln.strip()]
+        return "\n".join(tail)
 
+    relevant: List[str] = lines[start_idx:]
     blocks: List[List[str]] = []
     current: List[str] = []
+    summary_footer: List[str] = []
     for ln in relevant:
+        s_strip: str = ln.strip()
+        if s_strip.startswith(("Ran ", "FAILED", "OK")):
+            summary_footer.append(s_strip)
+            continue
         if ln.startswith("=" * 20):
             if current:
                 blocks.append(current)
@@ -87,6 +104,7 @@ def compact_error_report(raw_output: str) -> str:
     for blk in blocks:
         cleaned_blk: List[str] = []
         last_file_info: Optional[Tuple[str, int]] = None
+        exc_line: str = ""
         for idx, ln in enumerate(blk):
             s: str = ln.strip()
             if not s or s == "Traceback (most recent call last):":
@@ -100,8 +118,10 @@ def compact_error_report(raw_output: str) -> str:
                 last_file_info = (m_fl.group(1), int(m_fl.group(2)))
             if s.startswith("AssertionError:"):
                 s = _clean_noise_banners(s)
-                if len(s) > 320:
-                    s = s[:320] + "... [TRONQUÉ]"
+                if len(s) > 420:
+                    s = s[:200] + " [...] " + s[-200:]
+            if not s.startswith(("File ", "ERROR:", "FAIL:")):
+                exc_line = s
             cleaned_blk.append(s)
         if not cleaned_blk:
             continue
@@ -111,17 +131,22 @@ def compact_error_report(raw_output: str) -> str:
             if code_ctx:
                 cleaned_blk.append(f"CODE: {code_ctx}")
         sig: str = "|".join(cleaned_blk[-3:])
+        header: str = next(iter(cleaned_blk))
         if sig in seen_signatures and len(cleaned_blk) > 2:
-            compact_lines.append(f"[DOUBLON] {cleaned_blk} -> {cleaned_blk[-1]}")
+            compact_lines.append(f"[DOUBLON] {header} -> {exc_line}")
         else:
             seen_signatures.add(sig)
             compact_lines.append(" | ".join(cleaned_blk))
+
+    if summary_footer:
+        compact_lines.append("")
+        compact_lines.append(" | ".join(summary_footer))
 
     return "\n".join(compact_lines).strip()
 
 
 def main() -> int:
-    """Exécute la suite de tests, compacte les erreurs et les copie dans le presse-papiers."""
+    """Exécute la suite de tests, affiche un résumé propre et le copie dans le presse-papiers."""
     os.system("cls" if os.name == "nt" else "clear")
     runner_script: str = os.path.join(ROOT_DIR, "tests", "run_all_tests.py")
     env = os.environ.copy()
@@ -142,12 +167,25 @@ def main() -> int:
         part for part in (proc.stdout, proc.stderr) if part and part.strip()
     ).strip()
 
-    if proc.returncode == 0:
-        summary_lines = [
-            ln for ln in combined.splitlines()
-            if ln.startswith("Ran ") or ln.startswith("OK")
+    has_failure: bool = any(
+        ln.strip().startswith(("FAIL:", "ERROR:", "FAILED"))
+        for ln in combined.splitlines()
+    )
+
+    if proc.returncode == 0 and not has_failure:
+        summary_lines: List[str] = [
+            ln.strip()
+            for ln in combined.splitlines()
+            if ln.strip().startswith(("Ran ", "OK", "TOTAL"))
         ]
-        print("\n".join(summary_lines) or "OK : Tous les tests sont passés.", flush=True)
+        summary_txt: str = (
+            "\n".join(summary_lines)
+            if summary_lines
+            else "OK : Tous les tests sont passés."
+        )
+        print(summary_txt, flush=True)
+        if copy_to_clipboard(summary_txt):
+            print("[PRESSE-PAPIERS] Résumé copié.", flush=True)
         return 0
 
     compact_report: str = compact_error_report(combined)

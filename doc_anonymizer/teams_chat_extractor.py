@@ -182,27 +182,33 @@ class TeamsChatExtractor:
         msg: Dict[str, Any],
         discovered_emails: Optional[Any],
     ) -> List[str]:
-        """Extrait les adresses e-mail présentes dans la liste 'mentions' d'un message Teams."""
+        """Extrait les adresses e-mail présentes dans les mentions ou métadonnées d'un message Teams."""
         found: List[str] = []
         mentions = msg.get("mentions")
-        if not isinstance(mentions, list):
-            return found
-        for m_item in mentions:
-            if not isinstance(m_item, dict):
-                continue
-            mentioned = m_item.get("mentioned")
-            if isinstance(mentioned, dict):
-                user_obj = mentioned.get("user")
-                if isinstance(user_obj, dict):
-                    mail: str = str(
-                        user_obj.get("email") or user_obj.get("userPrincipalName") or ""
-                    ).strip()
-                    disp: str = str(
-                        user_obj.get("displayName") or m_item.get("mentionText") or ""
-                    ).strip()
-                    if mail and "@" in mail:
-                        found.append(mail)
-                        cls._register_discovered_email(discovered_emails, mail, disp)
+        if isinstance(mentions, list):
+            for m_item in mentions:
+                if not isinstance(m_item, dict):
+                    continue
+                mentioned = m_item.get("mentioned")
+                if isinstance(mentioned, dict):
+                    user_obj = mentioned.get("user")
+                    if isinstance(user_obj, dict):
+                        mail: str = str(
+                            user_obj.get("email") or user_obj.get("userPrincipalName") or ""
+                        ).strip()
+                        disp: str = str(
+                            user_obj.get("displayName") or m_item.get("mentionText") or ""
+                        ).strip()
+                        if mail and "@" in mail:
+                            found.append(mail)
+                            cls._register_discovered_email(discovered_emails, mail, disp)
+
+        raw_blob: str = json.dumps(msg, ensure_ascii=False)
+        for m_any in DocumentTextUtils.REGEX_EMAIL.finditer(raw_blob):
+            mail_val: str = m_any.group(0)
+            if mail_val not in found:
+                found.append(mail_val)
+            cls._register_discovered_email(discovered_emails, mail_val)
         return found
 
     def _parse_teams_message_list(
@@ -216,6 +222,7 @@ class TeamsChatExtractor:
         for msg in messages:
             if not isinstance(msg, dict):
                 continue
+            mention_mails: List[str] = self._collect_mentions_emails(msg, discovered_emails)
             msg_type: str = str(msg.get("messageType") or "message").lower()
             if msg_type not in {"message", "richtext/html", "text"}:
                 continue
@@ -229,7 +236,6 @@ class TeamsChatExtractor:
             sender_name, sender_email = self._extract_teams_sender(msg)
             self._register_discovered_email(discovered_emails, sender_email, sender_name)
 
-            mention_mails: List[str] = self._collect_mentions_emails(msg, discovered_emails)
             body_txt: str = self._clean_teams_html_body(
                 str(msg.get("content") or ""), discovered_emails
             )
@@ -290,15 +296,84 @@ class TeamsChatExtractor:
             return True
         return False
 
+    def _persist_discovered_teams_emails(self, found_emails: Set[str]) -> None:
+        """Enregistre les e-mails Teams inconnus dans discovered_email_contacts.txt."""
+        if not found_emails or self.config is None:
+            return
+        contacts_file: str = getattr(self.config, "contacts_file", "") or ""
+        known_mails: Set[str] = set()
+        if contacts_file and os.path.exists(contacts_file):
+            try:
+                with open(contacts_file, "r", encoding="utf-8", errors="ignore") as f_c:
+                    for ln in f_c:
+                        if "=" in ln and not ln.strip().startswith("#"):
+                            k_raw, v_raw = ln.split("=", 1)
+                            _, _, nid = DocumentTextUtils.resolve_contact_pair(k_raw, v_raw)
+                            if nid:
+                                known_mails.add(nid)
+            except OSError:
+                pass
+
+        root_dir: str = getattr(self.config, "root_dir", "") or ""
+        disc_path: str = (
+            getattr(self.config, "discovered_emails_file", "")
+            or getattr(self.config, "discovered_email_contacts_file", "")
+            or (os.path.join(root_dir, "output_contacts", "discovered_email_contacts.txt") if root_dir else "")
+        )
+        if not disc_path:
+            return
+
+        existing_map: Dict[str, str] = {}
+        if os.path.exists(disc_path):
+            try:
+                with open(disc_path, "r", encoding="utf-8", errors="ignore") as f_d:
+                    for ln in f_d:
+                        if "=" in ln and not ln.strip().startswith("#"):
+                            k_raw, v_raw = ln.split("=", 1)
+                            _, alias_v, nid = DocumentTextUtils.resolve_contact_pair(k_raw, v_raw)
+                            if nid and alias_v:
+                                existing_map[nid] = alias_v
+            except OSError:
+                pass
+
+        next_idx: int = len(existing_map) + 1
+        changed: bool = False
+        for raw_m in sorted(found_emails):
+            norm_m: str = DocumentTextUtils.normalize_identifier(raw_m)
+            if not norm_m or norm_m in known_mails or norm_m in existing_map:
+                continue
+            existing_map[norm_m] = f"Contact_Mail_{next_idx:03d}"
+            next_idx += 1
+            changed = True
+
+        if changed:
+            try:
+                os.makedirs(os.path.dirname(disc_path), exist_ok=True)
+                with open(disc_path, "w", encoding="utf-8") as f_out:
+                    for k_m, v_a in sorted(existing_map.items()):
+                        f_out.write(f"{k_m} = {v_a}\n")
+            except OSError:
+                pass
+
     def extract_teams_json(
         self,
         file_path: str,
         payload: Any,
-        discovered_emails: Optional[Dict[str, str]] = None,
+        discovered_emails: Optional[Any] = None,
     ) -> Dict[str, str]:
         """Extrait un export JSON Microsoft Teams (conversations ou messages plats)."""
         all_buckets: Dict[str, List[str]] = {}
-        base_title: str = os.path.splitext(os.path.basename(file_path))
+        base_title, _ = os.path.splitext(os.path.basename(file_path))
+
+        local_mails: Set[str] = set()
+        try:
+            raw_payload_str: str = json.dumps(payload, ensure_ascii=False)
+            for m_glob in DocumentTextUtils.REGEX_EMAIL.finditer(raw_payload_str):
+                mail_found: str = m_glob.group(0)
+                local_mails.add(mail_found)
+                self._register_discovered_email(discovered_emails, mail_found)
+        except (TypeError, ValueError):
+            pass
 
         if isinstance(payload, dict) and isinstance(payload.get("conversations"), list):
             for conv in payload["conversations"]:
@@ -323,6 +398,14 @@ class TeamsChatExtractor:
             for mk, txt in sub.items():
                 all_buckets.setdefault(mk, []).append(txt)
 
+        if local_mails:
+            self._persist_discovered_teams_emails(local_mails)
+            if all_buckets:
+                first_mk: str = next(iter(sorted(all_buckets.keys())))
+                all_buckets[first_mk].append(
+                    f"[Participants Teams : {', '.join(sorted(local_mails))}]\n"
+                )
+
         return {mk: "\n".join(chunks) for mk, chunks in sorted(all_buckets.items())}
 
     @staticmethod
@@ -339,9 +422,17 @@ class TeamsChatExtractor:
         parsed_dialogue: str = DocumentTextUtils.parse_teams_vtt_content(content)
         if not parsed_dialogue:
             return "", period
+        vtt_mails: List[str] = sorted(
+            set(DocumentTextUtils.REGEX_EMAIL.findall(content))
+        )
+        extra_footer: str = (
+            f"[Participants réunion Teams : {', '.join(vtt_mails)}]\n"
+            if vtt_mails
+            else ""
+        )
         header: str = (
             f"{'=' * 40}\n"
             f"TRANSCRIPTION RÉUNION TEAMS : {base_name}\n"
             f"{'-' * 40}\n"
         )
-        return f"{header}{parsed_dialogue}\n", period
+        return f"{header}{parsed_dialogue}\n{extra_footer}", period

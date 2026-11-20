@@ -2,231 +2,340 @@
 
 import os
 import re
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.text_utils import DocumentTextUtils
 
 
 class ContactRulesLoader:
     """
-    Charge et fusionne les règles de remplacement au format unifié
-    Identifiant_Brut = Alias depuis :
-    - contacts.txt (index principal généré depuis Google Contacts / Outlook),
-    - discovered_email_contacts.txt (e-mails découverts automatiquement),
-    - discovered_chat_contacts.txt (expéditeurs/participants des chats),
-    - manual_contacts.txt (exceptions manuelles prioritaires et dates sensibles).
+    Charge et fusionne les règles d'anonymisation depuis :
+    1) output_contacts/contacts.txt (contacts principaux CSV)
+    2) output_contacts/discovered_email_contacts.txt (e-mails rencontrés)
+    3) output_contacts/discovered_chat_contacts.txt (contacts de messageries)
+    4) output_contacts/manual_contacts.txt (exceptions manuelles et variantes OCR)
+    Et déduit automatiquement les noms de famille sûrs de contacts.txt.
     """
 
-    COMMON_WORD_COLLISIONS = frozenset({
-        "fiers", "fier", "bois", "foi", "fois", "voie", "voix", "champ",
-        "champs", "pont", "ponts", "port", "ports", "mont", "monts", "val",
-        "vaux", "lac", "lacs", "mer", "mers", "ile", "iles", "parc", "parcs",
-        "rue", "rues", "place", "places", "cour", "cours", "tour", "tours",
-        "bourg", "ville", "village", "camp", "camps", "roche", "roches",
-        "pierre", "pierres", "sable", "sables", "terre", "terres", "eau",
-        "eaux", "fontaine", "source", "sources", "moulin", "moulins",
-        "chapelle", "eglise", "abbaye", "chateau", "maison", "maisons",
-        "grange", "granges", "ferme", "fermes", "pre", "pres", "lande",
-        "landes", "haie", "haies", "fosse", "fosses", "croix", "saint",
-        "sainte", "saints", "saintes", "grand", "grande", "grands", "grandes",
-        "petit", "petite", "petits", "petites", "haut", "haute", "hauts",
-        "hautes", "bas", "basse", "basses", "neuf", "neuve",
-        "vieux", "vieille", "blanc", "blanche", "noir", "noire", "rouge",
-        "vert", "verte", "bleu", "bleue", "clair", "claire", "beau", "belle",
-        "bon", "bonne", "franc", "franche", "libre", "long", "longue",
-        "large", "fort", "forte", "doux", "douce", "chaud", "chaude",
-        "froid", "froide", "sec", "seche", "humide", "plein", "pleine",
-        "vide", "seul", "seule", "autre", "autres", "meme", "memes",
-        "tout", "tous", "toute", "toutes", "rien", "personne", "quelque",
-        "chaque", "aucun", "aucune", "certain", "certaine", "plusieurs",
-        "divers", "diverse", "pareil", "pareille", "tel", "telle",
-        "avril", "mai", "juin", "juillet", "aout", "mars", "lundi", "mardi",
-        "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
-        "car", "or", "ni", "donc", "mais", "ou", "et", "si", "que", "qui",
-        "quoi", "dont", "quand", "comment", "pourquoi", "combien",
-        "merci", "bonjour", "bonsoir", "salut", "pardon", "desole",
-        "orne", "chou", "maire", "mairie", "amis", "ami", "amie",
-    })
-
+    COMMON_WORD_COLLISIONS: Set[str] = {
+        "la", "le", "les", "un", "une", "des", "du", "de", "au", "aux",
+        "ce", "cet", "cette", "ces", "mon", "ton", "son", "ma", "ta", "sa",
+        "mes", "tes", "ses", "notre", "votre", "leur", "nos", "vos", "leurs",
+        "je", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles",
+        "me", "te", "se", "lui", "y", "en", "qui", "que", "quoi", "dont", "ou",
+        "et", "mais", "or", "ni", "car", "donc", "si", "ne", "pas", "plus",
+        "tres", "bien", "mal", "peu", "trop", "tout", "tous", "toute", "toutes",
+        "autre", "autres", "meme", "memes", "tel", "telle", "tels", "telles",
+        "quel", "quelle", "quels", "quelles", "chaque", "aucun", "aucune",
+        "certain", "certaine", "certains", "certaines", "plusieurs",
+        "paris", "caen", "lyon", "marseille", "lille", "nantes", "bordeaux",
+        "toulouse", "rennes", "nice", "strasbourg", "montpellier", "normandie",
+        "calvados", "manche", "orne", "eure", "seine", "france", "europe",
+        "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
+        "janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet",
+        "aout", "septembre", "octobre", "novembre", "decembre",
+        "saint", "sainte", "saints", "rue", "avenue", "boulevard", "place",
+        "route", "chemin", "impasse", "allee", "parc", "pont", "port", "gare",
+        "mairie", "ecole", "college", "lycee", "hopital", "clinique", "centre",
+        "service", "direction", "groupe", "societe", "entreprise", "cabinet",
+        "agence", "association", "syndicat", "comite", "conseil", "region",
+        "departement", "ville", "commune", "village", "quartier", "zone",
+        "maison", "appartement", "etage", "porte", "bureau", "salle", "chambre",
+        "cuisine", "jardin", "garage", "cave", "grenier", "toit", "mur",
+        "eau", "gaz", "electricite", "chauffage", "internet", "telephone",
+        "mail", "email", "message", "courrier", "lettre", "colis", "facture",
+        "devis", "contrat", "dossier", "document", "fichier", "page", "note",
+        "avis", "rapport", "bilan", "compte", "rendu", "proces", "verbal",
+        "acte", "titre", "carte", "attestation", "certificat", "ordonnance",
+        "feuille", "soins", "maladie", "sante", "travail", "arret", "conge",
+        "vacances", "ferie", "jour", "nuit", "matin", "midi", "soir", "heure",
+        "minute", "seconde", "semaine", "mois", "annee", "date", "periode",
+        "debut", "fin", "suite", "retour", "envoi", "reception", "reponse",
+        "demande", "accord", "refus", "urgent", "important", "info", "infos",
+        "contact", "accueil", "secretariat", "client", "clients", "partenaire",
+        "projet", "reunion", "point", "suivi", "action", "liste", "tableau",
+        "prix", "tarif", "montant", "total", "somme", "euro", "euros", "payer",
+        "reglement", "virement", "cheque", "banque", "assurance", "mutuelle",
+        "caisse", "impot", "impots", "taxe", "taxes", "prime", "aide", "aides",
+        "enfant", "enfants", "bebe", "fils", "fille", "pere", "mere", "parent",
+        "parents", "famille", "frere", "soeur", "oncle", "tante", "cousin",
+        "cousine", "grand", "petit", "jeune", "vieux", "nouveau", "ancien",
+        "bon", "bonne", "bons", "bonnes", "mauvais", "mauvaise", "beau", "belle",
+        "blanc", "blanche", "noir", "noire", "rouge", "bleu", "bleue", "vert",
+        "verte", "jaune", "gris", "grise", "rose", "marron", "orange", "violet",
+        "nord", "sud", "est", "ouest", "haut", "bas", "droite", "gauche",
+        "merci", "bonjour", "bonsoir", "salut", "coucou", "bravo", "felicitations",
+        "desole", "desolee", "excuse", "pardon", "oui", "non", "peut", "etre",
+        "avoir", "faire", "aller", "venir", "voir", "savoir", "pouvoir", "vouloir",
+        "devoir", "falloir", "prendre", "donner", "mettre", "passer", "rester",
+        "tenir", "porter", "parler", "aimer", "trouver", "chercher", "attendre",
+        "repondre", "ecrire", "lire", "comprendre", "connaitre", "croire",
+        "penser", "sentir", "vivre", "partir", "sortir", "entrer", "monter",
+        "descendre", "tomber", "ouvrir", "fermer", "commencer", "finir",
+        "continuer", "changer", "garder", "laisser", "montrer", "demander",
+        "essayer", "utiliser", "aider", "jouer", "manger", "boire", "dormir",
+        "courir", "marcher", "conduire", "voyager", "acheter", "vendre", "payer",
+        "choisir", "decider", "expliquer", "proposer", "accepter", "refuser",
+        "oublier", "rappeler", "verifier", "controler", "valider", "signer",
+        "annuler", "modifier", "supprimer", "ajouter", "creer", "produire",
+        "envoyer", "recevoir", "partager", "publier", "afficher", "cacher",
+        "masquer", "proteger", "sauvegarder", "restaurer", "copier", "coller",
+        "couper", "ouvrir", "imprimer", "scanner", "telecharger", "installer",
+        "configurer", "tester", "corriger", "resoudre", "ameliorer", "optimiser",
+        "boulon", "fresney", "cingal", "laize", "bretteville", "ifs", "herouville",
+        "mondeville", "fleury", "bayeux", "falaise", "lisieux", "vire", "honfleur",
+        "deauville", "trouville", "cabourg", "ouistreham", "courseulles",
+    }
     def __init__(self, config: PipelineConfig, manual_only: bool = False) -> None:
         """Initialise le chargeur de règles de contacts."""
         self.config: PipelineConfig = config
         self.manual_only: bool = manual_only
-        self.keyword_to_alias: Dict[str, str] = {}
-        self.manual_rules: Dict[str, str] = {}
-        self.auto_name_rules: Dict[str, str] = {}
-        self.reverse_contact_rules: Dict[str, str] = {}
-        self.target_phones: Dict[str, str] = {}
-        self.allowed_emails: Set[str] = set()
         self.email_to_alias: Dict[str, str] = {}
-        self.known_surnames: Set[str] = set()
+        self.target_phones: Dict[str, str] = {}
+        self.keyword_to_alias: Dict[str, str] = {}
+        self.manual_keywords: Set[str] = set()
+        self.extra_sensitive_dates: Set[str] = set()
+        self.auto_surnames: Dict[str, str] = {}
+        self.auto_first_names: Set[str] = set()
         self.last_name_to_aliases: Dict[str, Set[str]] = {}
         self.last_name_display: Dict[str, str] = {}
-        self.alias_words: Set[str] = set()
+        self.learned_first_names: Set[str] = set()
         self.full_targets: Set[str] = set()
-        self.extra_sensitive_dates: Set[str] = set()
-    def _ensure_manual_contacts_file(self) -> None:
-        """Crée un fichier manual_contacts.txt vide avec en-tête s'il n'existe pas."""
-        manual_path: str = self.config.manual_contacts_file
-        if not manual_path or os.path.exists(manual_path):
-            return
-        parent: str = os.path.dirname(os.path.abspath(manual_path))
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        DocumentTextUtils.atomic_write_text(
-            manual_path,
-            "# RÈGLES D'ANONYMISATION MANUELLES (EXCEPTIONS & VARIANTES OCR LOURDES)\n"
-            "# Format : Mot ou Nom complet = Alias\n\n",
-        )
-
-    def _index_alias_metadata(self, keyword: str, alias: str) -> None:
-        """Indexe les noms de famille et jetons d'alias pour l'audit phonétique et le filtrage."""
-        for token in re.findall(r"[A-Za-zÀ-ÿ0-9_-]{2,}", alias):
-            norm_tok: str = DocumentTextUtils.normalize_word(token)
-            if norm_tok:
-                self.alias_words.add(norm_tok)
-
-        if keyword.strip():
-            norm_kw: str = DocumentTextUtils.normalize_word(keyword)
-            if norm_kw:
-                self.full_targets.add(norm_kw)
-
-        kw_parts: List[str] = [p for p in keyword.strip().split(" ") if p]
-        if len(kw_parts) >= 2:
-            raw_last: str = kw_parts[-1]
-            norm_last: str = DocumentTextUtils.normalize_word(raw_last)
-            if len(norm_last) >= 3:
-                self.known_surnames.add(norm_last)
-                self.last_name_to_aliases.setdefault(norm_last, set()).add(alias)
-                self.last_name_display.setdefault(norm_last, raw_last)
-
-    def _register_rule(self, keyword: str, alias: str, is_manual: bool = False) -> None:
-        """Enregistre une règle de remplacement en filtrant les collisions courantes."""
-        kw: str = keyword.strip()
-        al: str = alias.strip()
-        if not kw or not al or kw == al:
-            return
-        if re.fullmatch(r"\d{1,2}[/\-.]\d{1,2}[/\-.](?:19|20)\d{2}", kw):
-            self.extra_sensitive_dates.add(kw)
-            return
-        norm: str = DocumentTextUtils.normalize_word(kw)
-        if not norm:
-            return
-        if not is_manual and norm in self.COMMON_WORD_COLLISIONS:
-            return
-        self.keyword_to_alias[kw] = al
-        self._index_alias_metadata(kw, al)
-        if is_manual:
-            self.manual_rules[kw] = al
-        else:
-            self.auto_name_rules[kw] = al
-
-    def _load_file_rules(self, file_path: str, is_manual: bool = False) -> None:
-        """Lit un fichier Identifiant_Brut = Alias (avec compatibilité ascendante)."""
-        if not file_path or not os.path.exists(file_path):
-            return
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            for raw_line in f:
-                line: str = raw_line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                left_p, right_p = line.split("=", 1)
-                left: str = left_p.strip()
-                right: str = right_p.strip()
-                if not left or not right:
-                    continue
-
-                if "@" in right and "@" not in left:
-                    left, right = right, left
-                elif DocumentTextUtils._normalize_fr_phone(right) and not DocumentTextUtils._normalize_fr_phone(left):
-                    left, right = right, left
-
-                if "@" in left:
-                    norm_mail: str = DocumentTextUtils.normalize_identifier(left)
-                    if norm_mail:
-                        self.allowed_emails.add(norm_mail)
-                        self.email_to_alias[norm_mail] = right
-                        self.reverse_contact_rules[left] = right
-                        self._index_alias_metadata("", right)
-                    continue
-
-                norm_phone: str = DocumentTextUtils._normalize_fr_phone(left)
-                if norm_phone:
-                    self.target_phones[norm_phone] = right
-                    self.reverse_contact_rules[left] = right
-                    self._index_alias_metadata("", right)
-                    continue
-
-                self._register_rule(left, right, is_manual=is_manual)
-
-    def load_all(self) -> bool:
-        """Charge l'ensemble des fichiers de contacts (auto, découverts et manuels)."""
-        if self.manual_only:
-            self._ensure_manual_contacts_file()
-            self._load_file_rules(self.config.manual_contacts_file, is_manual=True)
-            return True
-
-        if not os.path.exists(self.config.contacts_file):
-            print(
-                f"ERREUR : Fichier de contacts introuvable : '{self.config.contacts_file}'.\n"
-                "Exécutez d'abord 'python run_contacts.py'.",
-                flush=True,
-            )
-            return False
-
-        self._ensure_manual_contacts_file()
-        self._load_file_rules(self.config.contacts_file, is_manual=False)
-        self._load_file_rules(self.config.discovered_contacts_file, is_manual=False)
-        self._load_file_rules(self.config.discovered_chats_file, is_manual=False)
-        self._load_file_rules(self.config.manual_contacts_file, is_manual=True)
-        return True
-
-    def get_ordered_rules(self) -> List[Tuple[str, str]]:
-        """Retourne les règles triées par longueur décroissante de la cible."""
-        return sorted(
-            self.keyword_to_alias.items(),
-            key=lambda item: (-len(item[0]), item[0].lower()),
-        )
+        self.alias_words: Set[str] = {"contact", "mail", "tel", "sms", "chat", "pseudo", "email"}
 
     def is_first_name(self, token: str) -> bool:
-        """Vérifie si un mot ou prénom composé figure dans le référentiel des prénoms."""
+        """Indique si un jeton est un prénom connu (liste externe ou contacts)."""
         norm: str = DocumentTextUtils.normalize_word(token)
         if not norm:
             return False
-        if norm in self.config.known_first_names:
+        if norm in self.config.known_first_names or norm in self.learned_first_names:
             return True
-        parts: List[str] = [p for p in re.split(r"[\s\-]+", norm) if p]
-        if len(parts) >= 2:
-            if parts[0] in {"jean", "marie", "pierre", "anne", "paul", "louis"}:
-                return True
-            return all(p in self.config.known_first_names for p in parts)
+        if "-" in norm:
+            parts: List[str] = [p for p in norm.split("-") if p]
+            return bool(parts) and all(
+                p in self.config.known_first_names or p in self.learned_first_names
+                for p in parts
+            )
         return False
 
     @staticmethod
     def is_one_edit_away(word_a: str, word_b: str) -> bool:
-        """Indique si deux mots diffèrent d'au plus une opération d'édition."""
+        """Vérifie si deux mots normalisés ont au plus 1 opération d'édition (Levenshtein <= 1)."""
         a: str = DocumentTextUtils.normalize_word(word_a)
         b: str = DocumentTextUtils.normalize_word(word_b)
+        if not a or not b or abs(len(a) - len(b)) > 1:
+            return False
         if a == b:
             return True
-        len_a: int = len(a)
-        len_b: int = len(b)
-        if abs(len_a - len_b) > 1 or min(len_a, len_b) < 4:
-            return False
-        if len_a == len_b:
-            diffs: int = sum(1 for c1, c2 in zip(a, b) if c1 != c2)
-            return diffs <= 1
-        shorter, longer = (a, b) if len_a < len_b else (b, a)
-        i: int = 0
-        j: int = 0
-        found_diff: bool = False
+        if len(a) == len(b):
+            return sum(1 for ca, cb in zip(a, b) if ca != cb) == 1
+        shorter, longer = (a, b) if len(a) < len(b) else (b, a)
+        i = j = diffs = 0
         while i < len(shorter) and j < len(longer):
             if shorter[i] != longer[j]:
-                if found_diff:
+                diffs += 1
+                if diffs > 1:
                     return False
-                found_diff = True
                 j += 1
             else:
                 i += 1
                 j += 1
+        return True
+
+    def _is_safe_auto_surname(self, norm_word: str) -> bool:
+        """Vérifie qu'un nom de famille extrait automatiquement est sans risque de faux positif."""
+        if not norm_word or len(norm_word) < 4:
+            return False
+        if norm_word in self.COMMON_WORD_COLLISIONS:
+            return False
+        if norm_word in self.config.known_first_names:
+            return False
+        if norm_word in self.config.excluded_words:
+            return False
+        if norm_word in self.config.surname_collisions:
+            return False
+        if norm_word in self.config.masked_locations:
+            return False
+        return True
+
+    def _register_alias_tokens(self, alias: str) -> None:
+        """Enregistre les mots composant un alias pour éviter tout faux positif à l'audit."""
+        for tok in re.split(r"[^A-Za-zÀ-ÿ0-9]+", alias or ""):
+            nw: str = DocumentTextUtils.normalize_word(tok)
+            if len(nw) >= 2:
+                self.alias_words.add(nw)
+
+    def _register_auto_surname_from_pair(self, target: str, alias: str) -> None:
+        """
+        Extrait automatiquement les noms de famille sûrs depuis contacts.txt
+        (via 'Prénom Nom = Alias' ou 'prenom.nom@domaine.fr = Prénom N.').
+        """
+        if "@" in target:
+            local_part, _ = target.split("@", 1)
+            parts: List[str] = [p for p in re.split(r"[._\-]+", local_part.lower()) if p.isalpha()]
+            alias_clean: str = re.sub(r"\([^)]*\)", "", alias).strip()
+            alias_tokens: List[str] = [t for t in alias_clean.split() if t]
+            if len(parts) >= 2 and len(alias_tokens) >= 2:
+                first_tok: str = DocumentTextUtils.normalize_word(next(iter(parts)))
+                last_tok: str = DocumentTextUtils.normalize_word(parts[-1])
+                alias_last_init: str = DocumentTextUtils.normalize_word(alias_tokens[-1])
+                if (
+                    first_tok in self.config.known_first_names
+                    and len(alias_last_init) == 1
+                    and last_tok.startswith(alias_last_init)
+                    and self._is_safe_auto_surname(last_tok)
+                ):
+                    self.auto_first_names.add(first_tok)
+                    self.learned_first_names.add(first_tok)
+                    self.auto_surnames.setdefault(last_tok, f"{last_tok[:1].upper()}.")
+                    self.last_name_to_aliases.setdefault(last_tok, set()).add(alias)
+                    self.last_name_display.setdefault(last_tok, parts[-1].capitalize())
+            return
+
+        words: List[str] = [w for w in re.split(r"[\s\-]+", target.strip()) if w]
+        if len(words) < 2:
+            return
+        w_first: str = DocumentTextUtils.normalize_word(next(iter(words)))
+        w_last: str = DocumentTextUtils.normalize_word(words[-1])
+        if w_first in self.config.known_first_names and self._is_safe_auto_surname(w_last):
+            self.auto_first_names.add(w_first)
+            self.learned_first_names.add(w_first)
+            self.auto_surnames.setdefault(w_last, f"{w_last[:1].upper()}.")
+            self.last_name_to_aliases.setdefault(w_last, set()).add(alias)
+            self.last_name_display.setdefault(w_last, words[-1].capitalize())
+        elif w_last in self.config.known_first_names and self._is_safe_auto_surname(w_first):
+            self.auto_first_names.add(w_last)
+            self.learned_first_names.add(w_last)
+            self.auto_surnames.setdefault(w_first, f"{w_first[:1].upper()}.")
+            self.last_name_to_aliases.setdefault(w_first, set()).add(alias)
+            self.last_name_display.setdefault(w_first, next(iter(words)).capitalize())
+    def _build_glued_ocr_compounds(self) -> None:
+        """Génère automatiquement les variantes collées PrénomNom et NomPrénom sûres."""
+        if not self.auto_surnames:
+            return
+        for norm_sur, sur_alias in self.auto_surnames.items():
+            if norm_sur not in self.keyword_to_alias:
+                self.keyword_to_alias[norm_sur] = sur_alias
+
+        candidate_firsts: Set[str] = set(self.auto_first_names)
+        for fn in self.config.known_first_names:
+            if len(fn) >= 4 and fn not in self.COMMON_WORD_COLLISIONS:
+                candidate_firsts.add(fn)
+
+        for norm_sur, sur_alias in self.auto_surnames.items():
+            if len(norm_sur) < 4:
+                continue
+            for fn in candidate_firsts:
+                if len(fn) < 4:
+                    continue
+                first_cap: str = fn.capitalize()
+                glued_fl: str = f"{fn}{norm_sur}"
+                glued_lf: str = f"{norm_sur}{fn}"
+                if glued_fl not in self.keyword_to_alias:
+                    self.keyword_to_alias[glued_fl] = f"{first_cap} {sur_alias}"
+                if glued_lf not in self.keyword_to_alias:
+                    self.keyword_to_alias[glued_lf] = f"{sur_alias} {first_cap}"
+
+    def _load_file_rules(
+        self,
+        file_path: str,
+        is_manual: bool = False,
+        extract_auto_surnames: bool = False,
+        override_existing: bool = False,
+    ) -> None:
+        """Charge un fichier de règles au format unifié 'Identifiant_Brut = Alias'."""
+        if not file_path or not os.path.exists(file_path):
+            return
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f_in:
+                for raw_line in f_in:
+                    line: str = raw_line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    left, right = line.split("=", 1)
+                    target, alias, _ = DocumentTextUtils.resolve_contact_pair(left, right)
+                    if not target or not alias:
+                        continue
+
+                    self._register_alias_tokens(alias)
+
+                    if alias == "[DATE_MASQUEE]":
+                        self.extra_sensitive_dates.add(target)
+                        continue
+
+                    if "@" in target:
+                        norm_mail: str = DocumentTextUtils.normalize_identifier(target)
+                        if norm_mail:
+                            self.full_targets.add(norm_mail)
+                            if is_manual or override_existing or norm_mail not in self.email_to_alias:
+                                self.email_to_alias[norm_mail] = alias
+                        if extract_auto_surnames:
+                            self._register_auto_surname_from_pair(target, alias)
+                        continue
+
+                    digits: str = DocumentTextUtils._normalize_fr_phone(target)
+                    if len(digits) == 10 and digits.startswith("0"):
+                        self.full_targets.add(digits)
+                        if is_manual or override_existing or digits not in self.target_phones:
+                            self.target_phones[digits] = alias
+                        continue
+
+                    norm_kw: str = DocumentTextUtils.normalize_word(target)
+                    if not norm_kw or len(norm_kw) <= 2:
+                        continue
+                    self.full_targets.add(norm_kw)
+                    if not is_manual and norm_kw in self.COMMON_WORD_COLLISIONS:
+                        continue
+                    if is_manual or override_existing or norm_kw not in self.keyword_to_alias:
+                        self.keyword_to_alias[norm_kw] = alias
+                    if is_manual:
+                        self.manual_keywords.add(norm_kw)
+                    if extract_auto_surnames:
+                        self._register_auto_surname_from_pair(target, alias)
+        except OSError:
+            pass
+
+    def load_all(self) -> bool:
+        """Charge l'ensemble des sources de règles dans l'ordre de priorité."""
+        self.email_to_alias.clear()
+        self.target_phones.clear()
+        self.keyword_to_alias.clear()
+        self.manual_keywords.clear()
+        self.extra_sensitive_dates.clear()
+        self.auto_surnames.clear()
+        self.auto_first_names.clear()
+        self.last_name_to_aliases.clear()
+        self.last_name_display.clear()
+        self.learned_first_names.clear()
+        self.full_targets.clear()
+        self.alias_words = {"contact", "mail", "tel", "sms", "chat", "pseudo", "email"}
+
+        if self.manual_only:
+            self._load_file_rules(self.config.manual_contacts_file, is_manual=True)
+            return True
+
+        self._load_file_rules(
+            self.config.contacts_file, is_manual=False, extract_auto_surnames=True
+        )
+        root_dir: str = getattr(self.config, "root_dir", "") or ""
+        contacts_dir: str = os.path.dirname(self.config.contacts_file) if self.config.contacts_file else ""
+        candidate_files: List[str] = [
+            val
+            for key, val in vars(self.config).items()
+            if isinstance(val, str) and "discovered" in key.lower()
+        ]
+        candidate_files.extend([
+            os.path.join(contacts_dir, "discovered_email_contacts.txt") if contacts_dir else "",
+            os.path.join(contacts_dir, "discovered_chat_contacts.txt") if contacts_dir else "",
+            os.path.join(root_dir, "output_contacts", "discovered_email_contacts.txt") if root_dir else "",
+            os.path.join(root_dir, "output_contacts", "discovered_chat_contacts.txt") if root_dir else "",
+        ])
+        seen_paths: Set[str] = set()
+        for p in candidate_files:
+            if p and p not in seen_paths and os.path.exists(p):
+                seen_paths.add(p)
+                self._load_file_rules(p, is_manual=False, override_existing=True)
+
+        self._load_file_rules(self.config.manual_contacts_file, is_manual=True)
+        self._build_glued_ocr_compounds()
         return True

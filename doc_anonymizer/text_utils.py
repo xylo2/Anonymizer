@@ -113,7 +113,7 @@ class DocumentTextUtils:
         r"(?i)(?:code\s*(?:d['’]acc[èe]s|pin|digicode|porte|interphone|wifi)|digicode|mot\s*de\s*passe|mdp)\s*[:\-]?\s*[A-Za-z0-9*#+\-]{3,16}\b"
     )
     REGEX_ADMIN_REFS = re.compile(
-        r"(?i)(?:r[ée]f[ée]rence|r[ée]f\.?|dossier|sinistre|contrat|police|adh[ée]rent|immatriculation|siret|siren)\s*[:\-n°o\s]*[A-Z0-9\-/]{5,24}\b"
+        r"(?i)(?:r[ée]f[ée]rence|r[ée]f\.?|dossier|sinistre|contrat|police|adh[ée]rent|immatriculation|siret|siren)\s*[:\-n°o\s]*(?=[A-Z0-9\-/]*\d)[A-Z0-9\-/]{5,24}\b"
     )
     REGEX_URL = re.compile(
         r"https?://[^\s<>\"'\)\]]+|www\.[^\s<>\"'\)\]]+",
