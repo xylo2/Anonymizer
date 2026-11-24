@@ -6,7 +6,8 @@ import hashlib
 import json
 import os
 import re
-from typing import Any, DefaultDict, Dict, FrozenSet, List, Optional, Pattern, Set, Tuple
+from typing import Any, DefaultDict, Dict, List, Optional, Pattern, Set, Tuple
+from doc_anonymizer.audit_lexicons import AuditLexicons
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.contact_rules_loader import ContactRulesLoader
 from doc_anonymizer.text_utils import DocumentTextUtils
@@ -41,77 +42,13 @@ class AuditAndStateManager:
         "NUM_FISCAL", "PERSONNAGE_",
     )
 
-    COMPOUND_PLACE_PARTICLES: FrozenSet[str] = frozenset({
-        "de", "du", "des", "d", "sur", "sous", "en", "les", "la", "le", "aux", "au",
-    })
-
-    COMMON_FRENCH_STOPWORDS: FrozenSet[str] = frozenset({
-        "le", "la", "les", "un", "une", "des", "du", "de", "au", "aux",
-        "ce", "cet", "cette", "ces", "mon", "ton", "son", "ma", "ta", "sa",
-        "mes", "tes", "ses", "notre", "votre", "leur", "nos", "vos", "leurs",
-        "je", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles",
-        "qui", "que", "quoi", "dont", "ou", "et", "mais", "donc", "or", "ni",
-        "car", "pour", "par", "avec", "sans", "sous", "sur", "dans", "vers",
-        "chez", "entre", "apres", "avant", "depuis", "pendant", "selon",
-        "tres", "plus", "moins", "bien", "mal", "tout", "tous", "toute",
-        "toutes", "autre", "autres", "meme", "memes", "aucun", "aucune",
-        "chaque", "quel", "quelle", "quels", "quelles", "ici", "la", "oui",
-        "non", "pas", "ne", "en", "y", "est", "sont", "etait", "etaient",
-        "etre", "avoir", "fait", "faire", "dit", "dire", "voir", "vu",
-        "bonjour", "bonsoir", "salut", "merci", "cordialement", "sinceres",
-        "salutations", "objet", "sujet", "date", "heure", "lieu", "page",
-        "pages", "total", "montant", "numero", "reference", "dossier",
-        "document", "documents", "fichier", "fichiers", "piece", "jointe",
-        "annexe", "copie", "original", "version", "note", "notes", "avis",
-        "compte", "rendu", "bilan", "rapport", "synthese", "resume",
-        "contrat", "facture", "devis", "commande", "paiement", "reglement",
-        "attestation", "certificat", "ordonnance", "prescription", "courrier",
-        "lettre", "message", "mail", "email", "telephone", "adresse", "code",
-        "postal", "ville", "pays", "france", "europe", "region", "departement",
-        "mairie", "prefecture", "tribunal", "ministere", "service", "services",
-        "direction", "directeur", "directrice", "president", "presidente",
-        "general", "generale", "secretaire", "responsable", "chef", "agent",
-        "docteur", "professeur", "madame", "monsieur", "mademoiselle", "maitre",
-        "cabinet", "clinique", "hopital", "centre", "laboratoire", "pharmacie",
-        "banque", "assurance", "mutuelle", "caisse", "allocations", "impots",
-        "article", "chapitre", "section", "titre", "point", "liste", "tableau",
-        "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
-        "lun", "mar", "mer", "jeu", "ven", "sam", "dim",
-        "janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet",
-        "aout", "septembre", "octobre", "novembre", "decembre", "janv", "fevr",
-        "avr", "juil", "sept", "oct", "nov", "dec", "nord", "sud", "est",
-        "ouest", "saint", "sainte", "rue", "avenue", "boulevard", "place",
-        "delivery", "carte", "recap", "parking", "nouveau", "arbitrage",
-        "backlog", "daily", "coord", "donne", "enf", "finalement", "origine",
-        "passe", "signature", "signez", "tome", "visualiser", "voici",
-        "apparemment", "besoin", "bises", "coordination", "dessins", "dsn",
-        "demo", "demonstration", "developpement", "epic", "examens", "fax",
-        "fourmi", "gazette", "genre", "gestion", "lorsque", "mascarade",
-        "mondial", "plein", "preparation", "puree", "quant", "respire",
-        "retour", "reorganisation", "reunions", "taper", "trancher", "union",
-        "unite", "appart",
-    })
-
-    AMBIGUOUS_FIRST_NAMES: FrozenSet[str] = frozenset({
-        "aime", "aimee", "ange", "aube", "aurore", "blanc", "blanche",
-        "bon", "cerise", "clair", "claire", "clement", "constance", "desire",
-        "douce", "esperance", "fidele", "fleur", "flore", "france", "gai",
-        "grace", "guy", "honore", "iris", "jean", "joie", "joli", "joy",
-        "juste", "laurier", "loup", "luce", "lumiere", "marc", "marine",
-        "max", "may", "modeste", "noel", "olive", "paix", "parfait",
-        "patience", "pierre", "premier", "prime", "prudence", "rose",
-        "sage", "sauveur", "solange", "soleil", "victoire", "violette",
-    })
+    COMPOUND_PLACE_PARTICLES = AuditLexicons.COMPOUND_PLACE_PARTICLES
+    COMMON_FRENCH_STOPWORDS = AuditLexicons.COMMON_FRENCH_STOPWORDS
+    AMBIGUOUS_FIRST_NAMES = AuditLexicons.AMBIGUOUS_FIRST_NAMES
 
     def __init__(
         self, config: PipelineConfig, rules: ContactRulesLoader
     ) -> None:
-        """
-        Initialise le gestionnaire d'état, les compteurs de statistiques et d'audit.
-
-        :param config: Instance de PipelineConfig.
-        :param rules: Instance de ContactRulesLoader.
-        """
         self.config: PipelineConfig = config
         self.rules: ContactRulesLoader = rules
         self.already_processed: Set[str] = set()
@@ -134,13 +71,6 @@ class AuditAndStateManager:
 
     @staticmethod
     def _phonetic_french_key(word: str) -> str:
-        """
-        Calcule une clé phonétique française simplifiée pour rapprocher les
-        erreurs de transcription vocale/OCR (ex: 'dubunt' ~ 'dupont').
-
-        :param word: Mot normalisé sans accents.
-        :return: Empreinte phonétique compacte.
-        """
         s: str = DocumentTextUtils.normalize_word(word)
         s = re.sub(r"[^a-z]", "", s)
         if not s:
@@ -160,9 +90,6 @@ class AuditAndStateManager:
         """
         Recherche si le nom de famille candidat est proche orthographiquement
         d'un vrai nom de famille connu, sans jamais suggérer sur un prénom seul.
-
-        :param display_name: Libellé candidat détecté par l'audit.
-        :return: Tuple (alias_suggéré, nom_famille_proche) ou None.
         """
         if not self.rules.last_name_to_aliases:
             return None
@@ -209,23 +136,12 @@ class AuditAndStateManager:
 
     @staticmethod
     def _format_first_name_case(token: str) -> str:
-        """
-        Capitalise proprement un prénom (gère les prénoms composés et majuscules).
-
-        :param token: Jeton prénom brut.
-        :return: Prénom mis en forme (ex: 'FLORIAN' -> 'Florian').
-        """
+        """Capitalise proprement un prénom (gère les prénoms composés et majuscules)."""
         parts: List[str] = re.split(r"(-)", token.strip())
         return "".join(p.capitalize() if p != "-" else p for p in parts)
 
     def _canonicalize_key(self, raw_key: str) -> Tuple[str, str]:
-        """
-        Ordonne une paire en 'Prénom Nom' grâce au référentiel des prénoms
-        et retourne (clé_normalisée_unique, libellé_affichable).
-
-        :param raw_key: Clé candidate ('Nom Prénom', 'Prénom Nom' ou nom seul).
-        :return: Tuple (identifiant_canonique, libellé_d_affichage).
-        """
+        """Ordonne une paire en 'Prénom Nom' grâce au référentiel des prénoms."""
         tokens: List[str] = raw_key.strip().split()
         if len(tokens) == 2:
             p1, p2 = tokens
@@ -246,12 +162,7 @@ class AuditAndStateManager:
             self.canonical_labels[norm_id] = display_label
         return norm_id, self.canonical_labels[norm_id]
     def _is_truncated_place_fragment(self, cleaned: str) -> bool:
-        """
-        Détecte un fragment de toponyme composé tronqué (ex: 'Saint-Martin-De').
-
-        :param cleaned: Mot ou composé brut à évaluer.
-        :return: True si le jeton est un fragment géographique incomplet.
-        """
+        """Détecte un fragment de toponyme composé tronqué (ex: 'Saint-Martin-De')."""
         if "-" not in cleaned:
             return False
         hyphen_parts: List[str] = [
@@ -268,13 +179,7 @@ class AuditAndStateManager:
         return False
 
     def _is_valid_word(self, word: str) -> bool:
-        """
-        Vérifie qu'un mot candidat est un nom propre plausible et non un
-        jeton masqué, un mot-outil français ou un terme exclu.
-
-        :param word: Mot brut à évaluer.
-        :return: True si le mot est éligible pour l'audit.
-        """
+        """Vérifie qu'un mot candidat est un nom propre plausible et non un mot-outil."""
         cleaned: str = word.strip().strip("-")
         if len(cleaned) < 2 or cleaned.upper().startswith(self.MASKED_PREFIXES):
             return False
@@ -293,14 +198,7 @@ class AuditAndStateManager:
         )
 
     def _is_plausible_pair(self, p1: str, p2: str) -> bool:
-        """
-        Valide une paire (p1, p2) en écartant les faux positifs liés aux
-        prénoms ambigus (mots courants) et aux sigles tout en majuscules.
-
-        :param p1: Premier mot candidat.
-        :param p2: Second mot candidat.
-        :return: True si la paire est un nom de personne probable.
-        """
+        """Valide une paire (p1, p2) en écartant les faux positifs et sigles."""
         if not (self._is_valid_word(p1) and self._is_valid_word(p2)):
             return False
         if p1.isupper() and p2.isupper() and len(p1) <= 4 and len(p2) <= 4:
@@ -333,13 +231,7 @@ class AuditAndStateManager:
         )
 
     def _is_entry_still_valid(self, display_name: str) -> bool:
-        """
-        Vérifie si une entrée déjà présente dans l'état JSON reste valide
-        en écartant notamment tout prénom seul.
-
-        :param display_name: Libellé enregistré dans l'état.
-        :return: True si l'entrée doit être conservée.
-        """
+        """Vérifie si une entrée déjà présente dans l'état JSON reste valide."""
         tokens: List[str] = display_name.strip().split()
         if len(tokens) == 2:
             tok_first, tok_second = tokens
@@ -448,14 +340,12 @@ class AuditAndStateManager:
 
     @staticmethod
     def _audit_sort_key(entry: Tuple[str, str, int]) -> Tuple[int, str]:
-        """Calcule la clé de tri (occurrences décroissantes, puis libellé)."""
         _, display_name, count = entry
         return (-count, display_name.lower())
 
     def _format_audit_entry(
         self, norm_id: str, display_name: str, count: int, pad_width: int
     ) -> Tuple[str, str]:
-        """Formate la ligne complète d'audit et la ligne épurée pour copier-coller."""
         short_names: List[str] = sorted(
             {os.path.basename(p) for p in self.files_by_name[norm_id]}
         )
@@ -481,7 +371,6 @@ class AuditAndStateManager:
         return detailed, copy_line
 
     def write_report(self) -> int:
-        """Actualise simultanément audit_noms_residuels.txt et audit_noms_residuels_copier.txt."""
         manual_name: str = os.path.basename(self.config.manual_contacts_file)
         copy_name: str = os.path.basename(self.config.audit_copy_file)
         results: List[Tuple[str, str, int]] = sorted(
