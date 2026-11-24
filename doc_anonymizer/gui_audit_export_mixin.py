@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import messagebox
 from typing import Any, Dict, Optional, Set, Tuple
 from doc_anonymizer.gui_dialogs import BeforeAfterPreviewDialog
+from doc_anonymizer.text_utils import DocumentTextUtils
 
 
 class GuiAuditExportMixin:
@@ -47,7 +48,12 @@ class GuiAuditExportMixin:
                 payload = json.load(f_st)
             raw_counts = payload.get("compteur_paires", {}) if isinstance(payload, dict) else {}
             if isinstance(raw_counts, dict):
-                return {str(k).strip().lower(): int(v) for k, v in raw_counts.items()}
+                normalized_map: Dict[str, int] = {}
+                for k, v in raw_counts.items():
+                    norm_k: str = DocumentTextUtils.normalize_word(str(k))
+                    if norm_k:
+                        normalized_map[norm_k] = normalized_map.get(norm_k, 0) + int(v)
+                return normalized_map
         except (OSError, ValueError, json.JSONDecodeError):
             pass
         return {}
@@ -62,7 +68,7 @@ class GuiAuditExportMixin:
         candidates = self.controller.load_audit_candidates(ini_path)
         counts_map: Dict[str, int] = self._load_audit_counts_map(ini_path)
         for cand, alias in candidates:
-            occ: int = counts_map.get(cand.strip().lower(), 1)
+            occ: int = counts_map.get(DocumentTextUtils.normalize_word(cand), 1)
             self.audit_tree.insert("", "end", values=(f"{occ}x", cand, alias))  # type: ignore[attr-defined]
         self.audit_count_var.set(f"{len(candidates)} élément(s) à vérifier (raccourcis : Entrée = Aperçu, M = Masquer, I = Ignorer).")  # type: ignore[attr-defined]
         children = self.audit_tree.get_children()  # type: ignore[attr-defined]

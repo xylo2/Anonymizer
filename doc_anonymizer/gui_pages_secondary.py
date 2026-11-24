@@ -116,6 +116,16 @@ class GuiSecondaryPagesMixin(GuiDeanonPageMixin):
         grid.pack(fill="both", expand=True, pady=(0, 8))
         grid.columnconfigure(0, weight=1)
         grid.columnconfigure(1, weight=1)
+        ia_desc: str = (
+            "• Masque identités, téléphones, e-mails, NIR et IBAN.\n"
+            "• Audit humain Avant/Après inclus.\n"
+            "• Désanonymisation automatique du retour de l'IA."
+        )
+        law_desc: str = (
+            "• Conserve tous les vrais noms, dates et lieux.\n"
+            "• OCR sur les images + transcription des audios.\n"
+            "• Génère un recueil chronologique numéroté."
+        )
         if use_ctk and ctk is not None:
             left = ctk.CTkFrame(
                 grid, fg_color="#ffffff", border_width=2,
@@ -131,14 +141,8 @@ class GuiSecondaryPagesMixin(GuiDeanonPageMixin):
                 text_color="#0f172a", font=("Segoe UI", 14, "bold"),
             ).pack(anchor="w", padx=18, pady=(2, 8))
             ctk.CTkLabel(
-                left,
-                text=(
-                    "• Masque identités, téléphones, e-mails, NIR et IBAN.\n"
-                    "• Audit humain Avant/Après inclus.\n"
-                    "• Désanonymisation automatique du retour de l'IA."
-                ),
-                text_color="#334155", font=("Segoe UI", 10),
-                justify="left", wraplength=350,
+                left, text=ia_desc, text_color="#334155",
+                font=("Segoe UI", 10), justify="left", wraplength=350,
             ).pack(anchor="w", padx=18, pady=(0, 14))
             make_styled_button(
                 left, text="Choisir le Mode IA (Anonymisé) ->",
@@ -160,14 +164,8 @@ class GuiSecondaryPagesMixin(GuiDeanonPageMixin):
                 text_color="#0f172a", font=("Segoe UI", 14, "bold"),
             ).pack(anchor="w", padx=18, pady=(2, 8))
             ctk.CTkLabel(
-                right,
-                text=(
-                    "• Conserve tous les vrais noms, dates et lieux.\n"
-                    "• OCR sur les images + transcription des audios.\n"
-                    "• Génère un recueil chronologique numéroté."
-                ),
-                text_color="#334155", font=("Segoe UI", 10),
-                justify="left", wraplength=350,
+                right, text=law_desc, text_color="#334155",
+                font=("Segoe UI", 10), justify="left", wraplength=350,
             ).pack(anchor="w", padx=18, pady=(0, 14))
             make_styled_button(
                 right, text="Choisir le Mode Avocat (Nominatif) ->",
@@ -180,16 +178,23 @@ class GuiSecondaryPagesMixin(GuiDeanonPageMixin):
                 highlightthickness=2, padx=16, pady=14,
             )
             left_tk.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+            tk.Label(left_tk, text="OPTION A — PRÉ-ANALYSE PAR UNE IA", bg=UI_COLORS["card"], fg="#2563eb", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+            tk.Label(left_tk, text="Mode Anonymisé (Protégé)", bg=UI_COLORS["card"], fg="#0f172a", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(2, 6))
+            tk.Label(left_tk, text=ia_desc, bg=UI_COLORS["card"], fg="#334155", font=("Segoe UI", 9), justify="left").pack(anchor="w", pady=(0, 12))
             make_styled_button(
                 left_tk, text="Choisir le Mode IA (Anonymisé) ->",
                 command=lambda: self._set_workflow_mode("ia", navigate=True),  # type: ignore[attr-defined]
                 variant="primary",
             ).pack(anchor="w")
+
             right_tk = tk.Frame(
                 grid, bg=UI_COLORS["card"], highlightbackground="#059669",
                 highlightthickness=2, padx=16, pady=14,
             )
             right_tk.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+            tk.Label(right_tk, text="OPTION B — TRANSMETTRE À MON AVOCAT", bg=UI_COLORS["card"], fg="#059669", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+            tk.Label(right_tk, text="Mode Nominatif (Vrais noms)", bg=UI_COLORS["card"], fg="#0f172a", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(2, 6))
+            tk.Label(right_tk, text=law_desc, bg=UI_COLORS["card"], fg="#334155", font=("Segoe UI", 9), justify="left").pack(anchor="w", pady=(0, 12))
             make_styled_button(
                 right_tk, text="Choisir le Mode Avocat (Nominatif) ->",
                 command=lambda: self._set_workflow_mode("lawyer", navigate=True),  # type: ignore[attr-defined]

@@ -144,34 +144,17 @@ class GuiTablesMixin(GuiChatTableMixin, GuiDuplicateTableMixin):
             self.contacts_filter_tree.delete(iid)  # type: ignore[attr-defined]
         self.contacts_filter_tree.tag_configure("kept", background="#ecfdf5", foreground="#065f46")  # type: ignore[attr-defined]
         self.contacts_filter_tree.tag_configure("ignored", background="#fef2f2", foreground="#991b1b")  # type: ignore[attr-defined]
-        base_titles = {
-            "keep": "STATUT", "alias": "CONTACT",
-            "phones": "TÉLÉPHONE", "emails": "EMAIL",
-        }
+        base_titles = {"keep": "STATUT", "alias": "CONTACT", "phones": "TÉLÉPHONE", "emails": "EMAIL"}
         for col_id, base_lbl in base_titles.items():
-            arrow: str = (
-                (" ▼" if self.contact_sort_reverse else " ▲")
-                if self.contact_sort_col == col_id
-                else ""
-            )
-            self.contacts_filter_tree.heading(  # type: ignore[attr-defined]
-                col_id, text=f"{base_lbl}{arrow}",
-                command=lambda c=col_id: self._sort_contacts_by_column(c),
-            )
+            arrow: str = (" ▼" if self.contact_sort_reverse else " ▲") if self.contact_sort_col == col_id else ""
+            self.contacts_filter_tree.heading(col_id, text=f"{base_lbl}{arrow}", command=lambda c=col_id: self._sort_contacts_by_column(c))  # type: ignore[attr-defined]
 
         query: str = self.contact_filter_search_var.get().strip().lower()  # type: ignore[attr-defined]
-        view_mode: str = (
-            self.contact_filter_view_var.get()
-            if hasattr(self, "contact_filter_view_var")
-            else "Tous"
-        )
+        view_mode: str = self.contact_filter_view_var.get() if hasattr(self, "contact_filter_view_var") else "Tous"
         kept_total: int = sum(1 for it in self.contact_filter_items if it.get("selected"))
         ignored_total: int = len(self.contact_filter_items) - kept_total
         indexed = list(enumerate(self.contact_filter_items))
-        indexed.sort(
-            key=lambda pair: self._contact_sort_key(next(reversed(pair))),
-            reverse=self.contact_sort_reverse,
-        )
+        indexed.sort(key=lambda pair: self._contact_sort_key(next(reversed(pair))), reverse=self.contact_sort_reverse)
 
         filtered: List[Tuple[int, Dict[str, Any]]] = []
         for orig_idx, item in indexed:
@@ -181,71 +164,42 @@ class GuiTablesMixin(GuiChatTableMixin, GuiDuplicateTableMixin):
             if view_mode in ("Mis de côté uniquement", "Mis de côté") and is_kept:
                 continue
             name_str: str = str(item.get("display_name") or item.get("alias") or "")
-            phones_str, emails_str = TreeviewTableHelper.split_contact_identifiers(
-                item.get("identifiers", [])
-            )
+            phones_str, emails_str = TreeviewTableHelper.split_contact_identifiers(item.get("identifiers", []))
             if not self._matches_search_query(query, name_str, phones_str, emails_str):
                 continue
             filtered.append((orig_idx, item))
 
-        page_slice = self._paginate_and_update_controls(
-            filtered, "contact_page_index", "contact_page_info_var",
-            "btn_contact_prev_page", "btn_contact_next_page",
-        )
+        page_slice = self._paginate_and_update_controls(filtered, "contact_page_index", "contact_page_info_var", "btn_contact_prev_page", "btn_contact_next_page")
         for orig_idx, item in page_slice:
             is_kept = bool(item.get("selected"))
             name_str = str(item.get("display_name") or item.get("alias") or "")
-            phones_str, emails_str = TreeviewTableHelper.split_contact_identifiers(
-                item.get("identifiers", [])
-            )
+            phones_str, emails_str = TreeviewTableHelper.split_contact_identifiers(item.get("identifiers", []))
             mark: str = "✓ Garder" if is_kept else "✕ Mis de côté"
-            row_tag: str = "kept" if is_kept else "ignored"
-            self.contacts_filter_tree.insert(  # type: ignore[attr-defined]
-                "", "end", iid=str(orig_idx),
-                values=(mark, name_str, phones_str, emails_str), tags=(row_tag,),
-            )
+            self.contacts_filter_tree.insert("", "end", iid=str(orig_idx), values=(mark, name_str, phones_str, emails_str), tags=("kept" if is_kept else "ignored",))  # type: ignore[attr-defined]
 
-        self.contact_filter_summary_var.set(  # type: ignore[attr-defined]
-            f"{kept_total} gardé(s) (vert) • {ignored_total} mis de côté (rouge) "
-            f"— Total : {len(self.contact_filter_items)} contact(s)."
-        )
+        self.contact_filter_summary_var.set(f"{kept_total} gardé(s) (vert) • {ignored_total} mis de côté (rouge) — Total : {len(self.contact_filter_items)} contact(s).")  # type: ignore[attr-defined]
         if hasattr(self, "tabs_contact_view"):
-            self.tabs_contact_view.set_option_labels({  # type: ignore[attr-defined]
-                "Tous": f"Tous ({len(self.contact_filter_items)})",
-                "Gardés": f"Gardés ({kept_total})",
-                "Mis de côté": f"Mis de côté ({ignored_total})",
-            })
+            self.tabs_contact_view.set_option_labels({"Tous": f"Tous ({len(self.contact_filter_items)})", "Gardés": f"Gardés ({kept_total})", "Mis de côté": f"Mis de côté ({ignored_total})"})  # type: ignore[attr-defined]
+
     def _toggle_contact_row_by_id(self, row_id: str) -> None:
-        if row_id and row_id.isdigit():
+        if row_id and row_id.isdigit() and 0 <= int(row_id) < len(self.contact_filter_items):
             idx: int = int(row_id)
-            if 0 <= idx < len(self.contact_filter_items):
-                self.contact_filter_items[idx]["selected"] = not bool(
-                    self.contact_filter_items[idx].get("selected")
-                )
-                self._render_contact_filter_tree()
-                self.contacts_filter_tree.selection_remove(self.contacts_filter_tree.selection())  # type: ignore[attr-defined]
-                self._schedule_debounced_save(
-                    "_contact_save_after_id", self._persist_contact_filter_now
-                )
+            self.contact_filter_items[idx]["selected"] = not bool(self.contact_filter_items[idx].get("selected"))
+            self._render_contact_filter_tree()
+            self.contacts_filter_tree.selection_remove(self.contacts_filter_tree.selection())  # type: ignore[attr-defined]
+            self._schedule_debounced_save("_contact_save_after_id", self._persist_contact_filter_now)
 
     def _toggle_selected_contact_filter(self, _event: object = None) -> None:
         sel = self.contacts_filter_tree.selection()  # type: ignore[attr-defined]
         if sel:
             self._toggle_contact_row_by_id(next(iter(sel)))
 
-    def _set_all_contacts_selected(
-        self, selected: bool, exclusive: bool = False
-    ) -> None:
+    def _set_all_contacts_selected(self, selected: bool, exclusive: bool = False) -> None:
         query: str = self.contact_filter_search_var.get().strip().lower()  # type: ignore[attr-defined]
         for item in self.contact_filter_items:
             name_str: str = str(item.get("display_name") or item.get("alias") or "")
-            phones_str, emails_str = TreeviewTableHelper.split_contact_identifiers(
-                item.get("identifiers", [])
-            )
-            matches: bool = self._matches_search_query(
-                query, name_str, phones_str, emails_str
-            )
-            if matches:
+            phones_str, emails_str = TreeviewTableHelper.split_contact_identifiers(item.get("identifiers", []))
+            if self._matches_search_query(query, name_str, phones_str, emails_str):
                 item["selected"] = selected
             elif exclusive and selected:
                 item["selected"] = False
@@ -262,24 +216,16 @@ class GuiTablesMixin(GuiChatTableMixin, GuiDuplicateTableMixin):
         if not ini_path:
             return
         xml_list = self.controller.list_sms_export_files(ini_path)
-        self.sms_files_summary_var.set(  # type: ignore[attr-defined]
-            f"Exports SMS (.xml) détectés ({len(xml_list)}) : "
-            f"{', '.join(os.path.basename(p) for p in xml_list[:5])}"
-            if xml_list
-            else "Exports SMS (.xml) détectés : aucun."
-        )
+        self.sms_files_summary_var.set(f"Exports SMS (.xml) détectés ({len(xml_list)}) : {', '.join(os.path.basename(p) for p in xml_list[:5])}" if xml_list else "Exports SMS (.xml) détectés : aucun.")  # type: ignore[attr-defined]
         self.sms_page_index: int = 0
         self.sms_filter_items = self.controller.load_sms_number_filter_items(ini_path)
         self._render_sms_filter_tree()
+
     def _persist_sms_filter_now(self) -> None:
         ini_path: str = self.current_ini_var.get()
         if ini_path and self.sms_filter_items:
-            kept: int = self.controller.save_sms_number_filter_selection(
-                ini_path, self.sms_filter_items
-            )
-            self.status_var.set(
-                f"Numéros SMS enregistrés : {kept} numéro(s) conservé(s)."
-            )
+            kept: int = self.controller.save_sms_number_filter_selection(ini_path, self.sms_filter_items)
+            self.status_var.set(f"Numéros SMS enregistrés : {kept} numéro(s) conservé(s).")
 
     def _on_sms_view_changed(self) -> None:
         self.sms_page_index = 0
@@ -335,7 +281,7 @@ class GuiTablesMixin(GuiChatTableMixin, GuiDuplicateTableMixin):
             self.sms_filter_tree.heading(col_id, text=f"{base_lbl}{arrow}", command=lambda c=col_id: self._sort_sms_by_column(c))  # type: ignore[attr-defined]
 
         query: str = self.sms_filter_search_var.get().strip().lower()  # type: ignore[attr-defined]
-        view_mode: str = self.sms_filter_view_var.get() if hasattr(self, "sms_filter_view_var") else "Tous"
+        view_mode: str = self.sms_filter_view_var.get() if hasattr(self, "sms_filter_view_var") else "Tous"  # type: ignore[attr-defined]
         kept_total: int = sum(1 for it in self.sms_filter_items if it.get("selected"))
         short_total: int = sum(1 for it in self.sms_filter_items if self._is_short_sms_item(it))
         ignored_total: int = len(self.sms_filter_items) - kept_total
@@ -379,7 +325,11 @@ class GuiTablesMixin(GuiChatTableMixin, GuiDuplicateTableMixin):
             self._toggle_sms_row_by_id(next(iter(sel)))
 
     def _deselect_short_sms_numbers(self) -> None:
-        changed: int = sum(1 for it in self.sms_filter_items if self._is_short_sms_item(it) and it.get("selected") and not it.update({"selected": False}))
+        changed: int = 0
+        for item in self.sms_filter_items:
+            if self._is_short_sms_item(item) and item.get("selected"):
+                item["selected"] = False
+                changed += 1
         self._render_sms_filter_tree()
         self.sms_filter_tree.selection_remove(self.sms_filter_tree.selection())  # type: ignore[attr-defined]
         self._persist_sms_filter_now()
