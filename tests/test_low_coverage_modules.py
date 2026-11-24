@@ -17,14 +17,9 @@ from tools.generate_pdf_guide import MarkdownPdfConverter
 
 
 class TestLowCoverageModules(unittest.TestCase):
-    """
-    Cible les 6 modules sous les 70 % de couverture : power_manager,
-    office_extractors, complete_manual_contacts, core_utils, geo_data
-    et generate_pdf_guide.
-    """
+    """Couvre power_manager, office_extractors, complete_manual_contacts, core_utils, geo_data et generate_pdf_guide."""
 
     def setUp(self) -> None:
-        """Prépare un répertoire temporaire isolé."""
         self.test_dir: str = tempfile.mkdtemp(prefix="test_low_cov_")
         self.ini_path: str = os.path.join(self.test_dir, "config.ini")
         with open(self.ini_path, "w", encoding="utf-8") as f:
@@ -42,25 +37,17 @@ class TestLowCoverageModules(unittest.TestCase):
         self.config: PipelineConfig = PipelineConfig(self.ini_path)
 
     def tearDown(self) -> None:
-        """Nettoie le répertoire temporaire."""
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_power_manager_and_core_utils_branches(self) -> None:
-        """
-        Couvre le repli Windows sans AwayMode, l'arrêt forcé kill() Linux
-        et les primitives SharedCoreUtils (prevent_sleep, load_locations_set, atomic_write).
-        """
         fake_kernel32 = MagicMock()
-        fake_kernel32.SetThreadExecutionState.side_effect = [0, 1]
-        with patch.object(os, "name", "nt"), patch(
-            "ctypes.windll", create=True
-        ) as mock_windll:
+        fake_kernel32.SetThreadExecutionState.side_effect = list((0, 1))
+        with patch.object(os, "name", "nt"), patch("ctypes.windll", create=True) as mock_windll:
             mock_windll.kernel32 = fake_kernel32
             inh = SystemSleepInhibitor(enabled=True, refresh_interval=10.0)
             res: int = inh._apply_windows_state()
             self.assertEqual(res, 1)
             self.assertEqual(fake_kernel32.SetThreadExecutionState.call_count, 2)
-
             SharedCoreUtils.prevent_sleep(True)
             SharedCoreUtils.prevent_sleep(False)
 
@@ -89,20 +76,16 @@ class TestLowCoverageModules(unittest.TestCase):
         self.assertIn("villagetest", geo_set)
         self.assertIn("paris", geo_set)
         self.assertIn("normandie", geo_set)
+
     def test_office_extractors_ocr_mock_and_error_cases(self) -> None:
-        """
-        Couvre les branches OCR (PDF scanné et image) avec moteur mocké
-        ainsi que les fichiers vides ou introuvables dans OfficeAndDocumentExtractor.
-        """
         ext = OfficeAndDocumentExtractor(enable_ocr=True)
         ext._ocr_engine = lambda img_bytes: (  # type: ignore[assignment]
             ["Texte reconnu par OCR", "Ligne 2 OCR"],
             None,
         )
-
         img_path: str = os.path.join(self.test_dir, "scan.png")
         with open(img_path, "wb") as f_img:
-            f_img.write(b"\x89PNG\(\r\\)n\x1a\nfake")
+            f_img.write(b"\x89PNG\r\n\x1a\nfake")
         txt_img, err_img = ext.extract_image(img_path)
         self.assertIsNone(err_img)
         assert txt_img is not None
@@ -134,11 +117,6 @@ class TestLowCoverageModules(unittest.TestCase):
         self.assertIsNotNone(err_missing)
 
     def test_manual_completer_edge_cases_and_pdf_guide_markdown(self) -> None:
-        """
-        Couvre les variantes d'identifiants, noms inversés/composés et noms seuls
-        dans ManualContactsAutoCompleter, ainsi que tous les éléments Markdown de
-        MarkdownPdfConverter (titres H1-H4, citations, listes ol/ul, blocs code, HR).
-        """
         with open(self.config.manual_contacts_file, "w", encoding="utf-8") as f_m:
             f_m.write(
                 "# En-tête\n"
@@ -150,11 +128,9 @@ class TestLowCoverageModules(unittest.TestCase):
                 "Entreprise = \n"
                 " = ValeurDroiteSeule\n"
             )
-
         completer = ManualContactsAutoCompleter(self.config, dry_run=False)
         done, total = completer.process()
-        self.assertEqual(total, 7)
-        self.assertEqual(done, 7)
+        self.assertEqual((done, total), (7, 7))
 
         with open(self.config.manual_contacts_file, "r", encoding="utf-8") as f_m:
             res_manual: str = f_m.read()
@@ -166,6 +142,7 @@ class TestLowCoverageModules(unittest.TestCase):
         self.assertIn("Entreprise = E.", res_manual)
         self.assertIn("ValeurDroiteSeule = V.", res_manual)
 
+        fence: str = chr(96) * 3
         rich_md: str = os.path.join(self.test_dir, "complet.md")
         rich_pdf: str = os.path.join(self.test_dir, "complet.pdf")
         with open(rich_md, "w", encoding="utf-8") as f_md:
@@ -175,7 +152,7 @@ class TestLowCoverageModules(unittest.TestCase):
                 "---\n"
                 "- Puce 1\n- Puce 2\n\n"
                 "1. Étape 1\n2. Étape 2\n\n"
-                "```python\n# Commentaire préservé\n---\nx = 1\n```\n"
+                f"{fence}python\n# Commentaire préservé\n---\nx = 1\n{fence}\n"
             )
         MarkdownPdfConverter.convert(md_path=rich_md, pdf_path=rich_pdf, footer_label="DocTest")
         self.assertTrue(os.path.exists(rich_pdf))

@@ -75,7 +75,9 @@ BUTTON_STYLES: Dict[str, Tuple[str, str, str, int, str]] = {
 
 UI_FONT_SCALE: float = 1.0
 _ENV_SR: str = os.environ.get("ANONYMIZER_SCREEN_READER", "").strip().lower()
-SCREEN_READER_MODE: bool = "--screen-reader" in sys.argv or _ENV_SR in {"1", "true", "yes"}
+SCREEN_READER_MODE: bool = (
+    "--screen-reader" in sys.argv or _ENV_SR in {"1", "true", "yes"}
+)
 _SCALED_WIDGETS: List[Tuple[Any, str, int, str]] = []
 _REGISTERED_TOOLTIPS: List[Any] = []
 _ACTIVE_TTK_STYLE: Optional[ttk.Style] = None
@@ -142,6 +144,8 @@ def set_ui_font_scale(new_scale: float, prefs_path: str = "") -> float:
         try:
             if widget.winfo_exists():
                 widget.configure(font=(family, scaled_size(base_pt), weight))
+                if HAS_CTK and ctk is not None and isinstance(widget, ctk.CTkEntry):
+                    widget.configure(height=max(34, int(round(38 * UI_FONT_SCALE))))
                 alive.append((widget, family, base_pt, weight))
         except tk.TclError:
             pass
@@ -426,10 +430,12 @@ def make_modern_entry(
 ) -> Any:
     if HAS_CTK and ctk is not None and not SCREEN_READER_MODE:
         kw: Dict[str, Any] = {
-            "width": width, "height": 36, "corner_radius": 8,
+            "width": width, "height": max(34, int(round(38 * UI_FONT_SCALE))),
+            "corner_radius": 8,
             "border_width": 1, "border_color": UI_COLORS["border_strong"],
             "fg_color": "#ffffff", "text_color": UI_COLORS["text"],
-            "placeholder_text_color": "#64748b", "font": ("Segoe UI", 10),
+            "placeholder_text_color": "#64748b",
+            "font": ("Segoe UI", scaled_size(11)),
             "placeholder_text": placeholder,
         }
         if textvariable is not None:
@@ -443,12 +449,12 @@ def make_modern_entry(
             "highlightthickness": 1, "highlightbackground": UI_COLORS["border_strong"],
             "highlightcolor": UI_COLORS["primary"], "bg": "#ffffff",
             "fg": UI_COLORS["text"], "insertbackground": UI_COLORS["primary"],
-            "font": ("Segoe UI", 10),
+            "font": ("Segoe UI", scaled_size(11)),
         }
         if textvariable is not None:
             kw_tk["textvariable"] = textvariable
         ent = tk.Entry(parent, **kw_tk)
-    register_scalable_font(ent, "Segoe UI", 10, "normal")
+    register_scalable_font(ent, "Segoe UI", 11, "normal")
     make_widget_keyboard_accessible(ent)
     return ent
 

@@ -36,6 +36,8 @@ class TimedTextTestResult(unittest.TextTestResult):
             elapsed: float = time.perf_counter() - start_t
             self.test_timings.append((elapsed, test.id()))
         super().stopTest(test)
+
+
 def _build_coverage_obj(data_file: Optional[str] = None) -> Optional[Any]:
     try:
         import coverage  # type: ignore[import-not-found]
@@ -86,33 +88,43 @@ def _run_single_test_module(
     )
 
 
-def _format_coverage_summary(cov: Any, show_missing: bool = False) -> None:
-    if show_missing:
-        cov.report(show_missing=True, skip_empty=True)
-        return
+def _format_coverage_summary(cov: Any, show_missing: bool = True) -> None:
     buf = io.StringIO()
-    total_pct: float = cov.report(file=buf, show_missing=False, skip_empty=True)
-    rows: List[Tuple[float, str, int, int]] = []
+    total_pct: float = cov.report(file=buf, show_missing=True, skip_empty=True)
+    rows: List[Tuple[float, str, int, int, str]] = []
+    missing_details: List[str] = []
     for line in buf.getvalue().splitlines():
         parts = line.split()
         first_col = next(iter(parts), "")
         if len(parts) < 4 or first_col in {"Name", "TOTAL"} or line.startswith("-"):
             continue
+        pct_idx: int = next((i for i, p in enumerate(parts) if p.endswith("%")), -1)
+        if pct_idx < 3:
+            continue
         try:
-            pct = float(parts[-1].rstrip("%"))
-            stmts, miss = int(parts[-3]), int(parts[-2])
+            pct = float(parts[pct_idx].rstrip("%"))
+            stmts, miss = int(parts[pct_idx - 2]), int(parts[pct_idx - 1])
         except ValueError:
             continue
-        rel_path = os.path.relpath(" ".join(parts[:-3]), ROOT_DIR).replace("\\", "/")
-        rows.append((pct, rel_path, stmts, miss))
+        rel_path = os.path.relpath(" ".join(parts[: pct_idx - 2]), ROOT_DIR).replace("\\", "/")
+        miss_ranges: str = " ".join(parts[pct_idx + 1 :]).strip()
+        rows.append((pct, rel_path, stmts, miss, miss_ranges))
+        if miss > 0 and miss_ranges:
+            missing_details.append(f"- {rel_path} ({pct:.1f}%) : lignes {miss_ranges}")
     rows.sort()
     print(f"{'Module':<46} | {'Couv.':>6} | {'Statut':<7} | {'Lignes'}", flush=True)
     print("-" * 76, flush=True)
-    for pct, rel_path, stmts, miss in rows:
+    for pct, rel_path, stmts, miss, _ in rows:
         status = "OK" if pct >= 85.0 else ("MOYEN" if pct >= 70.0 else "BAS")
         print(f"{rel_path:<46} | {pct:5.1f}% | {status:<7} | {stmts - miss}/{stmts}", flush=True)
     print("-" * 76, flush=True)
     print(f"{'COUVERTURE GLOBALE':<46} | {total_pct:5.1f}%", flush=True)
+    if show_missing and missing_details:
+        print("\nLignes non couvertes :", flush=True)
+        for item in missing_details:
+            print(item, flush=True)
+
+
 def _print_timing_summary(timings: List[Tuple[float, str]], unit_s: float, mbox_s: float, total_s: float) -> None:
     print("\n=== CHRONOMÉTRAGE DES TESTS ===", flush=True)
     sorted_t = sorted(timings, key=lambda pair: -next(iter(pair)))
@@ -135,7 +147,8 @@ def main() -> None:
     t_global = time.perf_counter()
     warnings.simplefilter("default")
     parser = argparse.ArgumentParser(description="Lance les tests en parallèle.")
-    parser.add_argument("--show-missing", action="store_true")
+    parser.add_argument("--no-missing", action="store_true", help="Masque le détail des lignes non couvertes.")
+    parser.add_argument("--show-missing", action="store_true", help="Affiche le détail des lignes non couvertes (actif par défaut).")
     parser.add_argument("--fast", action="store_true", help="Ignore les tests GUI Tkinter lents.")
     parser.add_argument("--max-errors", type=int, default=5, help="Arrête dès N modules en échec (-1 ou 0 = illimité).")
     parser.add_argument("-j", "--workers", type=int, default=min(6, os.cpu_count() or 2))
@@ -201,7 +214,7 @@ def main() -> None:
         if final_cov is not None and cov_files:
             final_cov.combine(data_paths=cov_files)
             print(f"\n=== 3. COUVERTURE ({total_run} tests unitaires + .mbox) ===", flush=True)
-            _format_coverage_summary(final_cov, show_missing=args.show_missing)
+            _format_coverage_summary(final_cov, show_missing=not args.no_missing)
 
     _print_timing_summary(timings, unit_s, mbox_s, time.perf_counter() - t_global)
 

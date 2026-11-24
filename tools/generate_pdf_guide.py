@@ -11,18 +11,10 @@ import pymupdf
 
 
 class MarkdownPdfConverter:
-    """
-    Convertit un fichier Markdown en document PDF paginé et mis en forme via PyMuPDF.
-    """
+    """Convertit un fichier Markdown en document PDF paginé via PyMuPDF."""
 
     @staticmethod
     def format_inline_markdown(text: str) -> str:
-        """
-        Convertit la mise en forme Markdown en ligne (gras, italique, code, liens).
-
-        :param text: Ligne de texte brute.
-        :return: Chaîne HTML échappée et formatée.
-        """
         escaped: str = html.escape(text)
         escaped = re.sub(
             r"`([^`]+)`",
@@ -41,14 +33,7 @@ class MarkdownPdfConverter:
 
     @classmethod
     def markdown_to_styled_html(cls, md_text: str) -> str:
-        """
-        Transforme le contenu Markdown en document HTML stylisé prêt pour PyMuPDF,
-        en préservant strictement les commentaires '#' et séparateurs '---' dans
-        les blocs de code.
-
-        :param md_text: Contenu complet du fichier Markdown.
-        :return: Code HTML complet avec feuilles de style intégrées.
-        """
+        fence: str = chr(96) * 3
         html_parts: List[str] = [
             "<!DOCTYPE html><html><head><meta charset='utf-8'><style>",
             "body { font-family: sans-serif; font-size: 10pt; color: #1e293b; line-height: 1.45; }",
@@ -64,7 +49,6 @@ class MarkdownPdfConverter:
             "hr { border: 0; border-top: 1px solid #e2e8f0; margin: 12px 0; }",
             "</style></head><body>",
         ]
-
         in_code_block: bool = False
         code_lines: List[str] = []
         list_mode: str = ""
@@ -82,30 +66,26 @@ class MarkdownPdfConverter:
                 html_parts.append(f"<pre>{code_body}</pre>")
                 code_lines = []
                 in_code_block = False
+
         for raw_line in md_text.splitlines():
             stripped: str = raw_line.strip()
-
-            if stripped.startswith("```"):
+            if stripped.startswith(fence):
                 _close_list()
                 if in_code_block:
                     _flush_code_block()
                 else:
                     in_code_block = True
                 continue
-
             if in_code_block:
                 code_lines.append(raw_line)
                 continue
-
             if not stripped:
                 _close_list()
                 continue
-
             if stripped == "---":
                 _close_list()
                 html_parts.append("<hr>")
                 continue
-
             if stripped.startswith("# "):
                 _close_list()
                 html_parts.append(f"<h1>{cls.format_inline_markdown(stripped[2:])}</h1>")
@@ -143,6 +123,7 @@ class MarkdownPdfConverter:
         _close_list()
         html_parts.append("</body></html>")
         return "\n".join(html_parts)
+
     @classmethod
     def convert(
         cls,
@@ -150,33 +131,19 @@ class MarkdownPdfConverter:
         pdf_path: Optional[str] = None,
         footer_label: Optional[str] = None,
     ) -> None:
-        """
-        Génère un fichier PDF mis en page et paginé à partir d'un fichier Markdown.
-
-        :param md_path: Chemin vers le fichier Markdown source.
-        :param pdf_path: Chemin de sortie du fichier PDF (déduit du .md si omis).
-        :param footer_label: Libellé affiché avant le numéro de page.
-        """
         src_path: Path = Path(md_path)
         if not src_path.exists():
             raise FileNotFoundError(f"Le fichier '{md_path}' est introuvable.")
-
         resolved_pdf: str = pdf_path if pdf_path else str(src_path.with_suffix(".pdf"))
         resolved_label: str = footer_label if footer_label else src_path.stem
-
         md_text: str = src_path.read_text(encoding="utf-8")
-
         styled_html: str = cls.markdown_to_styled_html(md_text)
         page_rect = pymupdf.paper_rect("a4")
         margin: float = 42.0
         footer_height: float = 24.0
         content_rect = pymupdf.Rect(
-            margin,
-            margin,
-            page_rect.width - margin,
-            page_rect.height - margin - footer_height,
+            margin, margin, page_rect.width - margin, page_rect.height - margin - footer_height
         )
-
         pdf_buffer = io.BytesIO()
         story = pymupdf.Story(html=styled_html)
         writer = pymupdf.DocumentWriter(pdf_buffer)
@@ -187,16 +154,12 @@ class MarkdownPdfConverter:
             story.draw(device, None)
             writer.end_page()
         writer.close()
-
         doc = pymupdf.open(stream=pdf_buffer.getvalue(), filetype="pdf")
         total_pages: int = len(doc)
         for page_idx in range(total_pages):
             page = doc[page_idx]
             footer_rect = pymupdf.Rect(
-                margin,
-                page_rect.height - margin - 14.0,
-                page_rect.width - margin,
-                page_rect.height - margin + 6.0,
+                margin, page_rect.height - margin - 14.0, page_rect.width - margin, page_rect.height - margin + 6.0
             )
             page.insert_textbox(
                 footer_rect,
@@ -206,54 +169,23 @@ class MarkdownPdfConverter:
                 color=(0.45, 0.5, 0.58),
                 align=pymupdf.TEXT_ALIGN_CENTER,
             )
-
         doc.save(resolved_pdf)
         doc.close()
 
-        print(
-            f"PDF paginé généré avec succès : {os.path.abspath(resolved_pdf)}",
-            flush=True,
-        )
-
 
 def parse_args() -> argparse.Namespace:
-    """
-    Analyse les arguments de ligne de commande pour la conversion Markdown -> PDF.
-
-    :return: Espace de noms contenant les chemins d'entrée et de sortie.
-    """
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Convertit un fichier Markdown en PDF mis en page et paginé."
     )
-    parser.add_argument(
-        "input_md",
-        nargs="?",
-        default="GUIDE_UTILISATION.md",
-        help="Chemin du fichier Markdown source (défaut : GUIDE_UTILISATION.md).",
-    )
-    parser.add_argument(
-        "-o", "--output",
-        default=None,
-        help="Chemin du fichier PDF de sortie (défaut : même nom que le .md).",
-    )
-    parser.add_argument(
-        "-t", "--title",
-        default=None,
-        help="Libellé affiché en pied de page avant le numéro de page.",
-    )
+    parser.add_argument("input_md", nargs="?", default="GUIDE_UTILISATION.md")
+    parser.add_argument("-o", "--output", default=None)
+    parser.add_argument("-t", "--title", default=None)
     return parser.parse_args()
 
 
 def main() -> None:
-    """
-    Point d'entrée principal de l'utilitaire de génération PDF.
-    """
     args: argparse.Namespace = parse_args()
-    MarkdownPdfConverter.convert(
-        md_path=args.input_md,
-        pdf_path=args.output,
-        footer_label=args.title,
-    )
+    MarkdownPdfConverter.convert(md_path=args.input_md, pdf_path=args.output, footer_label=args.title)
 
 
 if __name__ == "__main__":

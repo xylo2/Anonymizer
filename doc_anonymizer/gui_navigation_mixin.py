@@ -1,7 +1,6 @@
 # Commandes pip à exécuter : pip install customtkinter>=5.2.2
 
 import tkinter as tk
-from tkinter import messagebox
 from typing import Any, Dict, List, Tuple
 from doc_anonymizer import gui_widgets as _gw
 from doc_anonymizer.gui_gate_mixin import GuiGateMixin
@@ -30,7 +29,6 @@ class GuiNavigationMixin(GuiGateMixin):
     nav_buttons: Dict[str, Any]
     nav_container: tk.Frame
     page_heading_var: tk.StringVar
-
     def _build_layout(self) -> None:
         use_ctk: bool = bool(HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE)
         shell = tk.Frame(self, bg=UI_COLORS["bg"])  # type: ignore[arg-type]
@@ -103,12 +101,12 @@ class GuiNavigationMixin(GuiGateMixin):
             )
             lbl_s2_tk.pack(anchor="w", pady=(2, 0))
             register_scalable_font(lbl_s2_tk, "Segoe UI", 8, "normal")
+
         main_area = tk.Frame(shell, bg=UI_COLORS["bg"])
         main_area.pack(side="left", fill="both", expand=True)
         top_bar = tk.Frame(main_area, bg="#ffffff", padx=18, pady=10)
         top_bar.pack(fill="x")
         tk.Frame(main_area, bg=UI_COLORS["border"], height=1).pack(fill="x")
-
         right_controls = tk.Frame(top_bar, bg="#ffffff")
         right_controls.pack(side="right", padx=(10, 0))
         sr_label: str = (
@@ -147,6 +145,7 @@ class GuiNavigationMixin(GuiGateMixin):
         if use_ctk:
             self.btn_font_up.configure(width=40)
             self.btn_font_down.configure(width=40)
+
         title_col = tk.Frame(top_bar, bg="#ffffff")
         title_col.pack(side="left", fill="x", expand=True)
 
@@ -308,6 +307,7 @@ class GuiNavigationMixin(GuiGateMixin):
             self._refresh_gate_workspace_panel()
         elif key == "documents":
             self._refresh_workspace_counters()  # type: ignore[attr-defined]
+            self._trigger_silent_prewarm()  # type: ignore[attr-defined]
         elif key == "setup":
             self._update_setup_mode_visibility()
         elif key == "sms":
@@ -337,6 +337,8 @@ class GuiNavigationMixin(GuiGateMixin):
             self._show_page("run")
 
     def _quit_politely(self) -> None:
+        from tkinter import messagebox
+
         messagebox.showinfo(
             "Fermeture de l'application",
             "Merci de votre visite.\n\nAucun fichier n'a été lu ni modifié. "

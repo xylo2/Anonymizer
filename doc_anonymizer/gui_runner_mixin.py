@@ -126,12 +126,23 @@ class GuiRunnerMixin(GuiIngestMixin):
 
         linked_files, missing_links = self.controller.expand_linked_files(ini_path)
         linked_count: int = len(linked_files)
-        if hasattr(self, "links_listbox"):
-            self.links_listbox.delete(0, "end")  # type: ignore[attr-defined]
-            for it in self.controller.list_linked_sources(ini_path):
-                status_tag: str = "OK" if os.path.exists(it["path"]) else "DÉCONNECTÉ"
-                self.links_listbox.insert("end", f"[{status_tag} • {it['storage']}] {it['path']}")  # type: ignore[attr-defined]
-
+        if hasattr(self, "links_tree"):
+            for iid in self.links_tree.get_children():  # type: ignore[attr-defined]
+                self.links_tree.delete(iid)  # type: ignore[attr-defined]
+            self.links_tree.tag_configure("ok", background="#ecfdf5", foreground="#065f46")  # type: ignore[attr-defined]
+            self.links_tree.tag_configure("missing", background="#fef2f2", foreground="#991b1b")  # type: ignore[attr-defined]
+            for idx, it in enumerate(self.controller.list_linked_sources(ini_path)):
+                full_p: str = str(it.get("path") or "")
+                exists: bool = os.path.exists(full_p)
+                status_tag: str = "✓ Actif" if exists else "✕ Déconnecté"
+                base_n: str = os.path.basename(full_p.rstrip("\\/")) or full_p
+                self.links_tree.insert(  # type: ignore[attr-defined]
+                    "",
+                    "end",
+                    iid=str(idx),
+                    values=(status_tag, str(it.get("storage") or "Local"), base_n, full_p),
+                    tags=("ok" if exists else "missing",),
+                )
         c_files: List[str] = (
             sorted(fn for fn in os.listdir(c_dir) if not fn.startswith(".") and fn.lower().endswith((".csv", ".vcf")))
             if os.path.isdir(c_dir) else []
@@ -156,6 +167,7 @@ class GuiRunnerMixin(GuiIngestMixin):
                 self.lbl_dash_zip_warn.pack(anchor="w", fill="x", pady=(8, 0))
         elif hasattr(self, "lbl_zip_warning"):
             self.lbl_zip_warning.pack_forget()  # type: ignore[attr-defined]
+
     def _set_buttons_state(self, enabled: bool) -> None:
         from doc_anonymizer.gui_widgets import set_button_enabled_style
 

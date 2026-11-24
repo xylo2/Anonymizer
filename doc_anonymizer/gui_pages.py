@@ -2,7 +2,7 @@
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Any, Dict, List
+from typing import Any, Dict
 from doc_anonymizer import gui_widgets as _gw
 from doc_anonymizer.gui_pages_filters import GuiPagesFiltersMixin
 from doc_anonymizer.gui_pages_secondary import GuiSecondaryPagesMixin
@@ -24,7 +24,9 @@ class GuiPagesMixin(GuiPagesFiltersMixin, GuiSecondaryPagesMixin):
     zip_warning_var: tk.StringVar
 
     def _build_page_gate(self) -> None:
-        use_ctk: bool = bool(HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE)
+        use_ctk: bool = bool(
+            HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE
+        )
         page = self.pages["gate"]
         card_license = make_card(
             page,
@@ -40,17 +42,25 @@ class GuiPagesMixin(GuiPagesFiltersMixin, GuiSecondaryPagesMixin):
             "à une intelligence artificielle ou à un tiers. L'auteur décline toute responsabilité en cas "
             "de divulgation résiduelle d'informations personnelles."
         )
-        banner = tk.Frame(card_license, bg="#fffbeb", highlightbackground="#f59e0b", highlightthickness=1, padx=12, pady=8)
+        banner = tk.Frame(
+            card_license, bg="#fffbeb", highlightbackground="#f59e0b",
+            highlightthickness=1, padx=12, pady=8,
+        )
         banner.pack(fill="x", pady=(2, 0))
         lbl_b = tk.Label(
             banner, text=msg_warn, bg="#fffbeb", fg="#78350f",
-            font=("Segoe UI", scaled_size(9)), justify="left", anchor="w", wraplength=740,
+            font=("Segoe UI", scaled_size(9)), justify="left",
+            anchor="w", wraplength=740,
         )
         lbl_b.pack(anchor="w", fill="x")
         register_scalable_font(lbl_b, "Segoe UI", 9, "normal")
         card_license.bind(
             "<Configure>",
-            lambda e, lbl=lbl_b: lbl.configure(wraplength=max(320, e.width - 56)) if getattr(e, "width", 0) > 120 else None,
+            lambda e, lbl=lbl_b: (
+                lbl.configure(wraplength=max(320, e.width - 56))
+                if getattr(e, "width", 0) > 120
+                else None
+            ),
         )
         card_ws = make_card(
             page,
@@ -59,7 +69,9 @@ class GuiPagesMixin(GuiPagesFiltersMixin, GuiSecondaryPagesMixin):
             accent_color=UI_COLORS["primary"],
         )
         self.gate_action_var = tk.StringVar(value="create")
-        self.seg_gate_action = tk.Frame(card_ws, bg=UI_COLORS["tab_rail"], padx=3, pady=3)
+        self.seg_gate_action = tk.Frame(
+            card_ws, bg=UI_COLORS["tab_rail"], padx=3, pady=3
+        )
         self.btn_tab_open = tk.Button(
             self.seg_gate_action, text="Ouvrir un dossier existant",
             relief="flat", bd=0, padx=12, pady=5, cursor="hand2",
@@ -86,7 +98,9 @@ class GuiPagesMixin(GuiPagesFiltersMixin, GuiSecondaryPagesMixin):
         lbl_ex.pack(anchor="w", pady=(0, 4))
         register_scalable_font(lbl_ex, "Segoe UI", 9, "bold")
         self.gate_existing_var = tk.StringVar()
-        self.combo_gate_ws = make_modern_dropdown(self.frame_gate_existing, self.gate_existing_var, [], width=340)
+        self.combo_gate_ws = make_modern_dropdown(
+            self.frame_gate_existing, self.gate_existing_var, [], width=340
+        )
         self.combo_gate_ws.pack(anchor="w")
 
         self.frame_gate_create = tk.Frame(card_ws, bg=UI_COLORS["card"])
@@ -108,7 +122,10 @@ class GuiPagesMixin(GuiPagesFiltersMixin, GuiSecondaryPagesMixin):
 
         actions = tk.Frame(page, bg=UI_COLORS["bg"])
         actions.pack(fill="x", pady=(6, 0))
-        make_styled_button(actions, text="Je refuse et je quitte l'application", command=self._quit_politely, variant="danger_soft").pack(side="left")  # type: ignore[attr-defined]
+        make_styled_button(
+            actions, text="Je refuse et je quitte l'application",
+            command=self._quit_politely, variant="danger_soft",  # type: ignore[attr-defined]
+        ).pack(side="left")
         if use_ctk:
             self.btn_accept_gate = ctk.CTkButton(
                 actions, text="J'ai compris, je relirai les fichiers — Continuer ->",
@@ -125,7 +142,9 @@ class GuiPagesMixin(GuiPagesFiltersMixin, GuiSecondaryPagesMixin):
             )
             self.btn_accept_gate.pack(side="right")
     def _build_page_documents(self) -> None:
-        use_ctk: bool = bool(HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE)
+        use_ctk: bool = bool(
+            HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE
+        )
         page = self.pages["documents"]
         card_d = make_card(
             page,
@@ -150,8 +169,13 @@ class GuiPagesMixin(GuiPagesFiltersMixin, GuiSecondaryPagesMixin):
         make_styled_button(btn_row, text="Guide des exports...", command=self._show_export_guide_popup, variant="secondary").pack(side="left")  # type: ignore[attr-defined]
 
         self.docs_busy_var = tk.StringVar(value="")
-        self.docs_busy_frame = tk.Frame(card_d, bg="#eff6ff", highlightbackground="#93c5fd", highlightthickness=1, padx=10, pady=6)
-        self.docs_busy_bar = ttk.Progressbar(self.docs_busy_frame, mode="indeterminate", length=200)
+        self.docs_busy_frame = tk.Frame(
+            card_d, bg="#eff6ff", highlightbackground="#93c5fd",
+            highlightthickness=1, padx=10, pady=6,
+        )
+        self.docs_busy_bar = ttk.Progressbar(
+            self.docs_busy_frame, mode="indeterminate", length=200
+        )
         self.docs_busy_bar.pack(side="left", padx=(0, 10))
         lbl_busy = tk.Label(
             self.docs_busy_frame, textvariable=self.docs_busy_var,
@@ -161,19 +185,41 @@ class GuiPagesMixin(GuiPagesFiltersMixin, GuiSecondaryPagesMixin):
         register_scalable_font(lbl_busy, "Segoe UI", 9, "bold")
 
         lbl_lnk = tk.Label(
-            card_d, text="Emplacements externes référencés (lus sur place sans copie) :",
+            card_d,
+            text="Emplacements externes référencés (lus sur place sans copie — double-clic pour ouvrir) :",
             bg=UI_COLORS["card"], fg=UI_COLORS["muted"],
             font=("Segoe UI", scaled_size(9), "bold"),
         )
         lbl_lnk.pack(anchor="w", pady=(4, 4))
         register_scalable_font(lbl_lnk, "Segoe UI", 9, "bold")
-        self.links_listbox = tk.Listbox(
-            card_d, height=6, font=("Consolas", scaled_size(9)),
-            bg="#f8fafc", fg=UI_COLORS["text"], relief="solid", bd=1,
-            selectbackground="#dbeafe", selectforeground="#1e3a8a",
+
+        tree_box = tk.Frame(
+            card_d, bg=UI_COLORS["card"],
+            highlightbackground=UI_COLORS["border"], highlightthickness=1,
         )
-        self.links_listbox.pack(fill="both", expand=True)
-        register_scalable_font(self.links_listbox, "Consolas", 9, "normal")
+        tree_box.pack(fill="both", expand=True)
+        cols = ("status", "storage", "name", "path")
+        self.links_tree = ttk.Treeview(
+            tree_box, columns=cols, show="headings",
+            selectmode="browse", style="Modern.Treeview", height=6,
+        )
+        for cid, title_c, w_c, anc in (
+            ("status", "ÉTAT", 95, "center"),
+            ("storage", "SUPPORT", 145, "w"),
+            ("name", "DOSSIER / FICHIER", 220, "w"),
+            ("path", "EMPLACEMENT COMPLET", 420, "w"),
+        ):
+            self.links_tree.heading(cid, text=title_c)
+            self.links_tree.column(cid, width=w_c, minwidth=70, anchor=anc, stretch=(cid == "path"))  # type: ignore[arg-type]
+
+        sb_y = ttk.Scrollbar(tree_box, orient="vertical", command=self.links_tree.yview)
+        sb_x = ttk.Scrollbar(tree_box, orient="horizontal", command=self.links_tree.xview)
+        self.links_tree.configure(yscrollcommand=sb_y.set, xscrollcommand=sb_x.set)
+        sb_y.pack(side="right", fill="y")
+        sb_x.pack(side="bottom", fill="x")
+        self.links_tree.pack(side="left", fill="both", expand=True)
+        self.links_tree.bind("<Double-1>", lambda _e: self._open_selected_linked_source())  # type: ignore[attr-defined]
+        self.links_tree.bind("<Delete>", lambda _e: self._remove_selected_linked_source())  # type: ignore[attr-defined]
 
         lnk_bar = tk.Frame(card_d, bg=UI_COLORS["card"])
         lnk_bar.pack(fill="x", pady=(6, 0))

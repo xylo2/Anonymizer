@@ -103,6 +103,7 @@ def fix_markdown_docs(base_dir: str) -> List[str]:
         "docs/exports/MESSAGERIES_PERSO.md",
     )
     updated: List[str] = []
+    fence: str = chr(96) * 3
     for rel in md_files:
         fp: str = os.path.join(base_dir, rel)
         if not os.path.isfile(fp):
@@ -115,11 +116,11 @@ def fix_markdown_docs(base_dir: str) -> List[str]:
         if rel == "docs/GUIDE_UTILISATION.md" and "--copy-unmasked" not in new_txt:
             extra_cli: str = (
                 "\n### Commandes d'audit et de complétion manuelle\n\n"
-                "```bash\n"
+                f"{fence}bash\n"
                 "python run_documents.py --copy-unmasked liste_fichiers.md --unmasked-dir a_revoir\n"
                 "python run_documents.py --complete-manual\n"
                 "python run_documents.py --manual-only\n"
-                "```\n"
+                f"{fence}\n"
             )
             new_txt = new_txt.replace("## 5. Exploitation", extra_cli + "\n## 5. Exploitation")
         if new_txt != txt:
