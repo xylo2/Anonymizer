@@ -19,11 +19,15 @@ from doc_anonymizer.gui_dialogs import ExportGuideDialog
 from doc_anonymizer.gui_navigation_mixin import GuiNavigationMixin
 from doc_anonymizer.gui_pages import GuiPagesMixin
 from doc_anonymizer.gui_runner_mixin import GuiRunnerMixin
+from doc_anonymizer.gui_startup_error import (
+    run_with_optional_error_dialog as _run_with_optional_error_dialog,
+    show_startup_error_dialog as _show_startup_error_dialog,
+)
 from doc_anonymizer.gui_tables_mixin import GuiTablesMixin
 from doc_anonymizer.gui_widgets import (
     HAS_CTK, UI_COLORS, configure_ttk_styles, ctk,
-    load_saved_ui_font_scale, make_styled_button,
-    register_scalable_font, scaled_size, set_screen_reader_mode, set_ui_font_scale,
+    load_saved_ui_font_scale, register_scalable_font,
+    scaled_size, set_screen_reader_mode, set_ui_font_scale,
 )
 from doc_anonymizer.workspace_settings_dialog import WorkspaceSettingsDialog
 
@@ -35,8 +39,6 @@ _BaseTkWindow: Any = (
     tk.Tk if _gw.SCREEN_READER_MODE
     else (ctk.CTk if (HAS_CTK and ctk is not None) else tk.Tk)
 )
-
-
 class AnonymizerGuiApp(
     GuiNavigationMixin,
     GuiPagesMixin,
@@ -101,6 +103,18 @@ class AnonymizerGuiApp(
         self.relaunch_screen_reader: Optional[bool] = None
         self._last_focus_refresh_ts: float = 0.0
         configure_ttk_styles(self)
+        self._bind_global_shortcuts()
+        self._build_layout()
+        self._bind_gate_return_keys()
+        self._refresh_workspaces()
+        if skip_startup_gate and self.workspaces:
+            _, first_ini = next(iter(self.workspaces))
+            self._refresh_workspaces(select_ini=first_ini)
+            self._set_workflow_mode("ia", navigate=True)
+        else:
+            self._show_page("gate")
+        self.after(200, self._enable_windows_drag_and_drop)
+    def _bind_global_shortcuts(self) -> None:
         self.protocol("WM_DELETE_WINDOW", self._on_close_requested)
         self.bind("<FocusIn>", self._on_window_focus_in)
         self.bind_all("<Control-f>", self._focus_contact_search)
@@ -112,21 +126,17 @@ class AnonymizerGuiApp(
         self.bind_all("<Escape>", self._clear_active_search)
         self.bind_all("<Alt-Left>", lambda _e: self._step_page(-1))
         self.bind_all("<Alt-Right>", lambda _e: self._step_page(1))
-        self._build_layout()
+
+    def _bind_gate_return_keys(self) -> None:
         for attr_name in (
-            "entry_gate_new", "ent_gate_new", "ent_gate_new_name", "combo_gate_ws"
+            "entry_gate_new",
+            "ent_gate_new",
+            "ent_gate_new_name",
+            "combo_gate_ws",
         ):
             w = getattr(self, attr_name, None)
             if w is not None:
                 w.bind("<Return>", lambda _e: self._confirm_gate_and_workspace())
-        self._refresh_workspaces()
-        if skip_startup_gate and self.workspaces:
-            _, first_ini = next(iter(self.workspaces))
-            self._refresh_workspaces(select_ini=first_ini)
-            self._set_workflow_mode("ia", navigate=True)
-        else:
-            self._show_page("gate")
-        self.after(200, self._enable_windows_drag_and_drop)
 
     def _apply_window_icon(self) -> None:
         assets_dir: str = os.path.join(ROOT_DIR, "assets")
@@ -135,6 +145,7 @@ class AnonymizerGuiApp(
         if not os.path.isfile(png_path) or not os.path.isfile(ico_path):
             try:
                 from tools.generate_app_icon import AppIconGenerator
+
                 AppIconGenerator.export_icons(output_dir=assets_dir)
             except Exception:
                 pass
@@ -161,7 +172,6 @@ class AnonymizerGuiApp(
             ent_name, refresh_cb = pair
             getattr(self, ent_name).delete(0, "end")
             refresh_cb()
-
     def _step_page(self, delta: int) -> None:
         ini_p: str = self.current_ini_var.get()
         if not ini_p:
@@ -201,6 +211,7 @@ class AnonymizerGuiApp(
         elif self.active_page_key == "chats":
             self.controller.auto_organize_dropped_files(self.current_ini_var.get())
             self._refresh_chat_filter_list()
+
     def _focus_contact_search(self, _event: object = None) -> str:
         targets = {
             "setup": "ent_contact_search",
@@ -233,7 +244,6 @@ class AnonymizerGuiApp(
         new_scale: float = set_ui_font_scale(1.0, prefs_path=self._ui_prefs_file)
         self._sync_sidebar_width_for_scale(new_scale)
         self.status_var.set("Taille du texte réinitialisée à 100 %.")
-
     def _toggle_screen_reader_mode(self) -> None:
         target_sr: bool = not _gw.SCREEN_READER_MODE
         self._flush_and_cancel_pending_timers()
@@ -262,12 +272,15 @@ class AnonymizerGuiApp(
             "avec ces nouveaux réglages ?",
         ):
             self._start_job("reset_anonymize_only")
+
     def _open_workspace_settings_dialog(self) -> None:
         ini_path: str = self.current_ini_var.get()
         if not ini_path or not os.path.isfile(ini_path):
             messagebox.showwarning("Dossier requis", "Ouvrez ou créez d'abord un dossier.")
             return
-        WorkspaceSettingsDialog(self, ini_path=ini_path, on_saved=lambda: self._on_workspace_settings_saved(ini_path))
+        WorkspaceSettingsDialog(
+            self, ini_path=ini_path, on_saved=lambda: self._on_workspace_settings_saved(ini_path)
+        )
 
     def _show_calendar_export_popup(self) -> None:
         ExportGuideDialog(self, initial_tab=0)
@@ -279,7 +292,11 @@ class AnonymizerGuiApp(
         ExportGuideDialog(self, initial_tab=0)
 
     def _flush_and_cancel_pending_timers(self) -> None:
-        for timer_attr, flush_fn in (("_contact_save_after_id", self._persist_contact_filter_now), ("_sms_save_after_id", self._persist_sms_filter_now), ("_chat_save_after_id", self._persist_chat_filter_now)):
+        for timer_attr, flush_fn in (
+            ("_contact_save_after_id", self._persist_contact_filter_now),
+            ("_sms_save_after_id", self._persist_sms_filter_now),
+            ("_chat_save_after_id", self._persist_chat_filter_now),
+        ):
             tid = getattr(self, timer_attr, None)
             if tid is not None:
                 try:
@@ -331,29 +348,7 @@ class AnonymizerGuiApp(
 
 
 def show_startup_error_dialog(exc: BaseException, details: str) -> None:
-    root = tk.Tk()
-    root.title("Erreur au démarrage — AnonVault — Pièces protégées")
-    root.geometry("680x420")
-    root.configure(bg="#f8fafc")
-    ico_p: str = os.path.join(ROOT_DIR, "assets", "anonvault_icon.ico")
-    if os.name == "nt" and os.path.isfile(ico_p):
-        try:
-            root.iconbitmap(default=ico_p)
-        except tk.TclError:
-            pass
-    full_msg: str = f"Erreur : {exc}\n\nDétails techniques :\n{details.strip()}"
-    hdr = tk.Frame(root, bg="#dc2626", padx=16, pady=12)
-    hdr.pack(fill="x")
-    tk.Label(hdr, text="Une erreur est survenue au démarrage", bg="#dc2626", fg="#ffffff", font=("Segoe UI", 11, "bold")).pack(anchor="w")
-    txt = tk.Text(root, wrap="word", font=("Consolas", 9), bg="#ffffff", fg="#0f172a", relief="solid", bd=1, padx=10, pady=8)
-    txt.pack(fill="both", expand=True, padx=16, pady=(12, 8))
-    txt.insert("1.0", full_msg)
-    txt.configure(state="disabled")
-    bar = tk.Frame(root, bg="#f8fafc", padx=16, pady=10)
-    bar.pack(fill="x")
-    tk.Button(bar, text="Copier l'erreur", command=lambda: (root.clipboard_clear(), root.clipboard_append(full_msg), root.update()), bg="#2563eb", fg="#ffffff", relief="flat", padx=14, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left")
-    tk.Button(bar, text="Fermer", command=root.destroy, bg="#e2e8f0", fg="#0f172a", relief="flat", padx=14, pady=7, font=("Segoe UI", 9)).pack(side="right")
-    root.mainloop()
+    _show_startup_error_dialog(exc, details, ROOT_DIR)
 
 
 def _run_app_loop() -> None:
@@ -366,23 +361,18 @@ def _run_app_loop() -> None:
 
 
 def run_with_optional_error_dialog(enable_gui_errors: bool = False) -> int:
-    if not enable_gui_errors:
-        _run_app_loop()
-        return 0
-    try:
-        _run_app_loop()
-        return 0
-    except Exception as exc:
-        import traceback
-        show_startup_error_dialog(exc, traceback.format_exc())
-        return 1
+    return _run_with_optional_error_dialog(
+        _run_app_loop, ROOT_DIR, enable_gui_errors=enable_gui_errors
+    )
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args: List[str] = sys.argv[1:] if argv is None else argv
     if "--screen-reader" in args or _ENV_SR in {"1", "true", "yes"}:
         set_screen_reader_mode(True)
-    enable_gui_errors: bool = "--gui-errors" in args or os.environ.get("ANONYMIZER_GUI_ERRORS", "").strip().lower() in {"1", "true", "yes"}
+    enable_gui_errors: bool = "--gui-errors" in args or os.environ.get(
+        "ANONYMIZER_GUI_ERRORS", ""
+    ).strip().lower() in {"1", "true", "yes"}
     return run_with_optional_error_dialog(enable_gui_errors=enable_gui_errors)
 
 
