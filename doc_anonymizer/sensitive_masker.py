@@ -4,119 +4,19 @@ import re
 from typing import Any, Dict, List, Optional, Pattern
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.contact_rules_loader import ContactRulesLoader
+from doc_anonymizer.masker_lexicons import MaskerLexicons
 from doc_anonymizer.text_utils import DocumentTextUtils
 
 
 class SensitiveTextMasker:
     """Moteur de masquage contextuel multi-passes."""
 
-    SAFE_UPPER_WORDS = frozenset({
-        "LE", "LA", "LES", "UN", "UNE", "DES", "DU", "AU", "AUX",
-        "DE", "DANS", "SUR", "SOUS", "PAR", "POUR", "AVEC", "SANS",
-        "CHEZ", "VERS", "ENTRE", "EST", "SONT", "ET", "OU", "MAIS",
-        "DONC", "OR", "NI", "CAR", "QUE", "QUI", "QUOI", "DONT",
-        "CE", "CET", "CETTE", "CES", "MON", "TON", "SON", "NOTRE",
-        "VOTRE", "LEUR", "JE", "TU", "IL", "ELLE", "NOUS", "VOUS",
-        "ILS", "ELLES", "ON", "NE", "PAS", "PLUS", "TRES", "BIEN",
-        "MAL", "TOUT", "TOUS", "TOUTE", "TOUTES", "AUCUN", "CHAQUE",
-        "AUTRE", "MEME", "TEL", "QUEL", "QUELLE", "VOIR", "FAIRE",
-        "DIRE", "ALLER", "AVOIR", "ETRE", "POUVOIR", "VOULOIR",
-        "DEVOIR", "SAVOIR", "FALLOIR", "VALOIR", "PRENDRE", "DONNER",
-        "METTRE", "PASSER", "RESTER", "TENIR", "VENIR", "PARTIR",
-        "SORTIR", "ENTRER", "MONTER", "DESCENDRE", "TOMBER", "VIVRE",
-        "MOURIR", "NAITRE", "CONNAITRE", "PARAITRE", "CROIRE", "PENSER",
-        "AIMER", "TROUVER", "CHERCHER", "ATTENDRE", "ENTENDRE",
-        "REPONDRE", "RENDRE", "PERDRE", "VENDRE", "BATTRE", "SUIVRE",
-        "LIRE", "ECRIRE", "DATE", "OBJET", "SUJET", "PIECE", "JOINTE",
-        "PJ", "URGENT", "IMPORTANT", "NOTE", "NOTES", "AVIS", "RAPPORT",
-        "BILAN", "COMPTE", "RENDU", "SYNTHESE", "RESUME", "CONCLUSION",
-        "SUITE", "FIN", "DEBUT", "TOTAL", "HORS", "TAXE", "TTC", "TVA",
-        "HT", "EURO", "EUROS", "LUNDI", "MARDI", "MERCREDI", "JEUDI",
-        "VENDREDI", "SAMEDI", "DIMANCHE", "JANVIER", "FEVRIER", "MARS",
-        "AVRIL", "MAI", "JUIN", "JUILLET", "AOUT", "SEPTEMBRE",
-        "OCTOBRE", "NOVEMBRE", "DECEMBRE", "NORD", "SUD", "EST",
-        "OUEST", "CENTRE", "FRANCE", "PARIS", "LYON", "MARSEILLE",
-        "BORDEAUX", "LILLE", "NANTES", "TOULOUSE", "STRASBOURG",
-        "RENNES", "CAEN", "ROUEN", "HAVRE", "TEL", "FAX", "GSM",
-        "PORT", "MAIL", "EMAIL", "WEB", "SITE", "HTTP", "HTTPS", "WWW",
-        "COM", "ORG", "NET", "FR", "EU", "PDF", "DOC", "DOCX", "XLS",
-        "XLSX", "PPT", "PPTX", "TXT", "JPG", "JPEG", "PNG", "GIF",
-        "MP3", "MP4", "WAV", "AVI", "ZIP", "RAR", "7Z", "TAR", "GZ",
-        "ISO", "EXE", "DLL", "OK", "OUI", "NON", "SI", "BONJOUR",
-        "BONSOIR", "SALUT", "MERCI", "CORDIALEMENT", "SINCEREMENT",
-        "AMICALEMENT", "BISOUS", "RAS", "NC", "ND", "NR", "NA", "NB",
-        "PS", "PPS", "REF", "NO", "NUM", "CODE", "ID", "IBAN", "BIC",
-        "RIB", "NIR", "SS", "SECU", "CAF", "CPAM", "MSA", "ARS", "MDPH",
-    })
-    EXTRA_SAFE_UPPER = frozenset({
-        "CHU", "CHR", "CMP", "CATTP", "HDJ", "IME", "IMPRO", "SESSAD",
-        "CAMSP", "PMI", "ASE", "PJJ", "JAF", "TGI", "TJ", "AVOCAT",
-        "JUGE", "GREFFIER", "HUISSIER", "NOTAIRE", "EXPERT", "MEDECIN",
-        "DOCTEUR", "DR", "PR", "PROFESSEUR", "INFIRMIER", "INFIRMIERE",
-        "IDE", "KINE", "ORTHO", "PSY", "PSYCHOLOGUE", "PSYCHIATRE",
-        "PEDIATRE", "GENERALISTE", "SPECIALISTE", "MME", "MADAME",
-        "MR", "MONSIEUR", "MLLE", "MADEMOISELLE", "FAMILLE", "PARENT",
-        "PARENTS", "PERE", "MERE", "PAPA", "MAMAN", "FILS", "FILLE",
-        "FRERE", "SOEUR", "ONCLE", "TANTE", "COUSIN", "COUSINE",
-        "GRAND", "PETIT", "ENFANT", "ENFANTS", "BEBE", "ECOLE",
-        "COLLEGE", "LYCEE", "CLASSE", "CP", "CE1", "CE2", "CM1", "CM2",
-        "SIXIEME", "CINQUIEME", "QUATRIEME", "TROISIEME", "SECONDE",
-        "PREMIERE", "TERMINALE", "BAC", "BREVET", "DIPLOME", "MAISON",
-        "APPARTEMENT", "RUE", "AVENUE", "BOULEVARD", "PLACE", "IMPASSE",
-        "CHEMIN", "ROUTE", "ALLEE", "SQUARE", "QUAI", "VILLE",
-        "VILLAGE", "QUARTIER", "CANTON", "COMMUNE", "VOITURE", "TRAIN",
-        "BUS", "METRO", "AVION", "VELO", "MATIN", "MIDI", "APRES",
-        "SOIR", "NUIT", "JOUR", "SEMAINE", "MOIS", "AN", "ANNEE",
-        "HEURE", "MINUTE", "SECONDE", "AUJOURDHUI", "HIER", "DEMAIN",
-        "MAINTENANT", "TOUJOURS", "JAMAIS", "SOUVENT", "PARFOIS",
-        "RAREMENT", "ENCORE", "DEJA", "TROP", "ASSEZ", "PEU",
-        "BEAUCOUP", "MOINS", "AUTANT", "SOL", "MER", "TERRE", "CIEL",
-        "EAU", "FEU", "AIR", "A", "M", "L", "S", "C", "N", "T", "D",
-        "J", "Y",
-    })
-
-    VERBS_AND_PRONOUNS_FOLLOWING_FIRSTNAME = frozenset({
-        "a", "as", "ai", "ont", "avait", "avaient", "aura", "auront",
-        "est", "es", "suis", "sont", "etait", "etaient", "sera", "seront",
-        "fait", "font", "faisait", "fera", "va", "vas", "vont", "allait",
-        "ira", "peut", "peuvent", "pouvait", "veut", "veulent", "voulait",
-        "doit", "doivent", "devait", "sait", "savent", "savait", "dit",
-        "disent", "disait", "prend", "prennent", "prenait", "donne",
-        "donnent", "donnait", "met", "mettent", "mettait", "passe",
-        "passent", "passait", "reste", "restent", "restait", "tient",
-        "vient", "viennent", "venait", "part", "partent", "partait",
-        "sort", "entre", "monte", "descend", "tombe", "vit", "connait",
-        "parait", "croit", "pense", "aime", "trouve", "cherche", "attend",
-        "entend", "repond", "rend", "perd", "vend", "suit", "lit", "ecrit",
-        "rit", "pleure", "dort", "mange", "boit", "court", "marche",
-        "joue", "chante", "travaille", "etudie", "apprend", "comprend",
-        "explique", "montre", "ouvre", "ferme", "commence", "finit",
-        "continue", "arrete", "change", "garde", "laisse", "porte",
-        "appelle", "demande", "parle", "ecoute", "regarde", "sent",
-        "touche", "achete", "paie", "gagne", "depense", "voyage",
-        "visite", "arrive", "retourne", "revient", "manque",
-        "telephoner", "telephone", "ecrire", "repondre", "lui", "leur",
-        "le", "la", "les", "me", "te", "se", "nous", "vous", "en", "y",
-        "ne", "pas", "plus", "bien", "mal", "trop", "tres", "aussi",
-        "encore", "deja", "toujours", "jamais", "souvent", "parfois",
-        "avec", "sans", "pour", "dans", "sur", "sous", "chez", "vers",
-        "et", "ou", "mais", "donc", "car", "que", "qui", "quoi", "dont",
-    })
-    CASE_SENSITIVE_LOCATIONS = frozenset({
-        "rots", "ifs", "boulon", "clin", "orge", "aire", "sens", "nice", "pau", "auch",
-        "fiers", "fier", "fiere", "fieres", "vers", "car", "bon", "fort",
-        "clair", "claire", "grand", "petit", "haut", "bas", "saint", "sainte",
-        "mont", "val", "pont", "port", "bois", "champ", "champs", "cour",
-        "cours", "tour", "tours", "forge", "forges", "roche", "roches",
-        "pierre", "pierres", "croix", "eglise", "chapelle", "moulin",
-        "chateau", "parc", "lac", "mer", "ile", "iles", "cap", "baie",
-        "plage", "dune", "dunes", "lande", "landes", "plaine", "vallee",
-        "col", "pic", "puy", "roc", "saut", "pas", "garde", "bastide",
-        "maison", "maisons", "grange", "granges", "ferme", "fermes",
-        "clos", "pre", "pres", "prat", "mas", "fresnes", "aulnay", "ormes",
-        "tilleuls", "chenes", "pins", "sapins", "saules", "peupliers",
-        "bouleaux", "noyers", "pommiers", "cerisiers", "vignes", "roses", "lilas",
-    })
+    SAFE_UPPER_WORDS = MaskerLexicons.SAFE_UPPER_WORDS
+    EXTRA_SAFE_UPPER = MaskerLexicons.EXTRA_SAFE_UPPER
+    VERBS_AND_PRONOUNS_FOLLOWING_FIRSTNAME = (
+        MaskerLexicons.VERBS_AND_PRONOUNS_FOLLOWING_FIRSTNAME
+    )
+    CASE_SENSITIVE_LOCATIONS = MaskerLexicons.CASE_SENSITIVE_LOCATIONS
 
     def __init__(
         self,
@@ -359,6 +259,7 @@ class SensitiveTextMasker:
                 self._record_vault(alias_v, raw.strip(), "Identité / Règle")
                 return alias_v
         return raw
+
     def _replace_title_first_last(self, match: re.Match) -> str:
         title, firsts, last = match.group(1), match.group(2), match.group(3)
         norm_last: str = DocumentTextUtils.normalize_word(next(reversed(last.split())))
@@ -439,7 +340,9 @@ class SensitiveTextMasker:
             p1, p2 = firsts.split(" ")
             np2: str = DocumentTextUtils.normalize_word(p2)
             if self._is_known_first_name(p2) or (
-                self._is_known_first_name(p1) and np2 not in self.rules.auto_surnames and not p2.isupper()
+                self._is_known_first_name(p1)
+                and np2 not in self.rules.auto_surnames
+                and not p2.isupper()
             ):
                 self._bump_stat("noms_masques")
                 repl_p: str = f"{p1} {p2} {l_init}"
@@ -474,12 +377,9 @@ class SensitiveTextMasker:
         ini, last = match.group(1), match.group(2)
         nl: str = DocumentTextUtils.normalize_word(last)
         if (
-            nl.upper() in self.SAFE_UPPER_WORDS
-            or nl.upper() in self.EXTRA_SAFE_UPPER
-            or nl in self.config.excluded_words
-            or nl in self.config.surname_collisions
-            or nl in self.config.masked_locations
-            or nl in self.rules.COMMON_WORD_COLLISIONS
+            nl.upper() in self.SAFE_UPPER_WORDS or nl.upper() in self.EXTRA_SAFE_UPPER
+            or nl in self.config.excluded_words or nl in self.config.surname_collisions
+            or nl in self.config.masked_locations or nl in self.rules.COMMON_WORD_COLLISIONS
             or self._is_known_first_name(last)
         ):
             return match.group(0)
@@ -490,8 +390,7 @@ class SensitiveTextMasker:
 
     def _replace_location_match(self, match: re.Match) -> str:
         raw: str = match.group(0)
-        norm: str = DocumentTextUtils.normalize_word(raw)
-        if norm in self.CASE_SENSITIVE_LOCATIONS and not raw[:1].isupper():
+        if DocumentTextUtils.normalize_word(raw) in self.CASE_SENSITIVE_LOCATIONS and not raw[:1].isupper():
             return raw
         self._bump_stat("lieux_dates_masques")
         return self._mask_entity_value(raw, "[LIEU_MASQUE]", "LIEU", "Lieu")
