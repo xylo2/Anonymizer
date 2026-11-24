@@ -25,7 +25,7 @@ instantanées et enregistrements audio/vidéo) et les anonymise **100 % localeme
 | **Google Chat** | `messages.json` | [Google Takeout](https://takeout.google.com) > **Google Chat** > dossier `Groups/` |
 | **Microsoft Teams** | `messages.json` ou `.vtt` | Portail confidentialité Microsoft (`.json`) ou réunion > **Télécharger `.vtt`** |
 | **Facebook Messenger** | `message_1.json` *(ou `.html`)* | Facebook > **Espace Comptes** > **Télécharger vos informations** > **Messages** |
-| **Signal** | `.json` | Signal Desktop via `sigtop` ou sauvegarde Android via `signal-back` |
+| **Signal** | `.json` | Signal Desktop via [sigtop](https://github.com/tbvdm/sigtop) ou sauvegarde Android via [signal-back](https://github.com/xeals/signal-back) |
 | **Agendas** | `.ics` | [Google Agenda](https://calendar.google.com) > **Paramètres** > **Importer et exporter** > **Exporter** |
 
 > **Règle d'or pour les archives `.zip` :** par sécurité, **AnonVault** ne décompresse

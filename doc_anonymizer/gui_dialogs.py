@@ -29,7 +29,9 @@ class ExportGuideDialog(tk.Toplevel):
             f"• Google Agenda ({_u('calendar', 'google.com')}) :\n"
             "  1. Ouvrez Google Agenda > icône Engrenage > « Paramètres ».\n"
             "  2. Menu de gauche > « Importer et exporter » > « Exporter ».\n"
-            "  3. Décompressez le .zip et référencez le fichier .ics.\n\n"
+            "  3. Décompressez le .zip et référencez le fichier .ics.\n"
+            f"  - Alternative via Google Takeout ({_u('takeout', 'google.com')}) : "
+            "Tout désélectionner > cochez « Agenda » > décompressez le .zip > fichiers .ics.\n\n"
             "• Microsoft Outlook & Apple Calendrier :\n"
             "  Menu « Fichier » > « Enregistrer le calendrier » au format .ics.",
         ),
@@ -37,7 +39,9 @@ class ExportGuideDialog(tk.Toplevel):
             "Contacts (.csv / .vcf)",
             "EXPORTER VOS CONTACTS (GOOGLE, IPHONE, OUTLOOK, THUNDERBIRD)\n\n"
             f"• Google Contacts ({_u('contacts', 'google.com')} — recommandé) :\n"
-            "  Menu gauche > « Exporter » > « Tous les contacts » > « CSV Google ».\n\n"
+            "  Menu gauche > « Exporter » > « Tous les contacts » > « CSV Google ».\n"
+            f"  - Alternative via Google Takeout ({_u('takeout', 'google.com')}) : "
+            "Tout désélectionner > cochez « Contacts » (format CSV ou vCard .vcf) > décompressez le .zip.\n\n"
             f"• Apple iPhone / iPad (iOS 16+) & iCloud ({_u('www', 'icloud.com', '/contacts')}) :\n"
             "  - iPhone : Contacts > « < Listes » > appui long « Tous les contacts » > « Exporter » (.vcf).\n"
             "  - iCloud Web : Ctrl+A > Roue dentée > « Exporter vCard » (.vcf).\n\n"
@@ -56,7 +60,8 @@ class ExportGuideDialog(tk.Toplevel):
             "  - Sélection unitaire (.msg) : filtrez via la recherche Outlook et glissez les mails "
             "dans un dossier PC (fichiers .msg lus directement par AnonVault).\n\n"
             f"• Gmail via Google Takeout ({_u('takeout', 'google.com')}) :\n"
-            "  Tout désélectionner > cochez « Messagerie (Gmail) » > décompressez le .zip > référencez le .mbox.\n\n"
+            "  Tout désélectionner > cochez « Messagerie (Gmail) » (ou un libellé ciblé via « Toutes les "
+            "données des messages incluses ») > décompressez le .zip > référencez le .mbox.\n\n"
             f"• Outlook.com / Microsoft 365 Web ({_u('outlook', 'live.com')}) :\n"
             "  - Unitaire (.eml) : ouvrez le message > « ... » > « Télécharger ».\n"
             "  - Boîte complète (.pst) : Engrenage > Général > Confidentialité et données > Exporter la boîte.\n\n"
@@ -79,17 +84,17 @@ class ExportGuideDialog(tk.Toplevel):
             "Chats & Visios",
             "EXPORTER VOS MESSAGERIES (WHATSAPP, GOOGLE CHAT, TEAMS, MESSENGER, SIGNAL)\n\n"
             f"• WhatsApp ({_u('www', 'whatsapp.com')}) : Discussion > Menu > « Exporter discussion » (dézippez le .zip).\n"
-            f"• Google Chat ({_u('takeout', 'google.com')}) : Cochez « Google Chat » > dézippez > dossier « Groups/ ».\n"
+            f"• Google Chat via Google Takeout ({_u('takeout', 'google.com')}) : Tout désélectionner > cochez « Google Chat » > dézippez > dossier « Groups/ ».\n"
             f"• Microsoft Teams ({_u('account', 'microsoft.com', '/privacy')}) : Discussions (.json) ou réunions ({_u('teams', 'microsoft.com')}, .vtt).\n"
             f"• Facebook Messenger ({_u('accountscenter', 'facebook.com', '/info_and_permissions')}) : Télécharger vos informations > Messages (JSON).\n"
-            f"• Signal ({_u('signal', 'org')}) : Export JSON via « signal-back » (Android) ou « sigtop » (Desktop).",
+            f"• Signal ({_u('signal', 'org')}) : Export JSON via « signal-back » ({_u('github', 'com', '/xeals/signal-back')}, Android) ou « sigtop » ({_u('github', 'com', '/tbvdm/sigtop')}, Desktop).",
         ),
     ]
     def __init__(self, parent: tk.Misc, initial_tab: int = 0) -> None:
         super().__init__(parent)
         self.title("Guide pas-à-pas — Comment exporter vos données ?")
-        self.geometry("840x580")
-        self.minsize(680, 460)
+        self.geometry("960x600")
+        self.minsize(780, 480)
         self.configure(bg=UI_COLORS["bg"])
         self.transient(parent.winfo_toplevel())
         self.grab_set()
@@ -115,14 +120,14 @@ class ExportGuideDialog(tk.Toplevel):
                 text=lbl,
                 relief="flat",
                 bd=0,
-                padx=12,
+                padx=10,
                 pady=6,
                 cursor="hand2",
                 font=("Segoe UI", scaled_size(9), "bold"),
                 command=lambda i=idx: self.select_tab(i),
             )
             register_scalable_font(btn, "Segoe UI", 9, "bold")
-            btn.pack(side="left", padx=(0, 6))
+            btn.pack(side="left", padx=(0, 4))
             self._tab_btns.append(btn)
 
         body = tk.Frame(self, bg=UI_COLORS["bg"], padx=18, pady=14)
