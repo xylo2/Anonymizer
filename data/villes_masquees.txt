@@ -1,0 +1,104 @@
+# Communes et localités supplémentaires à masquer ([LIEU_MASQUE])
+# Une localité par ligne (insensible à la casse et aux accents)
+
+Boulon
+Ifs
+Thury-Harcourt
+Thury Harcourt
+Fleury-sur-Orne
+Fleury sur Orne
+Fleury-les-Aubrais
+Fleury les Aubrais
+Bretteville-sur-Laize
+Bretteville sur Laize
+Saint-Laurent-de-Condel
+Saint Laurent de Condel
+Fresney-le-Puceux
+Fresney le Puceux
+Evrecy
+Évrecy
+Mondeville
+Colombelles
+Rots
+Giberville
+Villers-Bocage
+Saint-André-sur-Orne
+Saint André sur Orne
+Hérouville
+Herouville
+Hérouville-Saint-Clair
+Louvigny
+Carpiquet
+Bavent
+Grentheville
+May-sur-Orne
+May sur Orne
+Saint-Martin-de-Fontenay
+St Martin de Fontenay
+Saint-Contest
+St Contest
+Saint-Martin-de-Sallen
+Saint Martin de Sallen
+Feuguerolles-Bully
+Authie
+Baron-sur-Odon
+Baron sur Odon
+Tourville-sur-Odon
+Tourville sur Odon
+Amayé-sur-Orne
+Amaye sur Orne
+Sainte-Honorine-du-Fay
+St Honorine du Fay
+Saint-Germain-le-Vasson
+Saint Germain le Vasson
+Laize-Clinchamps
+Laize Clinchamps
+Rocquancourt
+Cauvicourt
+Maisoncelles-sur-Ajon
+Le Mesnil-Esnard
+Mont-Saint-Aignan
+Dol-de-Bretagne
+Dol de Bretagne
+Lessay
+Villers-sur-Mer
+Cancale
+Boigny-sur-Bionne
+Vennecy
+Chanteau
+Chécy
+Saint-Jean-de-Braye
+Saint Jean de Braye
+Neuville-aux-Bois
+Neuville aux Bois
+Saint-Hilaire-Saint-Mesmin
+St Hilaire St Mesmin
+Bourg-Saint-Andéol
+Bourg Saint-Andéol
+Nogent-le-Rotrou
+Nogent le Rotrou
+Vierzon
+Sarlat
+Meudon
+Boulogne-Billancourt
+Issy-les-Moulineaux
+Levallois-Perret
+Levallois
+Suresnes
+Puteaux
+Montrouge
+Clamart
+Versailles
+Asnières
+Asnieres
+Bois-Colombes
+Bois Colombes
+Courbevoie
+Nanterre
+Clichy
+Sèvres
+Sevres
+Chaville
+Saint-Cloud
+Saint Cloud
+Becon-les-Bruyeres

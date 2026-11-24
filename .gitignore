@@ -1,0 +1,62 @@
+# Environnements virtuels & caches Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.part[0-9]*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+test_results 
+
+# Secrets, configuration locale & IDE
+.secret_salt
+/config.ini
+.idea/
+.vscode/
+.project
+.pydevproject
+.DS_Store
+Thumbs.db
+.watch_clipboard/
+.whisper_cache/
+
+# Dossiers de travail isolés & données confidentielles utilisateur
+dossiers/
+input_documents/
+input_contacts/
+extracted_texts/
+anonymized_results/
+output_contacts/
+transcriptions/
+resultats_anonymisation/
+pack_avocat/
+retour_ia_brut/
+retour_ia_nominatif/
+transcriptions_non_anonymisees/
+fichiers sources/
+export_contacts/
+audits/*
+!audits/.gitkeep
+fichiers_noms_propres_a_revoir/
+contacts.txt
+contacts_indexes.txt
+contacts_anonymises.txt
+contacts_dedoublonnes.txt
+contacts_manuels.txt
+contacts_emails_decouverts.txt
+tous_numeros_sms.txt
+tous_emails_trouves.txt
+audit_noms_residuels.txt
+audit_noms_residuels_copier.txt
+prenoms_suggeres.txt
+*_export.txt
+docs/*.pdf
+
+# Icônes temporaires de contour de cache Windows
+assets/anonvault_icon_*.ico

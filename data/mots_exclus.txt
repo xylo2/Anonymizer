@@ -1,0 +1,14 @@
+# Mots exclus de la détection automatique des noms propres et de l'audit
+# (un mot par ligne, insensible à la casse et aux accents)
+ophtalmologiste
+rennes
+selarl
+endovaginale
+chirurgiendentiste
+assistantspecialiste
+conferencesdesuniversites
+templiers
+molay
+prenomaele
+doctorlib
+doctolib
