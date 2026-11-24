@@ -121,6 +121,21 @@ class MultiPlatformChatExtractor:
                     return True
         return False
 
+    @staticmethod
+    def _record_extracted_participants(
+        participants: Set[str],
+        room_title: str,
+        participants_out: Optional[List[str]],
+    ) -> None:
+        if participants_out is None:
+            return
+        seen: Set[str] = {p.lower() for p in participants_out}
+        for name in sorted(participants):
+            clean_n: str = name.strip()
+            if clean_n and clean_n != room_title and clean_n.lower() not in seen:
+                seen.add(clean_n.lower())
+                participants_out.append(clean_n)
+
     def _group_entries_by_month(
         self, platform_label: str, room_title: str, entries: List[Tuple[str, int, str]]
     ) -> Dict[str, str]:
@@ -153,6 +168,7 @@ class MultiPlatformChatExtractor:
         file_path: str,
         raw_text: str,
         allowed_names: Optional[Set[str]] = None,
+        participants_out: Optional[List[str]] = None,
     ) -> Dict[str, str]:
         stem, _ = os.path.splitext(os.path.basename(file_path))
         room_title: str = re.sub(
@@ -194,6 +210,7 @@ class MultiPlatformChatExtractor:
                 cur_lines.append(line.rstrip())
 
         _flush_msg()
+        self._record_extracted_participants(participants, room_title, participants_out)
         if not self._participants_match_filter(participants, allowed_names):
             return {}
         return self._group_entries_by_month("WHATSAPP", room_title, entries)
@@ -212,6 +229,7 @@ class MultiPlatformChatExtractor:
         file_path: str,
         raw_html: str,
         allowed_names: Optional[Set[str]] = None,
+        participants_out: Optional[List[str]] = None,
     ) -> Dict[str, str]:
         title_match = re.search(r"(?is)<title>(.*?)</title>", raw_html)
         room_title: str = (
@@ -239,6 +257,7 @@ class MultiPlatformChatExtractor:
             block: str = f"[{dt_str}] DE : {sender or 'Expéditeur inconnu'}\n{body}\n----------------------------------------\n"
             entries.append((period, sort_k, block))
 
+        self._record_extracted_participants(participants, room_title, participants_out)
         if not self._participants_match_filter(participants, allowed_names):
             return {}
         return self._group_entries_by_month("MESSENGER", room_title, entries)
@@ -248,6 +267,7 @@ class MultiPlatformChatExtractor:
         file_path: str,
         payload: Dict[str, Any],
         allowed_names: Optional[Set[str]] = None,
+        participants_out: Optional[List[str]] = None,
     ) -> Dict[str, str]:
         room_title: str = self._decode_meta_mojibake(str(payload.get("title") or "")).strip() or os.path.basename(os.path.dirname(file_path)) or "Conversation Messenger"
         participants: Set[str] = {room_title}
@@ -267,6 +287,7 @@ class MultiPlatformChatExtractor:
             period, dt_str, sort_k = self._epoch_to_period_and_dt(msg.get("timestamp_ms", 0))
             block: str = f"[{dt_str}] DE : {sender or 'Expéditeur inconnu'}\n{content}\n----------------------------------------\n"
             entries.append((period, sort_k, block))
+        self._record_extracted_participants(participants, room_title, participants_out)
         if not self._participants_match_filter(participants, allowed_names):
             return {}
         return self._group_entries_by_month("MESSENGER", room_title, entries)
@@ -278,6 +299,7 @@ class MultiPlatformChatExtractor:
         allowed_emails: Set[str],
         discovered_emails: Set[str],
         allowed_names: Optional[Set[str]] = None,
+        participants_out: Optional[List[str]] = None,
     ) -> Dict[str, str]:
         parent_dir: str = os.path.dirname(file_path)
         room_title: str = ""
@@ -318,6 +340,7 @@ class MultiPlatformChatExtractor:
             sender_disp: str = f"{c_name} ({c_mail})" if (c_name and c_mail) else (c_name or c_mail or "Utilisateur Google Chat")
             block: str = f"[{dt_str}] DE : {sender_disp}\n{att_line}{text_body}\n----------------------------------------\n"
             entries.append((period, sort_k, block))
+        self._record_extracted_participants(participants, room_title, participants_out)
         if allowed_emails and conv_emails and not (conv_emails & allowed_emails):
             return {}
         if not self._participants_match_filter(participants, allowed_names):
@@ -330,6 +353,7 @@ class MultiPlatformChatExtractor:
         target_phones: Dict[str, str],
         discovered_phones: Set[str],
         allowed_names: Optional[Set[str]] = None,
+        participants_out: Optional[List[str]] = None,
     ) -> Dict[str, str]:
         raw_msgs: List[Any] = payload.get("messages", []) if isinstance(payload, dict) else (payload if isinstance(payload, list) else [])
         file_stem, _ = os.path.splitext(os.path.basename(file_path))
@@ -363,6 +387,7 @@ class MultiPlatformChatExtractor:
             block: str = f"[{dt_str}] DE : {sender_disp}\n{att_line}{body}\n----------------------------------------\n"
             entries.append((period, sort_k, block))
 
+        self._record_extracted_participants(participants, room_title, participants_out)
         if target_phones or allowed_names:
             phone_ok: bool = bool(target_phones and conv_phones and (conv_phones & set(target_phones.keys())))
             name_ok: bool = bool(allowed_names and self._participants_match_filter(participants, allowed_names))
@@ -378,6 +403,7 @@ class MultiPlatformChatExtractor:
         discovered_phones: Set[str],
         discovered_emails: Set[str],
         allowed_names: Optional[Set[str]] = None,
+        participants_out: Optional[List[str]] = None,
     ) -> Tuple[Dict[str, str], Optional[str]]:
         from doc_anonymizer.teams_chat_extractor import TeamsChatExtractor
 
@@ -388,22 +414,31 @@ class MultiPlatformChatExtractor:
             return {}, f"Erreur lecture JSON ({exc})"
 
         if TeamsChatExtractor.is_teams_json_payload(payload):
-            return TeamsChatExtractor(self.config).extract_teams_json(file_path, payload, discovered_emails), None
+            buckets_t = TeamsChatExtractor(self.config).extract_teams_json(file_path, payload, discovered_emails)
+            if participants_out is not None:
+                seen_t: Set[str] = {p.lower() for p in participants_out}
+                for txt_b in buckets_t.values():
+                    for m_s in re.finditer(r"^\[[^\]]+\]\s*DE\s*:\s*([^\r\n(]+)", txt_b, re.MULTILINE):
+                        spk: str = m_s.group(1).strip()
+                        if spk and spk.lower() not in seen_t:
+                            seen_t.add(spk.lower())
+                            participants_out.append(spk)
+            return buckets_t, None
 
         if isinstance(payload, dict) and isinstance(payload.get("messages"), list):
             msgs: List[Any] = payload["messages"]
             sample: Any = next(iter(msgs), None)
             base_low: str = os.path.basename(file_path).lower()
             if "participants" in payload or (isinstance(sample, dict) and ("sender_name" in sample or "timestamp_ms" in sample)):
-                return self._extract_messenger_json(file_path, payload, allowed_names=allowed_names), None
+                return self._extract_messenger_json(file_path, payload, allowed_names=allowed_names, participants_out=participants_out), None
             if isinstance(sample, dict) and any(k in sample for k in ("source", "sourceName", "threadId", "sent_at")):
-                return self._extract_signal_json(file_path, payload, target_phones, discovered_phones, allowed_names=allowed_names), None
+                return self._extract_signal_json(file_path, payload, target_phones, discovered_phones, allowed_names=allowed_names, participants_out=participants_out), None
             if base_low == "messages.json" or (isinstance(sample, dict) and ("creator" in sample or "created_date" in sample)):
-                return self._extract_google_chat(file_path, payload, allowed_emails, discovered_emails, allowed_names=allowed_names), None
+                return self._extract_google_chat(file_path, payload, allowed_emails, discovered_emails, allowed_names=allowed_names, participants_out=participants_out), None
 
         if isinstance(payload, list) and payload:
             first_item: Any = next(iter(payload), None)
             if isinstance(first_item, dict) and any(k in first_item for k in ("source", "sourceName", "body", "timestamp")):
-                return self._extract_signal_json(file_path, payload, target_phones, discovered_phones, allowed_names=allowed_names), None
+                return self._extract_signal_json(file_path, payload, target_phones, discovered_phones, allowed_names=allowed_names, participants_out=participants_out), None
 
         return {}, None

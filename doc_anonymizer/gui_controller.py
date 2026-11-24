@@ -183,9 +183,15 @@ class AnonymizerGuiController:
         out_dir: str = os.path.join(self.resolve_workspace_paths(ini_path)["workspace_root"], "retour_ia_nominatif")
         exported: List[str] = [DocumentDeanonymizer.export_deanonymized_file(fp, out_dir, proposals) for fp in file_paths if os.path.isfile(fp)]
         return exported, out_dir
-
     def detect_zip_files(self, ini_path: str) -> List[str]:
         return self.ws_manager.detect_zip_files(ini_path)
+
+    def ensure_manual_contacts_file(self, ini_path: str) -> str:
+        from tools.sync_contacts import ContactsSynchronizer
+
+        manual_path: str = self.resolve_workspace_paths(ini_path)["manual_contacts_file"]
+        ContactsSynchronizer.ensure_manual_contacts_file(manual_path)
+        return manual_path
 
     def build_cli_command(self, ini_path: str, mode: str) -> List[str]:
         abs_ini: str = os.path.abspath(ini_path)

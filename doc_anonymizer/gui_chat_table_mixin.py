@@ -50,6 +50,7 @@ class GuiChatTableMixin:
             0, getattr(self, "chat_page_index", 0) + delta
         )
         self._render_chat_filter_tree()
+
     def _on_chat_search_typed(self, _event: object = None) -> None:
         if hasattr(self, "ent_chat_search"):
             self.chat_filter_search_var.set(self.ent_chat_search.get())  # type: ignore[attr-defined]
@@ -86,65 +87,76 @@ class GuiChatTableMixin:
         if sort_c == "participants":
             return (part_low, conv_low, -cnt)
         return (cnt, conv_low)
-
     def _render_chat_filter_tree(self) -> None:
         if not hasattr(self, "chat_filter_tree"):
             return
         for iid in self.chat_filter_tree.get_children():  # type: ignore[attr-defined]
             self.chat_filter_tree.delete(iid)  # type: ignore[attr-defined]
-        self.chat_filter_tree.tag_configure(  # type: ignore[attr-defined]
-            "kept", background="#ecfdf5", foreground="#065f46"
-        )
-        self.chat_filter_tree.tag_configure(  # type: ignore[attr-defined]
-            "ignored", background="#fef2f2", foreground="#991b1b"
-        )
+        self.chat_filter_tree.tag_configure("kept", background="#ecfdf5", foreground="#065f46")  # type: ignore[attr-defined]
+        self.chat_filter_tree.tag_configure("ignored", background="#fef2f2", foreground="#991b1b")  # type: ignore[attr-defined]
+        base_titles = {"keep": "STATUT", "platform": "PLATEFORME", "conversation": "CONVERSATION", "participants": "PARTICIPANTS", "count": "MESSAGES"}
+        for col_id, base_lbl in base_titles.items():
+            arrow: str = (" ▼" if getattr(self, "chat_sort_reverse", True) else " ▲") if getattr(self, "chat_sort_col", "count") == col_id else ""
+            self.chat_filter_tree.heading(col_id, text=f"{base_lbl}{arrow}", command=lambda c=col_id: self._sort_chats_by_column(c))  # type: ignore[attr-defined]
+
+        items_all: List[Dict[str, Any]] = getattr(self, "chat_filter_items", [])
+        query: str = self.chat_filter_search_var.get().strip().lower() if hasattr(self, "chat_filter_search_var") else ""  # type: ignore[attr-defined]
+        view_mode: str = self.chat_filter_view_var.get() if hasattr(self, "chat_filter_view_var") else "Tous"  # type: ignore[attr-defined]
+        kept_total: int = sum(1 for it in items_all if it.get("selected"))
+        ignored_total: int = len(items_all) - kept_total
+        indexed = list(enumerate(items_all))
+        indexed.sort(key=lambda pair: self._chat_sort_key(next(reversed(pair))), reverse=getattr(self, "chat_sort_reverse", True))
+
+        filtered: List[Tuple[int, Dict[str, Any]]] = []
+        for orig_idx, item in indexed:
+            is_kept: bool = bool(item.get("selected"))
+            if (view_mode == "Gardées" and not is_kept) or (view_mode == "Mises de côté" and is_kept):
+                continue
+            plat_s: str = str(item.get("platform") or "")
+            conv_s: str = str(item.get("conversation") or "")
+            part_s: str = str(item.get("participants_display") or ", ".join(item.get("participants", [])))
+            if not self._matches_search_query(query, plat_s, conv_s, part_s):  # type: ignore[attr-defined]
+                continue
+            filtered.append((orig_idx, item))
+
+        page_slice = self._paginate_and_update_controls(filtered, "chat_page_index", "chat_page_info_var", "btn_chat_prev_page", "btn_chat_next_page")  # type: ignore[attr-defined]
+        for orig_idx, item in page_slice:
+            is_kept = bool(item.get("selected"))
+            mark: str = "✓ Garder" if is_kept else "✕ Écarter"
+            part_disp: str = str(item.get("participants_display") or ", ".join(item.get("participants", [])))
+            self.chat_filter_tree.insert("", "end", iid=str(orig_idx), values=(mark, str(item.get("platform") or ""), str(item.get("conversation") or ""), part_disp, f"{item.get('count', 0)} msg"), tags=("kept" if is_kept else "ignored",))  # type: ignore[attr-defined]
+
+        if hasattr(self, "chat_filter_summary_var"):
+            self.chat_filter_summary_var.set(f"{kept_total} gardée(s) (vert) • {ignored_total} mise(s) de côté (rouge) — Total : {len(items_all)} conversation(s).")  # type: ignore[attr-defined]
+        if hasattr(self, "tabs_chat_view"):
+            self.tabs_chat_view.set_option_labels({"Tous": f"Tous ({len(items_all)})", "Gardées": f"Gardées ({kept_total})", "Mises de côté": f"Mises de côté ({ignored_total})"})  # type: ignore[attr-defined]
+
     def _toggle_chat_row_by_id(self, row_id: str) -> None:
         items_list: List[Dict[str, Any]] = getattr(self, "chat_filter_items", [])
-        if row_id and row_id.isdigit():
+        if row_id and row_id.isdigit() and 0 <= int(row_id) < len(items_list):
             idx: int = int(row_id)
-            if 0 <= idx < len(items_list):
-                items_list[idx]["selected"] = not bool(
-                    items_list[idx].get("selected")
-                )
-                self._render_chat_filter_tree()
-                self.chat_filter_tree.selection_remove(  # type: ignore[attr-defined]
-                    self.chat_filter_tree.selection()  # type: ignore[attr-defined]
-                )
-                self._schedule_debounced_save(  # type: ignore[attr-defined]
-                    "_chat_save_after_id", self._persist_chat_filter_now
-                )
+            items_list[idx]["selected"] = not bool(items_list[idx].get("selected"))
+            self._render_chat_filter_tree()
+            self.chat_filter_tree.selection_remove(self.chat_filter_tree.selection())  # type: ignore[attr-defined]
+            self._schedule_debounced_save("_chat_save_after_id", self._persist_chat_filter_now)  # type: ignore[attr-defined]
 
     def _toggle_selected_chat_filter(self, _event: object = None) -> None:
         sel = self.chat_filter_tree.selection()  # type: ignore[attr-defined]
         if sel:
             self._toggle_chat_row_by_id(next(iter(sel)))
 
-    def _set_all_chats_selected(
-        self, selected: bool, exclusive: bool = False
-    ) -> None:
-        query: str = (
-            self.chat_filter_search_var.get().strip().lower()  # type: ignore[attr-defined]
-            if hasattr(self, "chat_filter_search_var")
-            else ""
-        )
+    def _set_all_chats_selected(self, selected: bool, exclusive: bool = False) -> None:
+        query: str = self.chat_filter_search_var.get().strip().lower() if hasattr(self, "chat_filter_search_var") else ""  # type: ignore[attr-defined]
         for item in getattr(self, "chat_filter_items", []):
-            plat_str: str = str(item.get("platform") or "")
-            conv_str: str = str(item.get("conversation") or "")
-            part_str: str = str(
-                item.get("participants_display")
-                or ", ".join(item.get("participants", []))
-            )
-            matches: bool = self._matches_search_query(  # type: ignore[attr-defined]
-                query, plat_str, conv_str, part_str
-            )
-            if matches:
+            plat_s: str = str(item.get("platform") or "")
+            conv_s: str = str(item.get("conversation") or "")
+            part_s: str = str(item.get("participants_display") or ", ".join(item.get("participants", [])))
+            if self._matches_search_query(query, plat_s, conv_s, part_s):  # type: ignore[attr-defined]
                 item["selected"] = selected
             elif exclusive and selected:
                 item["selected"] = False
         self._render_chat_filter_tree()
-        self.chat_filter_tree.selection_remove(  # type: ignore[attr-defined]
-            self.chat_filter_tree.selection()  # type: ignore[attr-defined]
-        )
+        self.chat_filter_tree.selection_remove(self.chat_filter_tree.selection())  # type: ignore[attr-defined]
         self._persist_chat_filter_now()
 
     def _save_chat_filter_and_continue(self) -> None:

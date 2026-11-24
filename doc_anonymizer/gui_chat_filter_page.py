@@ -52,7 +52,8 @@ class GuiChatFilterPageMixin:
         self.chat_filter_search_var = tk.StringVar()
         self.ent_chat_search = make_modern_entry(bar_ch, textvariable=self.chat_filter_search_var, width=170, placeholder="Rechercher...")
         self.ent_chat_search.pack(side="left", padx=(0, 6))
-        self.ent_chat_search.bind("<KeyRelease>", self._on_chat_search_typed)  # type: ignore[attr-defined]
+        for seq in ("<KeyRelease>", "<FocusOut>", "<<Paste>>", "<Control-v>", "<Control-V>"):
+            self.ent_chat_search.bind(seq, lambda _e: self.after_idle(self._on_chat_search_typed), add="+")  # type: ignore[attr-defined]
         make_styled_button(bar_ch, text="Tout cocher", command=lambda: self._set_all_chats_selected(True), variant="secondary").pack(side="left", padx=(0, 4))  # type: ignore[attr-defined]
         make_styled_button(bar_ch, text="Tout décocher", command=lambda: self._set_all_chats_selected(False), variant="secondary").pack(side="left")  # type: ignore[attr-defined]
 

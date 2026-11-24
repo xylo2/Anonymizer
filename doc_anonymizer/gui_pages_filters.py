@@ -64,7 +64,8 @@ class GuiPagesFiltersMixin(GuiChatFilterPageMixin):
         self.contact_filter_search_var = tk.StringVar()
         self.ent_contact_search = make_modern_entry(bar_c, textvariable=self.contact_filter_search_var, width=180, placeholder="Rechercher...")
         self.ent_contact_search.pack(side="left", padx=(0, 6))
-        self.ent_contact_search.bind("<KeyRelease>", self._on_contact_search_typed)  # type: ignore[attr-defined]
+        for seq in ("<KeyRelease>", "<FocusOut>", "<<Paste>>", "<Control-v>", "<Control-V>"):
+            self.ent_contact_search.bind(seq, lambda _e: self.after_idle(self._on_contact_search_typed), add="+")  # type: ignore[attr-defined]
         make_styled_button(bar_c, text="Tout cocher", command=lambda: self._set_all_contacts_selected(True), variant="secondary").pack(side="left", padx=(0, 4))  # type: ignore[attr-defined]
         make_styled_button(bar_c, text="Tout décocher", command=lambda: self._set_all_contacts_selected(False), variant="secondary").pack(side="left", padx=(0, 4))  # type: ignore[attr-defined]
         make_styled_button(bar_c, text="Règles manuelles...", command=self._open_manual_contacts_editor, variant="secondary").pack(side="left")  # type: ignore[attr-defined]
@@ -99,7 +100,8 @@ class GuiPagesFiltersMixin(GuiChatFilterPageMixin):
         self.sms_filter_search_var = tk.StringVar()
         self.ent_sms_search = make_modern_entry(bar_s, textvariable=self.sms_filter_search_var, width=160, placeholder="Rechercher...")
         self.ent_sms_search.pack(side="left", padx=(0, 6))
-        self.ent_sms_search.bind("<KeyRelease>", self._on_sms_search_typed)  # type: ignore[attr-defined]
+        for seq in ("<KeyRelease>", "<FocusOut>", "<<Paste>>", "<Control-v>", "<Control-V>"):
+            self.ent_sms_search.bind(seq, lambda _e: self.after_idle(self._on_sms_search_typed), add="+")  # type: ignore[attr-defined]
         make_styled_button(bar_s, text="Tout cocher", command=lambda: self._set_all_sms_numbers_selected(True), variant="secondary").pack(side="left", padx=(0, 4))  # type: ignore[attr-defined]
         make_styled_button(bar_s, text="Exclure courts", command=self._deselect_short_sms_numbers, variant="secondary").pack(side="left")  # type: ignore[attr-defined]
         self.sms_filter_tree, self.sms_page_info_var, self.btn_sms_prev_page, self.btn_sms_next_page = self._build_tree_and_pager(card_s, ("keep", "phone", "name", "count"), (("keep", "STATUT", 110, "center", lambda: self._sort_sms_by_column("keep")), ("phone", "NUMÉRO DE TÉLÉPHONE", 190, "w", lambda: self._sort_sms_by_column("phone")), ("name", "CONTACT ASSOCIÉ", 270, "w", lambda: self._sort_sms_by_column("name")), ("count", "MESSAGES", 110, "center", lambda: self._sort_sms_by_column("count"))), self._toggle_sms_row_by_id, self._toggle_selected_sms_filter, lambda: self._change_sms_page(-1), lambda: self._change_sms_page(1))  # type: ignore[attr-defined]

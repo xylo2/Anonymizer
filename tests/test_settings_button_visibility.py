@@ -3,6 +3,7 @@
 import os
 import sys
 import tempfile
+import tkinter as tk
 import unittest
 
 ROOT_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -13,18 +14,31 @@ import gui_anonymizer
 
 
 class TestWorkspaceSettingsButtonVisibility(unittest.TestCase):
-    """Vérifie le masquage du bouton Paramètres sur la page 0 (gate) et son affichage dès qu'un dossier est ouvert."""
+    """Vérifie le masquage du bouton Paramètres sur la page 0 (gate)."""
 
     def setUp(self) -> None:
         self._tmp_dir = tempfile.TemporaryDirectory()
-        self.app = gui_anonymizer.AnonymizerGuiApp()
-        self.app.controller.workspaces_base_dir = self._tmp_dir.name
+        os.makedirs(os.path.join(self._tmp_dir.name, "data"), exist_ok=True)
+        for fn in ("mots_exclus.txt", "prenoms.txt", "collisions_noms.txt", "villes_masquees.txt"):
+            with open(os.path.join(self._tmp_dir.name, "data", fn), "w", encoding="utf-8") as f_d:
+                f_d.write("# Data\n")
+        self._orig_root: str = gui_anonymizer.ROOT_DIR
+        gui_anonymizer.ROOT_DIR = self._tmp_dir.name
+        try:
+            self.app = gui_anonymizer.AnonymizerGuiApp()
+            self.app.withdraw()
+        except tk.TclError as exc:
+            gui_anonymizer.ROOT_DIR = self._orig_root
+            self._tmp_dir.cleanup()
+            self.skipTest(f"Environnement headless : {exc}")
 
     def tearDown(self) -> None:
-        try:
-            self.app.destroy()
-        except Exception:
-            pass
+        if hasattr(self, "app") and self.app is not None:
+            try:
+                self.app.destroy()
+            except Exception:
+                pass
+        gui_anonymizer.ROOT_DIR = self._orig_root
         self._tmp_dir.cleanup()
 
     def test_settings_button_hidden_on_gate_and_visible_when_workspace_open(self) -> None:
