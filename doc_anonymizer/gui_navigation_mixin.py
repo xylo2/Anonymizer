@@ -121,11 +121,12 @@ class GuiNavigationMixin(GuiGateMixin):
             tooltip="Bascule entre le mode lecteur d'écran natif et le mode standard.",
         )
         self.btn_screen_reader.pack(side="right", padx=(6, 0))
-        make_styled_button(
+        self.btn_workspace_settings = make_styled_button(
             right_controls, text="Paramètres",
             command=self._open_workspace_settings_dialog, variant="secondary",  # type: ignore[attr-defined]
             tooltip="Configurer les dates de naissance, l'OCR, Whisper et les balises.",
-        ).pack(side="right", padx=(6, 0))
+        )
+        self.btn_workspace_settings.pack(side="right", padx=(6, 0))
         make_styled_button(
             right_controls, text="Aide & Exports",
             command=self._show_export_guide_popup, variant="secondary",  # type: ignore[attr-defined]
@@ -274,6 +275,12 @@ class GuiNavigationMixin(GuiGateMixin):
     def _show_page(self, key: str) -> None:
         if key != "gate" and not self.current_ini_var.get():
             key = "gate"
+        btn_cfg = getattr(self, "btn_workspace_settings", None)
+        if btn_cfg is not None:
+            if key == "gate" or not self.current_ini_var.get():
+                btn_cfg.pack_forget()
+            elif not btn_cfg.winfo_manager():
+                btn_cfg.pack(side="right", padx=(6, 0), after=self.btn_screen_reader)
         export_title: str = (
             "Étape 7 — Générer le Pack Avocat Nominatif"
             if self.workflow_mode == "lawyer"
