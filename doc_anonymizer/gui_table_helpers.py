@@ -1,15 +1,14 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
-import re
 import time
-import tkinter as tk
 from tkinter import ttk
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 from doc_anonymizer.contact_csv_importer import normalize_phone_identifier
+from doc_anonymizer.gui_tree_columns import TreeviewColumnLayoutManager
 
 
 class TreeviewTableHelper:
-    """Fournit la protection trackpad (anti-clic lors du scroll/glisser) et le formatage lisible des tableaux."""
+    """Fournit la protection trackpad, le formatage des tableaux et la gestion des colonnes."""
 
     @staticmethod
     def format_phone_display(raw_phone: str) -> str:
@@ -21,7 +20,7 @@ class TreeviewTableHelper:
 
     @classmethod
     def split_contact_identifiers(cls, identifiers: List[str]) -> Tuple[str, str]:
-        """Sépare proprement numéros de téléphone (sans libellés ni doublons) et adresses e-mail."""
+        """Sépare proprement numéros de téléphone et adresses e-mail sans doublon."""
         phones: List[str] = []
         emails: List[str] = []
         seen_norms: set[str] = set()
@@ -44,8 +43,12 @@ class TreeviewTableHelper:
         return "  •  ".join(phones), "  •  ".join(emails)
 
     @staticmethod
-    def bind_trackpad_safe_toggle(tree: ttk.Treeview, on_toggle_row: Callable[[str], None]) -> None:
-        """Empêche toute sélection/désélection involontaire pendant un défilement trackpad ou un glisser."""
+    def bind_trackpad_safe_toggle(
+        tree: ttk.Treeview, on_toggle_row: Callable[[str], None]
+    ) -> None:
+        """Empêche toute sélection involontaire au scroll/glisser et active les colonnes."""
+        TreeviewColumnLayoutManager.install_global_hook()
+        TreeviewColumnLayoutManager.attach_to_tree(tree)
         state: Dict[str, Any] = {"last_scroll": 0.0, "press_xy": None, "dragged": False}
 
         def _on_scroll(_event: Any = None) -> None:

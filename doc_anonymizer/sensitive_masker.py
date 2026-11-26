@@ -1,6 +1,7 @@
 # Commandes pip à exécuter : Aucune dépendance externe requise
 
 import re
+import threading
 from typing import Any, Dict, List, Optional, Pattern
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.contact_rules_loader import ContactRulesLoader
@@ -32,7 +33,7 @@ class SensitiveTextMasker:
         self.dynamic_tokens: Dict[str, str] = {}
         self.email_counter: int = 1
         self.phone_counter: int = 1
-        self._active_stats: Optional[Dict[str, int]] = None
+        self._stats_local: threading.local = threading.local()
 
         self.regex_compiled: bool = False
         self.fast_replacer_regex: Optional[Pattern[str]] = None
@@ -47,9 +48,9 @@ class SensitiveTextMasker:
         self.locations_regex: Optional[Pattern[str]] = None
 
     def _bump_stat(self, key: str, count: int = 1) -> None:
-        if self._active_stats is not None and count > 0:
-            self._active_stats[key] = self._active_stats.get(key, 0) + count
-
+        stats = getattr(self._stats_local, "active", None)
+        if stats is not None and count > 0:
+            stats[key] = stats.get(key, 0) + count
     def _record_vault(self, token: str, original_val: str, category: str) -> None:
         if self.vault is not None and token and original_val:
             self.vault.record_mapping(token, original_val, category)
@@ -72,6 +73,7 @@ class SensitiveTextMasker:
             return self._mask_entity_value(m.group(0), static_tag, prefix, category)
 
         return rx.sub(_repl, text)
+
     def sync_dynamic_counters(self) -> None:
         for token in self.dynamic_tokens.values():
             if token.startswith("EMAIL_"):
@@ -114,11 +116,11 @@ class SensitiveTextMasker:
         self.dynamic_tokens[key] = token
         self._record_vault(token, raw_val.strip(), "Coordonnée")
         return token
-
     @staticmethod
     def _normalize_fast_key(raw_text: str) -> str:
         norm: str = DocumentTextUtils.normalize_word(raw_text)
         return re.sub(r"[\s\-'\u2019_]+", " ", norm).strip()
+
     def compile_patterns(self) -> None:
         self.fast_replacer_map = {}
         raw_targets: List[str] = []
@@ -177,7 +179,6 @@ class SensitiveTextMasker:
             r"[Ll]es|[Vv]an|[Vv]on|[Dd]a|[Dd]i)[ \t]+){1,2}"
         )
         sur_p: str = rf"(?:{part_p})?{cap_w}"
-
         self.title_first_last_regex = re.compile(
             rf"\b({titles_pat})[ \t]+({cap_w}(?:[ \t]+{cap_w})?)[ \t]+({sur_p})\b"
         )
@@ -207,6 +208,7 @@ class SensitiveTextMasker:
                     re.IGNORECASE,
                 )
         self.regex_compiled = True
+
     def _is_known_first_name(self, token: str) -> bool:
         norm: str = DocumentTextUtils.normalize_word(token)
         if not norm:
@@ -229,7 +231,6 @@ class SensitiveTextMasker:
         if not self.config.known_first_names:
             return len(norm) >= 2 and norm not in self.config.masked_locations
         return False
-
     @staticmethod
     def _format_surname_initials(last_name: str) -> str:
         parts: List[str] = [p for p in re.split(r"[\s\-]+", last_name.strip()) if p]
@@ -281,7 +282,6 @@ class SensitiveTextMasker:
             self._record_vault(repl, match.group(0), "Identité détectée")
             return repl
         return match.group(0)
-
     def _replace_title_last_name(self, match: re.Match) -> str:
         title, last = match.group(1), match.group(2)
         core_l: str = next(reversed(last.split()))
@@ -422,7 +422,8 @@ class SensitiveTextMasker:
             return text
         if not self.regex_compiled:
             self.compile_patterns()
-        prev_stats, self._active_stats = self._active_stats, stats_collector
+        prev_stats = getattr(self._stats_local, "active", None)
+        self._stats_local.active = stats_collector
         try:
             res: str = DocumentTextUtils.repair_mojibake(text)
             if self.manual_only:
@@ -469,4 +470,4 @@ class SensitiveTextMasker:
                 res = res.replace(f"__CSS_ATTR_{idx}__", original_css)
             return res
         finally:
-            self._active_stats = prev_stats
+            self._stats_local.active = prev_stats

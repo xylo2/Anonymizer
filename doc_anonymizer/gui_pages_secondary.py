@@ -31,22 +31,41 @@ class GuiSecondaryPagesMixin(GuiDeanonPageMixin):
         top = make_card(
             parent,
             title="Fichiers identiques détectés (doublons binaires stricts)",
-            subtitle="Cliquez pour basculer (Vert = garder, Rouge = ignorer).",
+            subtitle="Cliquez sur une ligne pour basculer (Vert = garder, Rouge = ignorer). Survolez une ligne pour voir le chemin complet.",
             accent_color="#d97706",
         )
-        bar = tk.Frame(top, bg=UI_COLORS["card"])
-        bar.pack(fill="x")
         self.dup_filter_summary_var = tk.StringVar(value="0 doublon(s).")
         tk.Label(
-            bar, textvariable=self.dup_filter_summary_var,
+            top, textvariable=self.dup_filter_summary_var,
             bg=UI_COLORS["card"], fg="#1d4ed8", font=("Segoe UI", 8, "bold"),
-        ).pack(side="left")
+        ).pack(anchor="w", pady=(0, 6))
+
+        bar = tk.Frame(top, bg=UI_COLORS["card"])
+        bar.pack(fill="x")
+        tk.Label(
+            bar, text="Dossier :", bg=UI_COLORS["card"],
+            fg=UI_COLORS["text"], font=("Segoe UI", 8, "bold"),
+        ).pack(side="left", padx=(0, 6))
+        self.dup_priority_folder_var = tk.StringVar(value="Aucun sous-dossier")
+        self.combo_dup_folder = make_modern_dropdown(
+            bar, self.dup_priority_folder_var, ["Aucun sous-dossier"], width=180
+        )
+        self.combo_dup_folder.pack(side="left", padx=(0, 6))
         make_styled_button(
-            bar, text="Garder 1 exemplaire par groupe",
+            bar, text="Garder en priorité",
+            command=self._prioritize_duplicate_folder,  # type: ignore[attr-defined]
+            variant="primary",
+        ).pack(side="left", padx=(0, 6))
+        make_styled_button(
+            bar, text="Ignorer ce dossier",
+            command=self._ignore_duplicate_folder,  # type: ignore[attr-defined]
+            variant="danger_soft",
+        ).pack(side="left", padx=(0, 6))
+        make_styled_button(
+            bar, text="1 copie / groupe",
             command=self._reset_default_duplicates_selection,  # type: ignore[attr-defined]
             variant="secondary",
         ).pack(side="right")
-
         table_card = tk.Frame(
             parent, bg=UI_COLORS["card"],
             highlightbackground=UI_COLORS["border"],
@@ -58,18 +77,12 @@ class GuiSecondaryPagesMixin(GuiDeanonPageMixin):
             table_card, columns=cols, show="headings",
             selectmode="browse", style="Modern.Treeview", height=8,
         )
-        self.duplicate_filter_tree.tag_configure(
-            "kept", background="#ecfdf5", foreground="#065f46"
-        )
-        self.duplicate_filter_tree.tag_configure(
-            "ignored", background="#fef2f2", foreground="#991b1b"
-        )
         headers = (
-            ("keep", "STATUT", 105),
-            ("group", "GROUPE", 110),
-            ("filename", "FICHIER", 210),
-            ("size", "TAILLE", 90),
-            ("path", "EMPLACEMENT COMPLET", 320),
+            ("keep", "STATUT", 100),
+            ("group", "GROUPE", 100),
+            ("filename", "FICHIER", 220),
+            ("size", "TAILLE", 85),
+            ("path", "EMPLACEMENT (ABRÉGÉ)", 330),
         )
         for col_id, lbl, w in headers:
             self.duplicate_filter_tree.heading(col_id, text=lbl)
@@ -89,6 +102,7 @@ class GuiSecondaryPagesMixin(GuiDeanonPageMixin):
         self.duplicate_filter_tree.bind(
             "<space>", self._toggle_selected_duplicate_filter  # type: ignore[attr-defined]
         )
+        self._bind_duplicate_hover_tooltip()  # type: ignore[attr-defined]
 
         nav_row = tk.Frame(parent, bg=UI_COLORS["bg"])
         nav_row.pack(fill="x", pady=(2, 0))
@@ -355,6 +369,7 @@ class GuiSecondaryPagesMixin(GuiDeanonPageMixin):
         nav_row.pack(fill="x", pady=(2, 0))
         make_styled_button(nav_row, text="<- Retour (Traitement)", command=lambda: self._show_page("run"), variant="secondary").pack(side="left")  # type: ignore[attr-defined]
         make_styled_button(nav_row, text="Appliquer et passer à l'étape finale ->", command=self._apply_audit_and_go_export, variant="success").pack(side="right")  # type: ignore[attr-defined]
+
     def _build_page_export(self) -> None:
         parent = self.pages["export"]
         self.frame_export_ia = tk.Frame(parent, bg=UI_COLORS["bg"])

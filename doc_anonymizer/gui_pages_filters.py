@@ -30,7 +30,7 @@ class GuiPagesFiltersMixin(GuiChatFilterPageMixin):
         tree = ttk.Treeview(box, columns=columns, show="headings", selectmode="browse", style="Modern.Treeview", height=8)
         for col_id, lbl, width, anchor, sort_cb in headers:
             tree.heading(col_id, text=lbl, command=sort_cb)
-            tree.column(col_id, width=width, anchor=anchor)  # type: ignore[arg-type]
+            tree.column(col_id, width=width, minwidth=40, anchor=anchor)  # type: ignore[arg-type]
         sb = ttk.Scrollbar(box, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=sb.set)
         tree.pack(side="left", fill="both", expand=True)
@@ -52,24 +52,26 @@ class GuiPagesFiltersMixin(GuiChatFilterPageMixin):
         use_ctk: bool = bool(HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE)
         page = self.pages["setup"]
         card_c = make_card(page, title="Étape 2 — Vérifier les carnets détectés et les contacts à anonymiser", subtitle="Cliquez pour basculer (Vert = garder, Rouge = mis de côté).", accent_color=UI_COLORS["primary"])
+        top_c = tk.Frame(card_c, bg=UI_COLORS["card"])
+        top_c.pack(fill="x", pady=(0, 6))
         self.contact_filter_summary_var = tk.StringVar(value="0 contact(s).")
-        lbl_sum = tk.Label(card_c, textvariable=self.contact_filter_summary_var, bg=UI_COLORS["card"], fg="#1d4ed8", font=("Segoe UI", scaled_size(9), "bold"))
-        lbl_sum.pack(anchor="w", pady=(0, 6))
+        lbl_sum = tk.Label(top_c, textvariable=self.contact_filter_summary_var, bg=UI_COLORS["card"], fg="#1d4ed8", font=("Segoe UI", scaled_size(9), "bold"))
+        lbl_sum.pack(side="left")
         register_scalable_font(lbl_sum, "Segoe UI", 9, "bold")
+        make_styled_button(top_c, text="Règles manuelles...", command=self._open_manual_contacts_editor, variant="secondary").pack(side="right")  # type: ignore[attr-defined]
         bar_c = tk.Frame(card_c, bg=UI_COLORS["card"])
         bar_c.pack(fill="x", pady=(0, 6))
         self.contact_filter_view_var = tk.StringVar(value="Tous")
         self.tabs_contact_view = CleanSegmentedTabs(bar_c, [("Tous (0)", "Tous"), ("Gardés (0)", "Gardés"), ("Mis de côté (0)", "Mis de côté")], self.contact_filter_view_var, command=lambda _v: self._on_contact_view_changed())  # type: ignore[attr-defined]
         self.tabs_contact_view.pack(side="left", padx=(0, 8))
         self.contact_filter_search_var = tk.StringVar()
-        self.ent_contact_search = make_modern_entry(bar_c, textvariable=self.contact_filter_search_var, width=180, placeholder="Rechercher...")
+        self.ent_contact_search = make_modern_entry(bar_c, textvariable=self.contact_filter_search_var, width=150, placeholder="Rechercher...")
         self.ent_contact_search.pack(side="left", padx=(0, 6))
         for seq in ("<KeyRelease>", "<FocusOut>", "<<Paste>>", "<Control-v>", "<Control-V>"):
             self.ent_contact_search.bind(seq, lambda _e: self.after_idle(self._on_contact_search_typed), add="+")  # type: ignore[attr-defined]
-        make_styled_button(bar_c, text="Tout cocher", command=lambda: self._set_all_contacts_selected(True), variant="secondary").pack(side="left", padx=(0, 4))  # type: ignore[attr-defined]
-        make_styled_button(bar_c, text="Tout décocher", command=lambda: self._set_all_contacts_selected(False), variant="secondary").pack(side="left", padx=(0, 4))  # type: ignore[attr-defined]
-        make_styled_button(bar_c, text="Règles manuelles...", command=self._open_manual_contacts_editor, variant="secondary").pack(side="left")  # type: ignore[attr-defined]
-        self.contacts_filter_tree, self.contact_page_info_var, self.btn_contact_prev_page, self.btn_contact_next_page = self._build_tree_and_pager(card_c, ("keep", "alias", "phones", "emails"), (("keep", "STATUT", 110, "center", lambda: self._sort_contacts_by_column("keep")), ("alias", "CONTACT", 210, "w", lambda: self._sort_contacts_by_column("alias")), ("phones", "TÉLÉPHONE", 220, "w", lambda: self._sort_contacts_by_column("phones")), ("emails", "EMAIL", 240, "w", lambda: self._sort_contacts_by_column("emails"))), self._toggle_contact_row_by_id, self._toggle_selected_contact_filter, lambda: self._change_contact_page(-1), lambda: self._change_contact_page(1))  # type: ignore[attr-defined]
+        make_styled_button(bar_c, text="Tout décocher", command=lambda: self._set_all_contacts_selected(False), variant="secondary").pack(side="right")  # type: ignore[attr-defined]
+        make_styled_button(bar_c, text="Tout cocher", command=lambda: self._set_all_contacts_selected(True), variant="secondary").pack(side="right", padx=(0, 4))  # type: ignore[attr-defined]
+        self.contacts_filter_tree, self.contact_page_info_var, self.btn_contact_prev_page, self.btn_contact_next_page = self._build_tree_and_pager(card_c, ("keep", "alias", "phones", "emails"), (("keep", "STATUT", 100, "center", lambda: self._sort_contacts_by_column("keep")), ("alias", "CONTACT", 180, "w", lambda: self._sort_contacts_by_column("alias")), ("phones", "TÉLÉPHONE", 175, "w", lambda: self._sort_contacts_by_column("phones")), ("emails", "EMAIL", 205, "w", lambda: self._sort_contacts_by_column("emails"))), self._toggle_contact_row_by_id, self._toggle_selected_contact_filter, lambda: self._change_contact_page(-1), lambda: self._change_contact_page(1))  # type: ignore[attr-defined]
         nav_c = tk.Frame(page, bg=UI_COLORS["bg"])
         nav_c.pack(fill="x", pady=(6, 0))
         make_styled_button(nav_c, text="<- Retour (Étape 1)", command=self._go_back_from_setup, variant="secondary").pack(side="left")  # type: ignore[attr-defined]
@@ -98,13 +100,13 @@ class GuiPagesFiltersMixin(GuiChatFilterPageMixin):
         self.tabs_sms_view = CleanSegmentedTabs(bar_s, [("Tous (0)", "Tous"), ("Gardés (0)", "Gardés"), ("Mis de côté (0)", "Mis de côté"), ("Numéros courts (0)", "Numéros courts")], self.sms_filter_view_var, command=lambda _v: self._on_sms_view_changed())  # type: ignore[attr-defined]
         self.tabs_sms_view.pack(side="left", padx=(0, 8))
         self.sms_filter_search_var = tk.StringVar()
-        self.ent_sms_search = make_modern_entry(bar_s, textvariable=self.sms_filter_search_var, width=160, placeholder="Rechercher...")
+        self.ent_sms_search = make_modern_entry(bar_s, textvariable=self.sms_filter_search_var, width=140, placeholder="Rechercher...")
         self.ent_sms_search.pack(side="left", padx=(0, 6))
         for seq in ("<KeyRelease>", "<FocusOut>", "<<Paste>>", "<Control-v>", "<Control-V>"):
             self.ent_sms_search.bind(seq, lambda _e: self.after_idle(self._on_sms_search_typed), add="+")  # type: ignore[attr-defined]
         make_styled_button(bar_s, text="Tout cocher", command=lambda: self._set_all_sms_numbers_selected(True), variant="secondary").pack(side="left", padx=(0, 4))  # type: ignore[attr-defined]
         make_styled_button(bar_s, text="Exclure courts", command=self._deselect_short_sms_numbers, variant="secondary").pack(side="left")  # type: ignore[attr-defined]
-        self.sms_filter_tree, self.sms_page_info_var, self.btn_sms_prev_page, self.btn_sms_next_page = self._build_tree_and_pager(card_s, ("keep", "phone", "name", "count"), (("keep", "STATUT", 110, "center", lambda: self._sort_sms_by_column("keep")), ("phone", "NUMÉRO DE TÉLÉPHONE", 190, "w", lambda: self._sort_sms_by_column("phone")), ("name", "CONTACT ASSOCIÉ", 270, "w", lambda: self._sort_sms_by_column("name")), ("count", "MESSAGES", 110, "center", lambda: self._sort_sms_by_column("count"))), self._toggle_sms_row_by_id, self._toggle_selected_sms_filter, lambda: self._change_sms_page(-1), lambda: self._change_sms_page(1))  # type: ignore[attr-defined]
+        self.sms_filter_tree, self.sms_page_info_var, self.btn_sms_prev_page, self.btn_sms_next_page = self._build_tree_and_pager(card_s, ("keep", "phone", "name", "count"), (("keep", "STATUT", 100, "center", lambda: self._sort_sms_by_column("keep")), ("phone", "NUMÉRO DE TÉLÉPHONE", 170, "w", lambda: self._sort_sms_by_column("phone")), ("name", "CONTACT ASSOCIÉ", 250, "w", lambda: self._sort_sms_by_column("name")), ("count", "MESSAGES", 100, "center", lambda: self._sort_sms_by_column("count"))), self._toggle_sms_row_by_id, self._toggle_selected_sms_filter, lambda: self._change_sms_page(-1), lambda: self._change_sms_page(1))  # type: ignore[attr-defined]
         nav_s = tk.Frame(page, bg=UI_COLORS["bg"])
         nav_s.pack(fill="x", pady=(6, 0))
         make_styled_button(nav_s, text="<- Retour (Étape 2)", command=lambda: self._show_page("setup"), variant="secondary").pack(side="left")  # type: ignore[attr-defined]

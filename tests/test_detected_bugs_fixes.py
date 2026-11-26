@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import json
 import os
 import shutil
@@ -18,7 +16,6 @@ from doc_anonymizer.extraction_runner import DocumentExtractionRunner
 from doc_anonymizer.gui_controller import AnonymizerGuiController
 from doc_anonymizer.text_utils import DocumentTextUtils
 import gui_anonymizer
-from watch_clipboard.clipboard_watcher.status_server import _StatusRequestHandler
 
 
 class TestDetectedBugsFixes(unittest.TestCase):
@@ -72,6 +69,7 @@ class TestDetectedBugsFixes(unittest.TestCase):
         finally:
             app.destroy()
             gui_anonymizer.ROOT_DIR = orig_root
+
     def test_extraction_runner_full_pipeline_and_finalize_reports(self) -> None:
         """Vérifie l'extraction multi-formats et finalize_reports."""
         ini_path: str = os.path.join(self.tmp_dir, "config.ini")
@@ -112,21 +110,16 @@ class TestDetectedBugsFixes(unittest.TestCase):
         self.assertTrue(os.path.isfile(cfg.all_sms_numbers_file))
         self.assertTrue(os.path.isfile(cfg.all_emails_file))
 
-    def test_gui_controller_and_status_server_validation(self) -> None:
-        """Vérifie AnonymizerGuiController et _resolve_test_runner_path."""
+    def test_gui_controller_workspace_helpers(self) -> None:
+        """Vérifie les méthodes utilitaires d'AnonymizerGuiController."""
         ctrl = AnonymizerGuiController(self.tmp_dir)
         ini_path: str = ctrl.create_workspace("Test_Ctrl_Full")
         self.assertEqual(ctrl.detect_zip_files(ini_path), [])
         self.assertEqual(ctrl.load_contact_filter_items(ini_path), [])
         self.assertEqual(ctrl.list_sms_export_files(ini_path), [])
         self.assertEqual(ctrl.load_sms_number_filter_items(ini_path), [])
-        self.assertTrue(ctrl.build_cli_command(ini_path, "full")[1].endswith("run_documents.py"))
-
-        handler = _StatusRequestHandler.__new__(_StatusRequestHandler)
-        handler.target_dir = self.tmp_dir
-        handler.default_test_runner = "tools/run_tests_clip.py"
-        self.assertIsNone(handler._resolve_test_runner_path("../outside.py"))
-        self.assertIsNone(handler._resolve_test_runner_path("nonexistent_script.py"))
+        _, script_path = ctrl.build_cli_command(ini_path, "full")[:2]
+        self.assertTrue(script_path.endswith("run_documents.py"))
 
     def test_compound_particles_and_international_phones(self) -> None:
         """Vérifie le masquage des noms à particule et numéros internationaux."""

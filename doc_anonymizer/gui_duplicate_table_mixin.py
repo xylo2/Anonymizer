@@ -3,14 +3,64 @@
 import os
 import tkinter as tk
 from typing import Any, Dict, List
+from doc_anonymizer.gui_duplicate_helpers import DuplicateTableActionsMixin
 
 
-class GuiDuplicateTableMixin:
-    """Tableau interactif permettant de choisir quel exemplaire conserver parmi les doublons."""
+class GuiDuplicateTableMixin(DuplicateTableActionsMixin):
+    """Tableau interactif des doublons avec chemins abrégés, actions par dossier et survol."""
 
     controller: Any
     current_ini_var: tk.StringVar
     status_var: tk.StringVar
+
+    @staticmethod
+    def _compute_common_parent_dir(paths: List[str]) -> str:
+        parents: List[str] = [os.path.dirname(p) for p in paths if p]
+        if len(parents) < 2:
+            return ""
+        try:
+            common: str = os.path.commonpath(parents)
+        except ValueError:
+            return ""
+        if len(common) <= 3 or common in {"\\", "/"}:
+            return ""
+        return common
+
+    @staticmethod
+    def _format_abbreviated_path(full_path: str, common_root: str) -> str:
+        if not common_root:
+            return full_path
+        try:
+            rel: str = os.path.relpath(full_path, common_root)
+            if not rel.startswith(".."):
+                return f"…{os.sep}{rel}"
+        except ValueError:
+            pass
+        return full_path
+
+    @staticmethod
+    def _extract_discriminator_folders(paths: List[str], common_root: str) -> List[str]:
+        folders: List[str] = []
+        seen: set[str] = set()
+        for fp in paths:
+            parent_d: str = os.path.dirname(fp)
+            label: str = ""
+            if common_root:
+                try:
+                    rel_d: str = os.path.relpath(parent_d, common_root)
+                    if not rel_d.startswith("..") and rel_d != ".":
+                        first_seg: str = next(iter(rel_d.split(os.sep)), "")
+                        if first_seg:
+                            label = first_seg
+                except ValueError:
+                    pass
+            if not label:
+                label = os.path.basename(parent_d) or parent_d
+            low_l: str = label.lower()
+            if label and low_l not in seen:
+                seen.add(low_l)
+                folders.append(label)
+        return folders
 
     def _refresh_duplicate_filter_list(self) -> None:
         ini_path: str = self.current_ini_var.get()
@@ -22,39 +72,16 @@ class GuiDuplicateTableMixin:
             )
         self._render_duplicate_filter_tree()
 
-    def _render_duplicate_filter_tree(self) -> None:
-        if not hasattr(self, "duplicate_filter_tree"):
+    def _sync_duplicate_folder_dropdown(self, folders: List[str]) -> None:
+        combo = getattr(self, "combo_dup_folder", None)
+        var = getattr(self, "dup_priority_folder_var", None)
+        if combo is None or var is None:
             return
-        for iid in self.duplicate_filter_tree.get_children():  # type: ignore[attr-defined]
-            self.duplicate_filter_tree.delete(iid)  # type: ignore[attr-defined]
-        self.duplicate_filter_tree.tag_configure("kept", background="#ecfdf5", foreground="#065f46")  # type: ignore[attr-defined]
-        self.duplicate_filter_tree.tag_configure("ignored", background="#fef2f2", foreground="#991b1b")  # type: ignore[attr-defined]
+        options: List[str] = folders if folders else ["Aucun sous-dossier"]
+        combo.configure(values=options)
+        if var.get() not in options:
+            var.set(next(iter(options)))
 
-        items_list: List[Dict[str, Any]] = getattr(self, "duplicate_filter_items", [])
-        kept_cnt: int = sum(1 for it in items_list if it.get("selected"))
-        ign_cnt: int = len(items_list) - kept_cnt
-        for idx, item in enumerate(items_list):
-            is_kept: bool = bool(item.get("selected"))
-            mark: str = "✓ Garder" if is_kept else "✕ Ignorer"
-            row_tag: str = "kept" if is_kept else "ignored"
-            self.duplicate_filter_tree.insert(  # type: ignore[attr-defined]
-                "",
-                "end",
-                iid=str(idx),
-                values=(
-                    mark,
-                    str(item.get("group_id") or ""),
-                    str(item.get("filename") or ""),
-                    str(item.get("size_display") or ""),
-                    str(item.get("path") or ""),
-                ),
-                tags=(row_tag,),
-            )
-        if hasattr(self, "dup_filter_summary_var"):
-            self.dup_filter_summary_var.set(  # type: ignore[attr-defined]
-                f"{kept_cnt} fichier(s) conservé(s) (vert) • {ign_cnt} doublon(s) ignoré(s) (rouge) — "
-                f"Les fichiers originaux ne sont jamais supprimés."
-            )
     def _toggle_duplicate_row_by_id(self, row_id: str) -> None:
         items_list: List[Dict[str, Any]] = getattr(self, "duplicate_filter_items", [])
         if row_id and row_id.isdigit():

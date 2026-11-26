@@ -1,22 +1,23 @@
 # Commandes pip à exécuter : pip install customtkinter>=5.2.2
 
 import tkinter as tk
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 from doc_anonymizer import gui_widgets as _gw
 from doc_anonymizer.gui_gate_mixin import GuiGateMixin
+from doc_anonymizer.gui_scroll_area import ScrollablePageContainer
+from doc_anonymizer.gui_sidebar_mixin import GuiSidebarMixin
 from doc_anonymizer.gui_widgets import (
     HAS_CTK,
     UI_COLORS,
     ctk,
     make_styled_button,
-    make_widget_keyboard_accessible,
     register_scalable_font,
     scaled_size,
 )
 
 
-class GuiNavigationMixin(GuiGateMixin):
-    """Gère la structure visuelle, la navigation latérale et le changement d'écran."""
+class GuiNavigationMixin(GuiGateMixin, GuiSidebarMixin):
+    """Gère la structure visuelle, la zone scrollable centrale et le changement d'écran."""
 
     controller: Any
     current_ini_var: tk.StringVar
@@ -29,6 +30,7 @@ class GuiNavigationMixin(GuiGateMixin):
     nav_buttons: Dict[str, Any]
     nav_container: tk.Frame
     page_heading_var: tk.StringVar
+
     def _build_layout(self) -> None:
         use_ctk: bool = bool(HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE)
         shell = tk.Frame(self, bg=UI_COLORS["bg"])  # type: ignore[arg-type]
@@ -101,7 +103,6 @@ class GuiNavigationMixin(GuiGateMixin):
             )
             lbl_s2_tk.pack(anchor="w", pady=(2, 0))
             register_scalable_font(lbl_s2_tk, "Segoe UI", 8, "normal")
-
         main_area = tk.Frame(shell, bg=UI_COLORS["bg"])
         main_area.pack(side="left", fill="both", expand=True)
         top_bar = tk.Frame(main_area, bg="#ffffff", padx=18, pady=10)
@@ -148,7 +149,6 @@ class GuiNavigationMixin(GuiGateMixin):
 
         title_col = tk.Frame(top_bar, bg="#ffffff")
         title_col.pack(side="left", fill="x", expand=True)
-
         self.page_heading_var = tk.StringVar(value="Engagement de relecture & Licence")
         self.lbl_page_heading = tk.Label(
             title_col, textvariable=self.page_heading_var, bg="#ffffff",
@@ -157,7 +157,6 @@ class GuiNavigationMixin(GuiGateMixin):
         )
         self.lbl_page_heading.pack(anchor="w", fill="x")
         register_scalable_font(self.lbl_page_heading, "Segoe UI", 11, "bold")
-
         lbl_ws = tk.Label(
             title_col, textvariable=self.active_ws_badge_var, bg="#f1f5f9",
             fg="#1e3a8a", font=("Segoe UI", scaled_size(9), "bold"), padx=8, pady=2,
@@ -173,8 +172,21 @@ class GuiNavigationMixin(GuiGateMixin):
 
         top_bar.bind("<Configure>", _update_heading_wrap)
 
-        self.content_container = tk.Frame(main_area, bg=UI_COLORS["bg"], padx=22, pady=16)
-        self.content_container.pack(fill="both", expand=True)
+        tk.Frame(main_area, bg=UI_COLORS["border"], height=1).pack(fill="x", side="bottom")
+        footer = tk.Frame(main_area, bg="#ffffff", height=30)
+        footer.pack(fill="x", side="bottom")
+        lbl_st = tk.Label(
+            footer, textvariable=self.status_var, bg="#ffffff",
+            fg=UI_COLORS["muted"], font=("Segoe UI", scaled_size(8)),
+        )
+        lbl_st.pack(side="left", padx=20, pady=5)
+        register_scalable_font(lbl_st, "Segoe UI", 8, "normal")
+
+        self.page_scroller = ScrollablePageContainer(
+            main_area, bg_color=UI_COLORS["bg"], pad_x=22, pad_y=16
+        )
+        self.page_scroller.pack(fill="both", expand=True)
+        self.content_container = self.page_scroller.inner
         for key in (
             "gate", "documents", "setup", "sms", "chats",
             "duplicates", "mode", "run", "audit", "export", "deanon",
@@ -187,89 +199,6 @@ class GuiNavigationMixin(GuiGateMixin):
             self._build_page_export, self._build_page_deanonymize,  # type: ignore[attr-defined]
         ):
             build_fn()
-
-        tk.Frame(main_area, bg=UI_COLORS["border"], height=1).pack(fill="x", side="bottom")
-        footer = tk.Frame(main_area, bg="#ffffff", height=30)
-        footer.pack(fill="x", side="bottom")
-        lbl_st = tk.Label(
-            footer, textvariable=self.status_var, bg="#ffffff",
-            fg=UI_COLORS["muted"], font=("Segoe UI", scaled_size(8)),
-        )
-        lbl_st.pack(side="left", padx=20, pady=5)
-        register_scalable_font(lbl_st, "Segoe UI", 8, "normal")
-    def _rebuild_sidebar_nav(self) -> None:
-        use_ctk: bool = bool(HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE)
-        for child in self.nav_container.winfo_children():
-            child.destroy()
-        self.nav_buttons.clear()
-        has_workspace: bool = bool(self.current_ini_var.get())
-        nav_items: List[Tuple[str, str, str]] = [
-            ("gate", "0", "Accueil & Dossier"),
-            ("documents", "1", "Déposer mes pièces"),
-            ("setup", "2", "Carnets & Contacts"),
-            ("sms", "3", "Exports SMS & Numéros"),
-            ("chats", "4", "Messageries & Chats"),
-            ("mode", "5", "Choisir l'objectif"),
-        ]
-        if self.workflow_mode == "lawyer":
-            nav_items.extend([
-                ("run", "6", "Extraire & Classer"),
-                ("export", "7", "Pack Avocat Nominatif"),
-                ("deanon", "8", "Désanonymiser retour IA"),
-            ])
-        else:
-            nav_items.extend([
-                ("run", "6", "Analyser & Anonymiser"),
-                ("audit", "7", "Vérifier les noms"),
-                ("export", "8", "Récupérer & Requêtes IA"),
-                ("deanon", "9", "Désanonymiser retour IA"),
-            ])
-
-        for key, step_num, label in nav_items:
-            enabled: bool = key == "gate" or has_workspace
-            is_active: bool = (
-                key == self.active_page_key
-                or (key == "documents" and self.active_page_key == "duplicates")
-            ) and enabled
-            act_cmd = (lambda k=key: self._show_page(k)) if enabled else None
-            w_str: str = "bold" if is_active else "normal"
-            if use_ctk:
-                fg_c: str = (
-                    "#ffffff" if is_active else ("#e2e8f0" if enabled else "#64748b")
-                )
-                btn_ctk = ctk.CTkButton(
-                    self.nav_container, text=f"  {step_num}   {label}", anchor="w",
-                    fg_color=UI_COLORS["sidebar_active"] if is_active else "transparent",
-                    hover_color=UI_COLORS["sidebar_active"] if is_active else UI_COLORS["sidebar_hover"],
-                    text_color=fg_c, text_color_disabled="#64748b", corner_radius=10,
-                    height=max(36, int(round(36 * _gw.UI_FONT_SCALE))),
-                    state="normal" if enabled else "disabled",
-                    font=("Segoe UI", scaled_size(11), w_str), command=act_cmd,
-                )
-                register_scalable_font(btn_ctk, "Segoe UI", 11, w_str)
-                if enabled:
-                    make_widget_keyboard_accessible(btn_ctk, command=act_cmd)
-                btn_ctk.pack(fill="x", padx=12, pady=2)
-                self.nav_buttons[key] = btn_ctk
-            else:
-                fg_tk: str = (
-                    "#ffffff" if is_active else ("#e2e8f0" if enabled else "#94a3b8")
-                )
-                btn = tk.Button(
-                    self.nav_container, text=f"  {step_num}. {label}", anchor="w",
-                    bg=UI_COLORS["sidebar_active"] if is_active else UI_COLORS["sidebar"],
-                    fg=fg_tk, disabledforeground="#64748b",
-                    activebackground=UI_COLORS["sidebar_hover"] if enabled else UI_COLORS["sidebar"],
-                    activeforeground=fg_tk, relief="flat", bd=0, padx=12, pady=7,
-                    state="normal" if enabled else "disabled",
-                    cursor="hand2" if enabled else "arrow",
-                    font=("Segoe UI", scaled_size(9), w_str), command=act_cmd,
-                )
-                register_scalable_font(btn, "Segoe UI", 9, w_str)
-                if enabled:
-                    make_widget_keyboard_accessible(btn, command=act_cmd)
-                btn.pack(fill="x", padx=10, pady=2)
-                self.nav_buttons[key] = btn
 
     def _show_page(self, key: str) -> None:
         if key != "gate" and not self.current_ini_var.get():
@@ -303,6 +232,8 @@ class GuiNavigationMixin(GuiGateMixin):
         self.page_heading_var.set(titles.get(key, ""))
         for k, frame in self.pages.items():
             frame.pack(fill="both", expand=True) if k == key else frame.pack_forget()
+        if hasattr(self, "page_scroller"):
+            self.page_scroller.reset_scroll()
         if key == "gate":
             self._refresh_gate_workspace_panel()
         elif key == "documents":

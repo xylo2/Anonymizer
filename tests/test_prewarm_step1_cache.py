@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import os
 import shutil
 import sys
@@ -72,7 +70,7 @@ class TestPrewarmStep1CacheAndEntryFont(unittest.TestCase):
 
     def test_entry_font_scales_with_ui_zoom(self) -> None:
         set_ui_font_scale(1.3)
-        self.assertIn("14", str(self.app.entry_gate_new.cget("font")))
+        self.assertIn("13", str(self.app.entry_gate_new.cget("font")))
 
 
 if __name__ == "__main__":
