@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import ctypes
 import os
 import subprocess
@@ -159,7 +157,10 @@ class GuiIngestMixin:
                     self._set_docs_busy(False)
                     on_done_fn(res)
 
-                self.after(0, _ui)  # type: ignore[attr-defined]
+                try:
+                    self.after(0, _ui)  # type: ignore[attr-defined]
+                except (RuntimeError, tk.TclError):
+                    pass
 
         threading.Thread(target=_bg, daemon=True).start()
 
@@ -181,6 +182,7 @@ class GuiIngestMixin:
         ini_path: str = self.current_ini_var.get()
         if not ini_path or getattr(self, "_closing", False):
             return
+        self._prewarm_target_ini = ini_path
         if getattr(self, "_sync_docs_tasks", False):
             self._run_step1_scan_worker(ini_path)
             return
@@ -195,18 +197,22 @@ class GuiIngestMixin:
         def _bg_prewarm() -> None:
             while not getattr(self, "_closing", False):
                 self._prewarm_dirty = False
-                cur_ini: str = self.current_ini_var.get()
+                cur_ini: str = getattr(self, "_prewarm_target_ini", "")
                 if not cur_ini:
                     break
                 self._run_step1_scan_worker(cur_ini)
                 if not getattr(self, "_prewarm_dirty", False):
                     break
             if not getattr(self, "_closing", False) and hasattr(self, "after"):
-                self.after(0, self._refresh_workspace_counters)  # type: ignore[attr-defined]
+                try:
+                    self.after(0, self._refresh_workspace_counters)  # type: ignore[attr-defined]
+                except (RuntimeError, tk.TclError):
+                    pass
 
         t = threading.Thread(target=_bg_prewarm, daemon=True)
         self._prewarm_thread = t
         t.start()
+
     def _ingest_selected_paths(self, chosen: List[str]) -> None:
         ini_path: str = self.current_ini_var.get()
         if not ini_path or not chosen:
