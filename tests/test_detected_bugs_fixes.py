@@ -69,7 +69,6 @@ class TestDetectedBugsFixes(unittest.TestCase):
         finally:
             app.destroy()
             gui_anonymizer.ROOT_DIR = orig_root
-
     def test_extraction_runner_full_pipeline_and_finalize_reports(self) -> None:
         """Vérifie l'extraction multi-formats et finalize_reports."""
         ini_path: str = os.path.join(self.tmp_dir, "config.ini")
@@ -118,7 +117,7 @@ class TestDetectedBugsFixes(unittest.TestCase):
         self.assertEqual(ctrl.load_contact_filter_items(ini_path), [])
         self.assertEqual(ctrl.list_sms_export_files(ini_path), [])
         self.assertEqual(ctrl.load_sms_number_filter_items(ini_path), [])
-        _, script_path = ctrl.build_cli_command(ini_path, "full")[:2]
+        _, script_path = next(iter([ctrl.build_cli_command(ini_path, "full")[:2]]))
         self.assertTrue(script_path.endswith("run_documents.py"))
 
     def test_compound_particles_and_international_phones(self) -> None:
