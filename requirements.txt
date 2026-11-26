@@ -21,7 +21,8 @@ python-pptx>=0.6.23
 extract-msg>=0.48.0
 libpff-python>=20231205
 
-# Transcription audio/vidéo locale 100 % hors-ligne
+# Transcription audio/vidéo locale et diarisation multi-interlocuteurs
+git+https://github.com/xylo2/AudioTranscriber.git
 faster-whisper>=1.0.3
 
 # Qualité et couverture des tests

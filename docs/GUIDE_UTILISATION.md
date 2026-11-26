@@ -5,7 +5,9 @@
 **AnonVault — Pièces protégées** extrait le texte de documents hétérogènes (PDF natifs
 ou scannés, Word, Excel, PowerPoint, ODT, RTF, HTML, images OCR, agendas ICS, SMS/MMS
 XML, e-mails `.mbox`/`.eml`, archives Outlook `.pst`/`.ost`/`.msg`, messageries
-instantanées et enregistrements audio/vidéo) et les anonymise **100 % localement**.
+instantanées et enregistrements audio/vidéo avec distinction multi-interlocuteurs via
+la librairie externe [AudioTranscriber](https://github.com/xylo2/AudioTranscriber))
+et les anonymise **100 % localement**.
 
 ---
 
@@ -27,6 +29,7 @@ instantanées et enregistrements audio/vidéo) et les anonymise **100 % localeme
 | **Facebook Messenger** | `message_1.json` *(ou `.html`)* | Facebook > **Espace Comptes** > **Télécharger vos informations** > **Messages** |
 | **Signal** | `.json` | Signal Desktop via [sigtop](https://github.com/tbvdm/sigtop) ou sauvegarde Android via [signal-back](https://github.com/xeals/signal-back) |
 | **Agendas** | `.ics` | [Google Agenda](https://calendar.google.com) > **Paramètres** > **Importer et exporter** > **Exporter** |
+| **Audios, Vidéos & Audacity** | `.mp3`, `.wav`, `.m4a`, `.mp4`, `.aup3` | Transcrits localement avec séparation des voix via [AudioTranscriber](https://github.com/xylo2/AudioTranscriber) |
 
 > **Règle d'or pour les archives `.zip` :** par sécurité, **AnonVault** ne décompresse
 > jamais automatiquement les fichiers `.zip`. Faites un clic droit > **Extraire tout**
@@ -69,21 +72,19 @@ Le pipeline s'appuie sur **quatre fichiers de règles complémentaires** au form
 
 ## 4. Exécution depuis l'interface graphique ou en ligne de commande
 
-```bash
-# Interface graphique complète (recommandée)
-python gui_anonymizer.py
+    # Interface graphique complète (recommandée)
+    python gui_anonymizer.py
 
-# Ou en ligne de commande (après copie de config.example.ini vers config.ini) :
-python run_contacts.py --config config.ini
-python run_documents.py --config config.ini
+    # Ou en ligne de commande (après copie de config.example.ini vers config.ini) :
+    python run_contacts.py --config config.ini
+    python run_documents.py --config config.ini
 
-# Ré-anonymiser uniquement depuis extracted_texts/ (ou après modification de règles)
-python run_documents.py --config config.ini --anonymize-only
-python run_documents.py --config config.ini --anonymize-only --reset-results
+    # Ré-anonymiser uniquement depuis extracted_texts/ (ou après modification de règles)
+    python run_documents.py --config config.ini --anonymize-only
+    python run_documents.py --config config.ini --anonymize-only --reset-results
 
-# Extraction nominative seule (OCR + Audio forcés, sans anonymisation)
-python run_documents.py --config config.ini --extract-only
-```
+    # Extraction nominative seule (OCR + Audio/Diarisation forcés, sans anonymisation)
+    python run_documents.py --config config.ini --extract-only
 
 ---
 
@@ -97,6 +98,6 @@ python run_documents.py --config config.ini --extract-only
   (`extracted_texts/`) et à la pièce originale (utilisé par `--copy-unmasked` et le
   **Pack Avocat Nominatif**).
 * **Générer la version PDF des guides** :
-  ```bash
-  python tools/generate_pdf_guide.py docs/GUIDE_UTILISATION.md -o docs/GUIDE_UTILISATION.pdf
-  python tools/generate_pdf_guide.py docs/ARCHITECTURE.md -o docs/ARCHITECTURE.pdf
+
+      python tools/generate_pdf_guide.py docs/GUIDE_UTILISATION.md -o docs/GUIDE_UTILISATION.pdf
+      python tools/generate_pdf_guide.py docs/ARCHITECTURE.md -o docs/ARCHITECTURE.pdf

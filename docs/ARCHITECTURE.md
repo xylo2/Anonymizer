@@ -4,7 +4,7 @@
 
 ## 1. Vue d'ensemble du système
 
-L'écosystème repose sur **deux sous-projets autonomes** (`google_contacts_parser` et `doc_anonymizer`), un **socle commun (`common/`)** et une **interface graphique guidée (`gui_anonymizer.py`)** exécutés dans un environnement virtuel Python (`venv/` ou `.venv/`). Chaque dossier créé via l'interface dispose de son espace isolé sous `dossiers/<nom>/` avec son propre `config.ini`, tandis qu'en ligne de commande les lanceurs (`run_contacts.py`, `run_documents.py`) utilisent `config.ini` (copié depuis `config.example.ini`) ou l'option `--config <chemin>`. Les données personnelles et `config.ini` sont protégés par `.gitignore`.
+L'écosystème repose sur **deux sous-projets autonomes** (`google_contacts_parser` et `doc_anonymizer`), un **socle commun (`common/`)**, une **interface graphique guidée (`gui_anonymizer.py`)** et la librairie externe **[audio_transcriber](https://github.com/xylo2/AudioTranscriber)** exécutés dans un environnement virtuel Python (`venv/` ou `.venv/`). Chaque dossier créé via l'interface dispose de son espace isolé sous `dossiers/<nom>/` avec son propre `config.ini`, tandis qu'en ligne de commande les lanceurs (`run_contacts.py`, `run_documents.py`) utilisent `config.ini` (copié depuis `config.example.ini`) ou l'option `--config <chemin>`. Les données personnelles et `config.ini` sont protégés par `.gitignore`.
 
 ```text
 +----------------------------------------------------------------------+
@@ -39,6 +39,7 @@ L'écosystème repose sur **deux sous-projets autonomes** (`google_contacts_pars
 ## 2. Socle commun (`common/`), modules clés et répertoires
 
 * **`common/core_utils.py` (`SharedCoreUtils`)** : normalisation Unicode (NFKD), téléphones français (`0XXXXXXXXX`), suppression des alias `+...` sur les e-mails, écriture atomique sur disque et inhibition de mise en veille.
+* **`doc_anonymizer/comm_extractors.py` & librairie externe `audio_transcriber`** : délègue la transcription audio/vidéo et Audacity `.aup3` ainsi que la diarisation multi-interlocuteurs (`Interlocuteur_1`, `Interlocuteur_2`...) au paquet externe [AudioTranscriber](https://github.com/xylo2/AudioTranscriber) (`faster-whisper` + séparation stéréo/spectrale NumPy hors-ligne).
 * **`doc_anonymizer/extraction_runner.py` & `doc_anonymizer/extraction_helpers.py`** : orchestration parallèle de l'extraction (`DocumentExtractionRunner`), chargement des listes blanches (`ExtractionFilterLoader`) et rapports finaux (`ExtractionReportWriter`).
 * **`doc_anonymizer/outlook_extractor.py` (`OutlookArchiveExtractor`)** : lecture native des archives et messages du client lourd Outlook (`.pst`, `.ost`, `.msg`) et extraction de leurs pièces jointes PDF.
 * **`doc_anonymizer/sensitive_masker.py` & `doc_anonymizer/masker_lexicons.py`** : moteur de masquage contextuel multi-passes (`SensitiveTextMasker`) et dictionnaires lexicaux (`MaskerLexicons`).

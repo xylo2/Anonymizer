@@ -54,7 +54,9 @@ def fix_chat_domain_in_python(base_dir: str) -> List[str]:
     return updated
 def _build_md_replacements() -> List[Tuple[str, str]]:
     play_sms: str = _u("play", "google.com", "/store/apps/details?id=com.riteshsahu.SMSBackupRestore")
+    at_repo: str = _u("", "github.com", "/xylo2/AudioTranscriber")
     return [
+        (f"[AudioTranscriber]({_u('', 'github.com')})", f"[AudioTranscriber]({at_repo})"),
         (f"[Google Contacts]({_u('', 'google.com')})", f"[Google Contacts]({_u('contacts', 'google.com')})"),
         (f"[Google Agenda]({_u('', 'google.com')})", f"[Google Agenda]({_u('calendar', 'google.com')})"),
         (f"[Google Takeout]({_u('', 'google.com')})", f"[Google Takeout]({_u('takeout', 'google.com')})"),
@@ -97,6 +99,7 @@ def fix_markdown_docs(base_dir: str) -> List[str]:
     """Restaure tous les sous-domaines/chemins et sections CLI dans docs/."""
     replacements = _build_md_replacements()
     md_files = (
+        "GUIDE_UTILISATION.md",
         "docs/GUIDE_UTILISATION.md",
         "docs/exports/CONTACTS_ET_EMAILS.md",
         "docs/exports/MESSAGERIES_PRO.md",

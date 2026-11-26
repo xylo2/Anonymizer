@@ -2,7 +2,8 @@
 
 Application **100 % locale et hors-ligne** (Windows & Linux) permettant de rassembler,
 filtrer, anonymiser ou classer chronologiquement des pièces confidentielles (documents,
-images OCR, audios/vidéos transcrits, carnets de contacts, exports SMS et messageries).
+images OCR, audios/vidéos transcrits avec distinction des interlocuteurs, carnets de
+contacts, exports SMS et messageries).
 
 Distribué sous licence libre **GNU GPL v3** (*sans garantie — relecture humaine
 obligatoire avant tout partage*).
@@ -42,16 +43,16 @@ obligatoire avant tout partage*).
 
 ---
 
-## 2. Fonctionnalités principales & Ergonomie
+## 2. Fonctionnalités principales & Librairie externe
 
 * **Isolation par affaire (`dossiers/<nom>/`)** : chaque dossier possède ses propres
   sources, carnets de contacts, règles d'exclusion et résultats.
 * **Référencement en lecture seule (`LinkedSourcesManager`)** : ajoutez des fichiers ou
   dossiers externes (disque local, clé USB, partage réseau) sans modifier les originaux.
-* **Détection des doublons (`DuplicateFilesManager`)** : écarte les fichiers binaires
-  strictement identiques avec cache SHA-256.
-* **Filtrage interactif** : sélectionnez contacts, numéros SMS et conversations de
-  messageries (WhatsApp, Google Chat, Teams, Messenger, Signal).
+* **Transcription vocale & diarisation (`audio_transcriber`)** : s'appuie sur la
+  librairie externe libre [AudioTranscriber](https://github.com/xylo2/AudioTranscriber)
+  (GNU GPL v3) pour transcrire audios/vidéos/projets `.aup3` et distinguer les
+  interlocuteurs (`Interlocuteur_1`, `Interlocuteur_2`...) 100 % hors-ligne.
 * **Deux modes de sortie** :
   * **Mode IA (Anonymisé)** : remplace identités, téléphones, e-mails, adresses, NIR et
     IBAN par des alias cohérents, avec contrôle humain Avant/Après et désanonymisation.
@@ -66,4 +67,4 @@ obligatoire avant tout partage*).
 ## 3. Tests unitaires
 
 ```bash
-python tests/run_all_tests.py
+python tools/run_tests_clip.py

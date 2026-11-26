@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import configparser
 import os
 import re
@@ -160,6 +158,9 @@ class PipelineConfig:
         )
         self.enable_audio: bool = self._parser.getboolean(
             "extraction", "enable_audio", fallback=True
+        )
+        self.enable_diarization: bool = self._parser.getboolean(
+            "extraction", "enable_diarization", fallback=True
         )
         self.ignore_google_chat_images: bool = self._parser.getboolean(
             "extraction", "ignore_google_chat_images", fallback=True

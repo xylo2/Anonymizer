@@ -34,7 +34,9 @@ pour une IA ou générer un recueil chronologique nominatif pour votre avocat,
 7. **Étape 5 — Choisir l'objectif** : **Mode IA (Anonymisé)** ou **Mode Avocat
    (Nominatif)** pour assembler un recueil chronologique Word/CSV avec médias originaux.
 8. **Étape 6 — Extraction et traitement** : suivez l'avancement en pourcentage et les
-   5 compteurs de protection en temps réel.
+   5 compteurs de protection en temps réel (transcription audio/vidéo et séparation
+   des interlocuteurs assurées par la librairie externe
+   [AudioTranscriber](https://github.com/xylo2/AudioTranscriber)).
 9. **Étape 7 — Vérifier les noms restants (Mode IA)** : `Entrée` pour l'aperçu
    **Avant / Après**, `M` pour masquer ou `I` (`Suppr`) pour ignorer.
 10. **Étape 8 — Récupérer & Désanonymiser** : copiez une requête IA prête à l'emploi,
@@ -45,7 +47,8 @@ pour une IA ou générer un recueil chronologique nominatif pour votre avocat,
 ## 3. Paramètres du dossier, Raccourcis clavier & Accessibilité
 
 * **Bouton `Paramètres`** : configure dates de naissance à masquer, balises numérotées
-  (`[LIEU_01]`, `[DATE_01]`), OCR, transcription vocale et modèle Whisper.
+  (`[LIEU_01]`, `[DATE_01]`), OCR, transcription vocale, distinction automatique des
+  interlocuteurs (`audio_transcriber`) et modèle Whisper.
 * **`Ctrl + +` / `Ctrl + -` / `Ctrl + 0`** : zoom texte global mémorisé.
 * **`Ctrl + F` / `Échap`** : cibler ou vider la recherche dans les tableaux.
 * **`Alt + Gauche` / `Alt + Droite`** : passer à l'étape précédente ou suivante.

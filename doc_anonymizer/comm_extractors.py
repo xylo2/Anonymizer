@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : pip install faster-whisper numpy scipy
-
 from __future__ import annotations
 from collections import defaultdict
 import datetime
@@ -11,6 +9,7 @@ import mailbox
 import os
 import re
 import sqlite3
+import sys
 import threading
 from typing import TYPE_CHECKING, Any, DefaultDict, Dict, List, Optional, Set, Tuple
 import xml.etree.ElementTree as ET
@@ -19,13 +18,30 @@ from doc_anonymizer.office_extractors import OfficeAndDocumentExtractor
 from doc_anonymizer.text_utils import DocumentTextUtils
 
 if TYPE_CHECKING:
-    from faster_whisper import WhisperModel
+    from audio_transcriber import AudioTranscriber
+
+
+def _import_audio_transcriber_classes() -> Tuple[Any, Any]:
+    """Importe AudioTranscriber depuis le venv ou le dépôt voisin AudioTranscriber."""
+    try:
+        from audio_transcriber import AudioTranscriber, TranscriberConfig
+        return AudioTranscriber, TranscriberConfig
+    except ImportError:
+        project_root: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sibling_src: str = os.path.join(
+            os.path.dirname(project_root), "AudioTranscriber", "src"
+        )
+        if os.path.isdir(sibling_src) and sibling_src not in sys.path:
+            sys.path.insert(0, sibling_src)
+        from audio_transcriber import AudioTranscriber, TranscriberConfig
+        return AudioTranscriber, TranscriberConfig
 
 
 class CommunicationExtractor:
     """
     Gère l'extraction des messages SMS/MMS (XML), des e-mails (.mbox/.eml),
-    la transcription vocale (Whisper) et l'extraction Audacity (.aup3).
+    la transcription vocale multi-interlocuteurs via audio_transcriber
+    et les projets Audacity (.aup3).
     """
 
     MAIN_CHARACTER_TOKEN: str = "{MAIN_CHARACTER}"
@@ -39,7 +55,8 @@ class CommunicationExtractor:
         self.config: PipelineConfig = config
         self.doc_extractor: OfficeAndDocumentExtractor = doc_extractor
         self.stop_event: threading.Event = stop_event or threading.Event()
-        self._whisper_model: Optional[WhisperModel] = None
+        self._audio_engine: Optional[AudioTranscriber] = None
+        self._whisper_model: Optional[Any] = None
         self._whisper_cache_dir: str = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             "..",
@@ -47,26 +64,41 @@ class CommunicationExtractor:
         )
 
     @property
-    def whisper_model(self) -> Optional[WhisperModel]:
+    def audio_engine(self) -> Optional[AudioTranscriber]:
+        """Charge paresseusement le moteur audio_transcriber avec cache local."""
         if not self.config.enable_audio:
             return None
-        if self._whisper_model is None:
-            from faster_whisper import WhisperModel
-
+        if self._audio_engine is None:
+            AudioTranscriberCls, TranscriberConfigCls = _import_audio_transcriber_classes()
             cache_dir: str = os.path.normpath(self._whisper_cache_dir)
             os.makedirs(cache_dir, exist_ok=True)
-            print(f"Chargement du modèle audio Whisper '{self.config.whisper_model}'...", flush=True)
-            try:
-                self._whisper_model = WhisperModel(
-                    self.config.whisper_model, device="cpu", compute_type="int8",
-                    download_root=cache_dir, local_files_only=True,
-                )
-            except Exception:
-                self._whisper_model = WhisperModel(
-                    self.config.whisper_model, device="cpu", compute_type="int8",
-                    download_root=cache_dir, local_files_only=False,
-                )
-        return self._whisper_model
+            print(
+                f"Chargement du moteur audio_transcriber "
+                f"(modèle '{self.config.whisper_model}')...",
+                flush=True,
+            )
+            cfg = TranscriberConfigCls(
+                model_size=self.config.whisper_model,
+                device="cpu",
+                compute_type="int8",
+                beam_size=5,
+                vad_filter=True,
+                enable_diarization=getattr(self.config, "enable_diarization", True),
+                cache_dir=cache_dir,
+            )
+            self._audio_engine = AudioTranscriberCls(
+                config=cfg,
+                model_override=self._whisper_model,
+            )
+        elif self._whisper_model is not None and self._audio_engine._model is None:
+            self._audio_engine._model = self._whisper_model
+        return self._audio_engine
+
+    @property
+    def whisper_model(self) -> Optional[Any]:
+        """Compatibilité ascendante : expose le modèle sous-jacent d'audio_transcriber."""
+        engine = self.audio_engine
+        return engine.model if engine is not None else None
     @staticmethod
     def decode_mime_header(raw_val: Optional[str]) -> str:
         if not raw_val:
@@ -131,6 +163,7 @@ class CommunicationExtractor:
                     if pdf_txt and not err:
                         attachments_txt.append(pdf_txt)
         return attachments_txt
+
     def extract_emails(
         self, file_path: str, allowed_emails: Set[str], discovered_emails: Set[str],
     ) -> Tuple[Dict[str, List[str]], Optional[str]]:
@@ -274,25 +307,33 @@ class CommunicationExtractor:
     def extract_audio(self, file_path: str, media_label: str = "AUDIO") -> Tuple[Optional[str], Optional[str]]:
         if self.stop_event.is_set():
             return None, "Interrompu par l'utilisateur"
-        model: Optional[WhisperModel] = self.whisper_model
-        if not self.config.enable_audio or not model:
+        engine: Optional[AudioTranscriber] = self.audio_engine
+        if not self.config.enable_audio or engine is None:
             return None, "Transcription audio/vidéo désactivée"
         file_name: str = os.path.basename(file_path)
         phone_match = DocumentTextUtils.REGEX_PHONE.search(file_name)
-        part_line: str = f"PARTICIPANTS : {self.MAIN_CHARACTER_TOKEN} et {phone_match.group(0)}\n" if phone_match else ""
+        part_line: str = (
+            f"PARTICIPANTS : {self.MAIN_CHARACTER_TOKEN} et {phone_match.group(0)}\n"
+            if phone_match
+            else ""
+        )
         try:
-            segments, _ = model.transcribe(file_path, beam_size=5, vad_filter=True)
-            lines: List[str] = []
-            for seg in segments:
-                if self.stop_event.is_set():
-                    return None, "Interrompu par l'utilisateur"
-                txt: str = seg.text.strip()
-                if txt:
-                    mins, secs = divmod(int(seg.start), 60)
-                    lines.append(f"[{mins:02d}:{secs:02d}] {txt}")
-            if not lines:
+            result = engine.transcribe(file_path, stop_event=self.stop_event)
+            if self.stop_event.is_set():
+                return None, "Interrompu par l'utilisateur"
+            diarized_on: bool = bool(getattr(self.config, "enable_diarization", True))
+            include_spk: bool = diarized_on and len(result.speakers) >= 2
+            body_txt: str = result.to_timestamped_text(include_speaker=include_spk).strip()
+            if not body_txt:
                 return None, "Aucune parole détectée dans le média"
-            return f"========================================\n{media_label} : {file_name}\n{part_line}----------------------------------------\n" + "\n".join(lines) + "\n\n", None
+            return (
+                f"========================================\n"
+                f"{media_label} : {file_name}\n"
+                f"{part_line}"
+                f"----------------------------------------\n"
+                f"{body_txt}\n\n",
+                None,
+            )
         except Exception as exc:
             err_low: str = str(exc).lower()
             if "no audio" in err_low or "audio stream" in err_low or "invalid data" in err_low:
@@ -303,39 +344,4 @@ class CommunicationExtractor:
         return self.extract_audio(file_path, media_label="VIDÉO")
 
     def extract_audacity_aup3(self, file_path: str) -> Tuple[Optional[str], Optional[str]]:
-        if self.stop_event.is_set():
-            return None, "Interrompu par l'utilisateur"
-        if not self.config.enable_audio or not self.whisper_model:
-            return None, "Transcription audio désactivée"
-        import numpy as np
-        from scipy.io import wavfile
-
-        file_name: str = os.path.basename(file_path)
-        temp_wav: str = f"{file_path}.tmp_extract.wav"
-        conn: Optional[sqlite3.Connection] = None
-        try:
-            conn = sqlite3.connect(file_path)
-            cur = conn.cursor()
-            cur.execute("SELECT samples FROM sampleblocks ORDER BY blockid")
-            rows: List[Any] = cur.fetchall()
-            if not rows:
-                return None, "Projet Audacity sans bloc audio"
-            audio_arr = np.frombuffer(b"".join(next(iter(r)) for r in rows if r and next(iter(r))), dtype=np.float32)
-            if audio_arr.size == 0:
-                return None, "Piste audio Audacity vide"
-            wavfile.write(temp_wav, 44100, audio_arr)
-            res_txt, err = self.extract_audio(temp_wav)
-            return (res_txt.replace(os.path.basename(temp_wav), file_name) if res_txt else None), err
-        except Exception as exc:
-            return None, f"Erreur lecture projet Audacity ({exc})"
-        finally:
-            if conn is not None:
-                try:
-                    conn.close()
-                except sqlite3.Error:
-                    pass
-            if os.path.exists(temp_wav):
-                try:
-                    os.remove(temp_wav)
-                except OSError:
-                    pass
+        return self.extract_audio(file_path, media_label="AUDIO")

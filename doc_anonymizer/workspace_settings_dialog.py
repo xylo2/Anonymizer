@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import configparser
 import os
 import tkinter as tk
@@ -36,6 +34,7 @@ class WorkspaceSettingsManager:
             "extra_locations": cfg.get("anonymizer", "extra_locations", fallback="").strip(),
             "enable_ocr": cfg.getboolean("extraction", "enable_ocr", fallback=True),
             "enable_audio": cfg.getboolean("extraction", "enable_audio", fallback=True),
+            "enable_diarization": cfg.getboolean("extraction", "enable_diarization", fallback=True),
             "whisper_model": cfg.get("extraction", "whisper_model", fallback="base").strip() or "base",
         }
 
@@ -56,6 +55,7 @@ class WorkspaceSettingsManager:
         cfg.set("anonymizer", "extra_locations", str(values.get("extra_locations") or "").strip())
         cfg.set("extraction", "enable_ocr", "true" if values.get("enable_ocr") else "false")
         cfg.set("extraction", "enable_audio", "true" if values.get("enable_audio") else "false")
+        cfg.set("extraction", "enable_diarization", "true" if values.get("enable_diarization", True) else "false")
         wm: str = str(values.get("whisper_model") or "base").strip()
         cfg.set("extraction", "whisper_model", wm if wm in WorkspaceSettingsManager.WHISPER_MODELS else "base")
         with open(ini_path, "w", encoding="utf-8") as f_out:
@@ -73,8 +73,8 @@ class WorkspaceSettingsDialog(tk.Toplevel):
         self.ini_path: str = ini_path
         self.on_saved = on_saved
         self.title("Paramètres du dossier actif")
-        self.geometry("680x540")
-        self.minsize(580, 460)
+        self.geometry("680x560")
+        self.minsize(580, 480)
         self.configure(bg=UI_COLORS["bg"])
         self.transient(parent.winfo_toplevel())
         self.grab_set()
@@ -115,12 +115,14 @@ class WorkspaceSettingsDialog(tk.Toplevel):
         card_ext = make_card(body, title="Extraction OCR & Transcription Audio", accent_color="#059669")
         self.ocr_var = tk.BooleanVar(value=bool(data["enable_ocr"]))
         self.audio_var = tk.BooleanVar(value=bool(data["enable_audio"]))
+        self.diarization_var = tk.BooleanVar(value=bool(data["enable_diarization"]))
         tk.Checkbutton(card_ext, text="Activer la reconnaissance de texte sur images et PDF scannés (OCR)", variable=self.ocr_var, bg=UI_COLORS["card"], fg=UI_COLORS["text"], font=("Segoe UI", 9)).pack(anchor="w")
         row_w = tk.Frame(card_ext, bg=UI_COLORS["card"])
         row_w.pack(fill="x", pady=(4, 0))
         tk.Checkbutton(row_w, text="Activer la transcription audio/vidéo — Modèle Whisper :", variable=self.audio_var, bg=UI_COLORS["card"], fg=UI_COLORS["text"], font=("Segoe UI", 9)).pack(side="left")
         self.whisper_var = tk.StringVar(value=str(data["whisper_model"]))
         make_modern_dropdown(row_w, self.whisper_var, WorkspaceSettingsManager.WHISPER_MODELS, width=120).pack(side="left", padx=(8, 0))
+        tk.Checkbutton(card_ext, text="Distinguer automatiquement les interlocuteurs (Interlocuteur_1, Interlocuteur_2...)", variable=self.diarization_var, bg=UI_COLORS["card"], fg=UI_COLORS["text"], font=("Segoe UI", 9)).pack(anchor="w", pady=(2, 0))
 
         footer = tk.Frame(self, bg=UI_COLORS["bg"], padx=16, pady=10)
         footer.pack(fill="x")
@@ -138,6 +140,7 @@ class WorkspaceSettingsDialog(tk.Toplevel):
             "mask_urls": self.url_var.get(),
             "enable_ocr": self.ocr_var.get(),
             "enable_audio": self.audio_var.get(),
+            "enable_diarization": self.diarization_var.get(),
             "whisper_model": self.whisper_var.get(),
         })
         if self.on_saved is not None:
