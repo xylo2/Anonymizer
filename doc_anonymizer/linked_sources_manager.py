@@ -1,4 +1,5 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Utilisateur_A
 
 import ctypes
 import json
@@ -9,17 +10,17 @@ from doc_anonymizer.text_utils import DocumentTextUtils
 
 
 class LinkedSourcesManager:
-    """
-    Gère les fichiers et dossiers référencés à distance (linked_sources.json)
-    sans jamais modifier, renommer ni déplacer les fichiers d'origine.
-    """
+    """Gère les fichiers et dossiers référencés (linked_sources.json)."""
 
     def __init__(self, workspace_root: str) -> None:
+        """Initialise le gestionnaire avec le dossier du workspace."""
         self.workspace_root: str = os.path.abspath(workspace_root)
-        self.links_file: str = os.path.join(self.workspace_root, "linked_sources.json")
+        self.links_file: str = os.path.join(
+            self.workspace_root, "linked_sources.json"
+        )
 
     def load_links(self) -> List[Dict[str, str]]:
-        """Charge la liste des chemins référencés depuis linked_sources.json."""
+        """Charge les chemins référencés depuis linked_sources.json."""
         if not os.path.isfile(self.links_file):
             return []
         try:
@@ -29,12 +30,16 @@ class LinkedSourcesManager:
             if not isinstance(items, list):
                 return []
             valid: List[Dict[str, str]] = []
-            for it in items:
-                if isinstance(it, dict) and str(it.get("path") or "").strip():
+            for item in items:
+                if isinstance(item, dict) and str(item.get("path") or "").strip():
+                    raw_path: str = str(item["path"]).strip()
                     valid.append({
-                        "path": os.path.normpath(str(it["path"]).strip()),
-                        "kind": str(it.get("kind") or ("dir" if os.path.isdir(str(it["path"])) else "file")),
-                        "storage": str(it.get("storage") or "local"),
+                        "path": os.path.normpath(raw_path),
+                        "kind": str(
+                            item.get("kind")
+                            or ("dir" if os.path.isdir(raw_path) else "file")
+                        ),
+                        "storage": str(item.get("storage") or "Local"),
                     })
             return valid
         except (OSError, json.JSONDecodeError):
@@ -53,131 +58,159 @@ class LinkedSourcesManager:
         )
 
     @staticmethod
-    def classify_storage_location(target_path: str, reference_dir: str) -> Tuple[bool, str]:
-        """
-        Détermine si target_path est sur un support externe/réseau ou un autre disque.
-        Retourne (needs_user_prompt, storage_label).
-        """
-        raw: str = target_path.strip()
-        if raw.startswith(("\\\\", "//")):
-            return True, "Réseau / NAS (UNC)"
-
-        abs_target: str = os.path.abspath(raw)
-        abs_ref: str = os.path.abspath(reference_dir)
-
-        if os.name == "nt":
-            drive_t: str = os.path.splitdrive(abs_target)[0].upper()
-            drive_r: str = os.path.splitdrive(abs_ref)[0].upper()
-            if drive_t:
-                try:
-                    drive_type: int = ctypes.windll.kernel32.GetDriveTypeW(f"{drive_t}\\")  # type: ignore[attr-defined]
-                    if drive_type == 4:
-                        return True, f"Lecteur réseau ({drive_t})"
-                    if drive_type == 2:
-                        return True, f"Support amovible / USB ({drive_t})"
-                except Exception:
-                    pass
-            if drive_t and drive_r and drive_t != drive_r:
-                return True, f"Disque séparé ({drive_t})"
-            return False, f"Disque local ({drive_t or 'interne'})"
-
-        norm_unix: str = abs_target.replace("\\", "/")
-        if norm_unix.startswith(("/media/", "/mnt/", "/run/media/", "/Volumes/")):
-            return True, "Support externe / réseau"
-        return False, "Disque local"
-
-    def add_links(self, paths_to_add: List[str], storage_label: str = "local") -> int:
-        """Ajoute des fichiers ou dossiers à linked_sources.json sans doublon ni copie."""
+    def _is_same_or_child(candidate_norm: str, parent_dir_norm: str) -> bool:
+        """Indique si candidate_norm est identique ou inclus dans parent_dir_norm."""
+        if candidate_norm == parent_dir_norm:
+            return True
+        prefix: str = parent_dir_norm.rstrip(chr(92) + "/") + os.sep
+        return candidate_norm.startswith(prefix)
+    def add_links(self, paths_to_add: List[str], storage_label: str = "Local") -> int:
+        """Ajoute des références en fusionnant enfants et dossiers parents."""
         existing: List[Dict[str, str]] = self.load_links()
-        seen: Set[str] = {os.path.normcase(os.path.abspath(it["path"])) for it in existing}
+        changed: bool = False
         added: int = 0
-        for raw_p in paths_to_add:
-            if not raw_p or not os.path.exists(raw_p):
+        ordered_paths: List[str] = sorted(
+            [p for p in paths_to_add if p and os.path.exists(p)],
+            key=lambda p: (0 if os.path.isdir(p) else 1, len(os.path.abspath(p))),
+        )
+        for raw_path in ordered_paths:
+            abs_path: str = os.path.normpath(os.path.abspath(raw_path))
+            norm_key: str = os.path.normcase(abs_path)
+            is_dir: bool = os.path.isdir(abs_path)
+            covered: bool = any(
+                item.get("kind") == "dir"
+                and self._is_same_or_child(
+                    norm_key, os.path.normcase(os.path.abspath(item["path"]))
+                )
+                for item in existing
+            )
+            if covered:
                 continue
-            abs_p: str = os.path.normpath(os.path.abspath(raw_p))
-            norm_k: str = os.path.normcase(abs_p)
-            if norm_k in seen:
-                continue
-            seen.add(norm_k)
+            if is_dir:
+                before_len: int = len(existing)
+                existing = [
+                    item for item in existing
+                    if not self._is_same_or_child(
+                        os.path.normcase(os.path.abspath(item["path"])), norm_key
+                    )
+                ]
+                if len(existing) != before_len:
+                    changed = True
             existing.append({
-                "path": abs_p,
-                "kind": "dir" if os.path.isdir(abs_p) else "file",
+                "path": abs_path,
+                "kind": "dir" if is_dir else "file",
                 "storage": storage_label,
             })
             added += 1
-        if added > 0:
+            changed = True
+        if changed:
             self.save_links(existing)
         return added
 
     def remove_link(self, target_path: str) -> bool:
-        """Retire une référence de linked_sources.json sans jamais toucher au fichier sur disque."""
+        """Retire une référence du fichier linked_sources.json sans toucher au disque."""
         norm_target: str = os.path.normcase(os.path.normpath(os.path.abspath(target_path)))
         existing: List[Dict[str, str]] = self.load_links()
         kept: List[Dict[str, str]] = [
-            it for it in existing if os.path.normcase(os.path.abspath(it["path"])) != norm_target
+            item for item in existing
+            if os.path.normcase(os.path.abspath(item["path"])) != norm_target
         ]
-        if len(kept) != len(existing):
-            self.save_links(kept)
-            return True
-        return False
-    def copy_paths_into_directory(self, paths_to_copy: List[str], dest_dir: str) -> int:
-        """Copie des fichiers ou dossiers choisis dans input_documents/ (mode copie locale)."""
-        os.makedirs(dest_dir, exist_ok=True)
-        copied: int = 0
-        for raw_p in paths_to_copy:
-            if not raw_p or not os.path.exists(raw_p):
-                continue
-            abs_src: str = os.path.abspath(raw_p)
-            base_name: str = os.path.basename(abs_src)
-            dest_p: str = os.path.join(dest_dir, base_name)
-            if os.path.abspath(os.path.dirname(abs_src)) == os.path.abspath(dest_dir):
-                continue
-            if os.path.isdir(abs_src):
-                if os.path.exists(dest_p):
-                    shutil.copytree(abs_src, dest_p, dirs_exist_ok=True)
-                else:
-                    shutil.copytree(abs_src, dest_p)
-                copied += 1
-            elif os.path.isfile(abs_src):
-                if os.path.exists(dest_p):
-                    stem, ext = os.path.splitext(base_name)
-                    idx: int = 2
-                    while os.path.exists(os.path.join(dest_dir, f"{stem}_{idx}{ext}")):
-                        idx += 1
-                    dest_p = os.path.join(dest_dir, f"{stem}_{idx}{ext}")
-                shutil.copy2(abs_src, dest_p)
-                copied += 1
-        return copied
+        if len(kept) == len(existing):
+            return False
+        self.save_links(kept)
+        return True
 
-    def expand_linked_files(self, ignored_dirs: Set[str]) -> Tuple[List[str], List[str]]:
-        """
-        Parcourt toutes les références actives en lecture seule.
-        Retourne (fichiers_disponibles, chemins_indisponibles).
-        """
-        available: List[str] = []
+    def expand_linked_files(
+        self, ignored_dirs: Set[str]
+    ) -> Tuple[List[str], List[str]]:
+        """Résout tous les fichiers valides et liste les emplacements absents."""
+        files: List[str] = []
         missing: List[str] = []
         seen: Set[str] = set()
-
-        for entry in self.load_links():
-            root_target: str = entry["path"]
-            if not os.path.exists(root_target):
-                missing.append(root_target)
+        for item in self.load_links():
+            path_val: str = item.get("path", "")
+            if not path_val:
                 continue
-            if os.path.isfile(root_target):
-                fn: str = os.path.basename(root_target)
-                if not fn.startswith(".") and not fn.lower().startswith(("anonymise_", "anonymized_")):
-                    norm_f: str = os.path.normpath(root_target)
-                    if norm_f not in seen:
-                        seen.add(norm_f)
-                        available.append(norm_f)
-            elif os.path.isdir(root_target):
-                for rp, dirs, files in os.walk(root_target):
-                    dirs[:] = [d for d in sorted(dirs) if d not in ignored_dirs and not d.startswith(".")]
-                    for fn in sorted(files):
-                        if fn.startswith(".") or fn.lower().startswith(("anonymise_", "anonymized_")):
+            if not os.path.exists(path_val):
+                missing.append(path_val)
+                continue
+            if os.path.isfile(path_val):
+                norm_f: str = os.path.normcase(os.path.abspath(path_val))
+                if norm_f not in seen:
+                    seen.add(norm_f)
+                    files.append(os.path.normpath(os.path.abspath(path_val)))
+            elif os.path.isdir(path_val):
+                for root_dir, dir_names, file_names in os.walk(path_val):
+                    dir_names[:] = [
+                        d for d in dir_names
+                        if d not in ignored_dirs and not d.startswith(".")
+                    ]
+                    for file_name in sorted(file_names):
+                        if file_name.startswith("."):
                             continue
-                        norm_f = os.path.normpath(os.path.join(rp, fn))
+                        full_f: str = os.path.normpath(
+                            os.path.abspath(os.path.join(root_dir, file_name))
+                        )
+                        norm_f = os.path.normcase(full_f)
                         if norm_f not in seen:
                             seen.add(norm_f)
-                            available.append(norm_f)
-        return available, missing
+                            files.append(full_f)
+        return sorted(files), missing
+    @staticmethod
+    def classify_storage_location(
+        target_path: str, workspace_root: str = ""
+    ) -> Tuple[bool, str]:
+        """Indique si target_path est sur support externe/réseau et son libellé."""
+        raw_str: str = str(target_path or "").strip()
+        if raw_str.startswith("\\\\") or raw_str.startswith("//"):
+            parts: List[str] = [p for p in raw_str.lstrip("\\/").split("\\") if p]
+            if len(parts) <= 1 and "/" in raw_str.lstrip("/"):
+                parts = [p for p in raw_str.lstrip("/").split("/") if p]
+            host: str = next(iter(parts), "partage")
+            return True, f"Réseau ({host})"
+        abs_p: str = os.path.abspath(target_path)
+        if os.name == "nt":
+            drive, _ = os.path.splitdrive(abs_p)
+            if drive:
+                try:
+                    drive_type: int = ctypes.windll.kernel32.GetDriveTypeW(
+                        drive + "\\"
+                    )
+                    if drive_type == 4:
+                        return True, f"Lecteur réseau ({drive})"
+                    if drive_type in (2, 5):
+                        return True, f"Support externe ({drive})"
+                except Exception:
+                    pass
+        if workspace_root:
+            ws_drive, _ = os.path.splitdrive(os.path.abspath(workspace_root))
+            tg_drive, _ = os.path.splitdrive(abs_p)
+            if ws_drive and tg_drive and ws_drive.lower() != tg_drive.lower():
+                return True, f"Disque ({tg_drive})"
+        return False, "Local"
+
+    @staticmethod
+    def copy_paths_into_directory(
+        source_paths: List[str], dest_dir: str
+    ) -> int:
+        """Copie fichiers et dossiers sélectionnés vers le répertoire cible."""
+        os.makedirs(dest_dir, exist_ok=True)
+        copied: int = 0
+        for raw_p in source_paths:
+            if not raw_p or not os.path.exists(raw_p):
+                continue
+            src: str = os.path.abspath(raw_p)
+            base_name: str = os.path.basename(src)
+            target: str = os.path.join(dest_dir, base_name)
+            try:
+                if os.path.abspath(target) == src:
+                    continue
+                if os.path.isdir(src):
+                    shutil.copytree(src, target, dirs_exist_ok=True)
+                    copied += 1
+                elif os.path.isfile(src):
+                    shutil.copy2(src, target)
+                    copied += 1
+            except OSError:
+                continue
+        return copied

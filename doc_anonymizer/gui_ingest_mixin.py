@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Utilisateur_A
+
 import ctypes
 import os
 import subprocess
@@ -8,7 +11,7 @@ from typing import Any, List, Optional, Tuple
 
 
 class GuiIngestMixin:
-    """Glisser-déposer Windows/TkDnD, référencement et pré-tri silencieux."""
+    """Glisser-déposer Windows/TkDnD, référencement et pré-tri non bloquant."""
 
     controller: Any
     current_ini_var: tk.StringVar
@@ -163,8 +166,13 @@ class GuiIngestMixin:
                     pass
 
         threading.Thread(target=_bg, daemon=True).start()
+    def _current_workspace_sig(self, ini_path: str) -> str:
+        """Calcule la signature courante des sources d'un espace de travail."""
+        paths = self.controller.resolve_workspace_paths(ini_path)
+        return self.controller.ws_manager.compute_sources_signature(paths)
 
     def _run_step1_scan_worker(self, ini_path: str) -> Tuple[int, int, List[Any]]:
+        """Exécute le tri étape 1 et mémorise le résultat avec sa signature."""
         lock = getattr(self, "_prewarm_lock", None)
         if lock is None:
             lock = threading.Lock()
@@ -173,8 +181,34 @@ class GuiIngestMixin:
             moved_c, moved_s, dups = self.controller.ws_manager.scan_workspace_step1(
                 ini_path
             )
-            self._prewarm_cache_result = (ini_path, moved_c, moved_s, dups)
+            post_sig: str = self._current_workspace_sig(ini_path)
+            self._prewarm_cache_result = (ini_path, post_sig, moved_c, moved_s, dups)
             return moved_c, moved_s, dups
+
+    def _on_background_prewarm_finished(self) -> None:
+        """Met à jour les compteurs et l'écran courant à la fin du scan arrière-plan."""
+        if getattr(self, "_closing", False):
+            return
+        self._refresh_workspace_counters()  # type: ignore[attr-defined]
+        cached = getattr(self, "_prewarm_cache_result", None)
+        if isinstance(cached, tuple) and len(cached) == 5 and cached[0] == self.current_ini_var.get():
+            _, _, moved_c, moved_s, dups = cached
+            if dups:
+                self.duplicate_filter_items = dups  # type: ignore[attr-defined]
+                self.status_var.set(
+                    f"Vérification terminée : {len(dups)} doublon(s) détecté(s)."
+                )
+            elif moved_c or moved_s:
+                self.status_var.set(
+                    f"Classement terminé : {moved_c} carnet(s), {moved_s} SMS."
+                )
+        active_key: str = getattr(self, "active_page_key", "")
+        if active_key == "setup":
+            self._refresh_contact_filter_list()  # type: ignore[attr-defined]
+        elif active_key == "sms":
+            self._refresh_sms_number_list()  # type: ignore[attr-defined]
+        elif active_key == "chats":
+            self._refresh_chat_filter_list()  # type: ignore[attr-defined]
 
     def _trigger_silent_prewarm(self) -> None:
         """Pré-analyse silencieusement contacts, SMS, chats et doublons."""
@@ -204,7 +238,7 @@ class GuiIngestMixin:
                     break
             if not getattr(self, "_closing", False) and hasattr(self, "after"):
                 try:
-                    self.after(0, self._refresh_workspace_counters)  # type: ignore[attr-defined]
+                    self.after(0, self._on_background_prewarm_finished)  # type: ignore[attr-defined]
                 except (RuntimeError, tk.TclError):
                     pass
 
@@ -213,6 +247,7 @@ class GuiIngestMixin:
         t.start()
 
     def _ingest_selected_paths(self, chosen: List[str]) -> None:
+        """Référence ou copie les fichiers/dossiers choisis puis relance le pré-scan."""
         ini_path: str = self.current_ini_var.get()
         if not ini_path or not chosen:
             return
@@ -240,6 +275,7 @@ class GuiIngestMixin:
 
         def _done(res: Any) -> None:
             added_links, copied_local = res
+            self._prewarm_cache_result = None
             self._refresh_workspace_counters()  # type: ignore[attr-defined]
             self.status_var.set(
                 f"{added_links} référence(s) ajoutée(s) en lecture seule, "
@@ -252,6 +288,7 @@ class GuiIngestMixin:
         )
 
     def _link_external_files(self) -> None:
+        """Ouvre le sélecteur de fichiers externes en lecture seule."""
         if self.current_ini_var.get():
             files = filedialog.askopenfilenames(
                 title="Référencer des fichiers (lecture seule, sans copie)"
@@ -260,6 +297,7 @@ class GuiIngestMixin:
                 self._ingest_selected_paths(list(files))
 
     def _link_external_folder(self) -> None:
+        """Ouvre le sélecteur de dossier externe en lecture seule."""
         if self.current_ini_var.get():
             folder = filedialog.askdirectory(
                 title="Référencer un dossier entier (lecture seule, sans copie)"
@@ -268,6 +306,7 @@ class GuiIngestMixin:
                 self._ingest_selected_paths([folder])
 
     def _remove_selected_linked_source(self) -> None:
+        """Supprime la référence sélectionnée de linked_sources.json."""
         ini_path: str = self.current_ini_var.get()
         idx: Optional[int] = self._get_selected_linked_index()
         if not ini_path or idx is None:
@@ -275,6 +314,7 @@ class GuiIngestMixin:
         links = self.controller.list_linked_sources(ini_path)
         if 0 <= idx < len(links):
             self.controller.remove_linked_source(ini_path, links[idx]["path"])
+            self._prewarm_cache_result = None
             self._refresh_workspace_counters()  # type: ignore[attr-defined]
             self.status_var.set(
                 "Référence supprimée (les fichiers d'origine n'ont pas été touchés)."
@@ -282,15 +322,20 @@ class GuiIngestMixin:
             self._trigger_silent_prewarm()
 
     def _advance_from_documents(self) -> None:
+        """Passe immédiatement à l'étape suivante sans bloquer sur le scan lourd."""
         ini_path: str = self.current_ini_var.get()
         if not ini_path:
             return
 
-        def _work() -> Any:
-            return self._run_step1_scan_worker(ini_path)
-
-        def _done(res: Any) -> None:
-            moved_contacts, moved_sms, dups = res
+        cur_sig: str = self._current_workspace_sig(ini_path)
+        cached = getattr(self, "_prewarm_cache_result", None)
+        if (
+            isinstance(cached, tuple)
+            and len(cached) == 5
+            and cached[0] == ini_path
+            and cached[1] == cur_sig
+        ):
+            _, _, moved_contacts, moved_sms, dups = cached
             self._refresh_workspace_counters()  # type: ignore[attr-defined]
             if moved_contacts or moved_sms:
                 self.status_var.set(
@@ -302,15 +347,27 @@ class GuiIngestMixin:
                 self._show_page("duplicates")  # type: ignore[attr-defined]
             else:
                 self._show_page("setup")  # type: ignore[attr-defined]
+            return
 
         in_flight: Optional[threading.Thread] = getattr(
             self, "_prewarm_thread", None
         )
         if in_flight is not None and in_flight.is_alive():
-            self._run_docs_task(
-                "Finalisation de la vérification déjà démarrée...",
-                _work,
-                _done,
+            self.status_var.set(
+                "Vérification des doublons et contacts en cours en arrière-plan..."
             )
+            self._show_page("setup")  # type: ignore[attr-defined]
+            return
+
+        moved_contacts, moved_sms, dups = self._run_step1_scan_worker(ini_path)
+        self._refresh_workspace_counters()  # type: ignore[attr-defined]
+        if moved_contacts or moved_sms:
+            self.status_var.set(
+                f"Classement automatique : {moved_contacts} carnet(s), "
+                f"{moved_sms} export(s) SMS."
+            )
+        if dups:
+            self.duplicate_filter_items = dups  # type: ignore[attr-defined]
+            self._show_page("duplicates")  # type: ignore[attr-defined]
         else:
-            _done(_work())
+            self._show_page("setup")  # type: ignore[attr-defined]
