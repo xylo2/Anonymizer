@@ -23,9 +23,19 @@ class ContactsConfig:
             self.parser.get("paths", "input_contacts_dir", fallback="").strip()
             or "input_contacts"
         )
-        self.csv_directory: str = self._resolve_path(
+        resolved_csv: str = self._resolve_path(
             "files", "csv_directory", default_csv_dir
         )
+        base_norm: str = os.path.normcase(os.path.abspath(self.base_dir))
+        csv_norm: str = os.path.normcase(os.path.abspath(resolved_csv))
+        if (
+            os.path.basename(base_norm) != "anonvault"
+            and not csv_norm.startswith(base_norm + os.sep)
+        ):
+            resolved_csv = os.path.normpath(
+                os.path.join(self.base_dir, "input_contacts")
+            )
+        self.csv_directory: str = resolved_csv
         raw_prefixes: str = self.parser.get(
             "files", "csv_prefixes", fallback=""
         )

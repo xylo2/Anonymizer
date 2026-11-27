@@ -10,6 +10,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from doc_anonymizer.gui_controller import AnonymizerGuiController
+from google_contacts_parser.config_manager import ContactsConfig
 import run_documents
 
 
@@ -33,9 +34,15 @@ class TestWithContactsWithoutCsv(unittest.TestCase):
         ini_path: str = self.ctrl.create_workspace("Dossier_Sans_Carnet")
         cfg = configparser.ConfigParser()
         cfg.read(ini_path, encoding="utf-8")
-        cfg.remove_option("files", "csv_directory")
+        cfg.set("files", "csv_directory", os.path.join(self.tmp_root, "input_contacts"))
         with open(ini_path, "w", encoding="utf-8") as f_ini:
             cfg.write(f_ini)
+
+        direct_cfg = ContactsConfig(ini_path)
+        expected_in_contacts: str = os.path.normpath(
+            os.path.join(os.path.dirname(ini_path), "input_contacts")
+        )
+        self.assertEqual(os.path.normpath(direct_cfg.csv_directory), expected_in_contacts)
 
         paths = self.ctrl.resolve_workspace_paths(ini_path)
         cfg_reloaded = configparser.ConfigParser()

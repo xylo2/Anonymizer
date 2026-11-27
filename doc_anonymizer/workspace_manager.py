@@ -189,12 +189,18 @@ class WorkspaceManager:
         in_contacts: str = os.path.join(ws_dir, "input_contacts")
         contacts_dir: str = os.path.join(ws_dir, "contacts")
         inter_dir: str = os.path.join(contacts_dir, ".intermediates")
+        ws_norm: str = os.path.normcase(os.path.abspath(ws_dir))
         dirty: bool = False
         if not cfg.has_section("files"):
             cfg.add_section("files")
             dirty = True
         cur_csv: str = cfg.get("files", "csv_directory", fallback="").strip()
-        if not cur_csv or not os.path.isabs(cur_csv):
+        cur_csv_abs: str = (
+            os.path.normcase(os.path.abspath(cur_csv))
+            if os.path.isabs(cur_csv)
+            else ""
+        )
+        if not cur_csv_abs or not cur_csv_abs.startswith(ws_norm + os.sep):
             cfg.set("files", "csv_directory", in_contacts)
             dirty = True
         expected_files: Dict[str, str] = {
@@ -209,7 +215,12 @@ class WorkspaceManager:
         }
         for key, target_p in expected_files.items():
             cur_v: str = cfg.get("files", key, fallback="").strip()
-            if not cur_v or not os.path.isabs(cur_v):
+            cur_v_abs: str = (
+                os.path.normcase(os.path.abspath(cur_v))
+                if os.path.isabs(cur_v)
+                else ""
+            )
+            if not cur_v_abs or not cur_v_abs.startswith(ws_norm + os.sep):
                 cfg.set("files", key, target_p)
                 dirty = True
         if dirty:
