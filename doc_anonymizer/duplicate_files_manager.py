@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import hashlib
 import json
 import os
@@ -16,6 +14,7 @@ class DuplicateFilesManager:
         "audits", "pack_avocat", "retour_ia_brut", "retour_ia_nominatif",
         "data", "docs", "venv", ".venv", ".git", "__pycache__",
         "common", "tools", "tests",
+        "sms_exports", "chat_exports", "input_contacts",
     }
 
     def __init__(self, paths: Dict[str, str]) -> None:
@@ -106,6 +105,7 @@ class DuplicateFilesManager:
             )
         except OSError:
             pass
+
     def load_ignored_paths(self) -> Set[str]:
         if not os.path.isfile(self.selection_file):
             return set()

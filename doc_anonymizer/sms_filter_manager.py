@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import json
 import os
 import re
@@ -8,6 +6,7 @@ from typing import Any, Dict, List, Set, Tuple
 import xml.etree.ElementTree as ET
 from doc_anonymizer.contact_csv_importer import ContactCatalogImporter, normalize_phone_identifier
 from doc_anonymizer.duplicate_files_manager import DuplicateFilesManager
+from doc_anonymizer.linked_sources_manager import LinkedSourcesManager
 from doc_anonymizer.text_utils import DocumentTextUtils
 
 
@@ -51,6 +50,7 @@ class SmsFilterManager:
             return any(tag in head for tag in ("<smses", "<sms ", "<mms "))
         except OSError:
             return False
+
     def known_phone_names_map(self) -> Dict[str, str]:
         known: Dict[str, str] = {}
         for item in self.importer.load_filter_items():
@@ -63,19 +63,29 @@ class SmsFilterManager:
 
     def list_export_files(self) -> List[str]:
         src_dir: str = self.paths["sources_dir"]
-        if not os.path.isdir(src_dir):
-            return []
+        ws_root: str = self.paths.get("workspace_root") or os.path.dirname(src_dir)
         ignored_dups: Set[str] = DuplicateFilesManager(self.paths).load_ignored_paths()
         found: List[str] = []
-        for root, _, files in os.walk(src_dir):
-            for fn in sorted(files):
-                full_p: str = os.path.normpath(os.path.join(root, fn))
-                if os.path.normcase(full_p) in ignored_dups:
-                    continue
-                if fn.lower().endswith(".xml") and self.is_sms_backup_xml(full_p):
-                    found.append(full_p)
+        seen: Set[str] = set()
+        if os.path.isdir(src_dir):
+            for root, _, files in os.walk(src_dir):
+                for fn in sorted(files):
+                    full_p: str = os.path.normpath(os.path.join(root, fn))
+                    norm_k: str = os.path.normcase(full_p)
+                    if norm_k in ignored_dups or norm_k in seen:
+                        continue
+                    if fn.lower().endswith(".xml") and self.is_sms_backup_xml(full_p):
+                        seen.add(norm_k)
+                        found.append(full_p)
+        linked, _ = LinkedSourcesManager(ws_root).expand_linked_files(set())
+        for full_p in linked:
+            norm_k = os.path.normcase(full_p)
+            if norm_k in ignored_dups or norm_k in seen:
+                continue
+            if full_p.lower().endswith(".xml") and self.is_sms_backup_xml(full_p):
+                seen.add(norm_k)
+                found.append(full_p)
         return found
-
     def import_export_file(self, source_xml_path: str, move: bool = False) -> str:
         dest_dir: str = os.path.join(self.paths["sources_dir"], "sms_exports")
         os.makedirs(dest_dir, exist_ok=True)
@@ -94,6 +104,7 @@ class SmsFilterManager:
     def _stat_sort_key(pair: Tuple[str, Dict[str, Any]]) -> Tuple[int, str]:
         phone_key, info_dict = pair
         return (-int(info_dict.get("count", 0)), phone_key)
+
     def _get_cache_file_path(self) -> str:
         ws_root: str = self.paths.get("workspace_root") or os.path.dirname(self.paths["contacts_dir"])
         return os.path.join(ws_root, "audits", ".sms_numbers_cache.json")

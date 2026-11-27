@@ -234,11 +234,7 @@ class WorkspaceManager:
                     raw = cfg.get(sec, key).strip()
                     break
             val: str = raw or default_rel
-            return (
-                val
-                if os.path.isabs(val)
-                else os.path.abspath(os.path.join(ws_dir, val))
-            )
+            return val if os.path.isabs(val) else os.path.abspath(os.path.join(ws_dir, val))
 
         return {
             "workspace_root": ws_dir,
@@ -352,14 +348,6 @@ class WorkspaceManager:
                 if ContactCatalogImporter.is_contact_catalog_file(full_p):
                     importer.import_contact_file(full_p, move_source=False)
                     moved_contacts += 1
-                elif SmsFilterManager.is_sms_backup_xml(full_p):
-                    sms_mgr.import_export_file(full_p, move=False)
-                    moved_sms += 1
-                elif ChatFilterManager.is_chat_export_file(full_p):
-                    os.makedirs(chat_dir, exist_ok=True)
-                    dest_c: str = ContactCatalogImporter._unique_dest_path(chat_dir, os.path.basename(full_p))
-                    if os.path.basename(full_p) not in os.listdir(chat_dir):
-                        shutil.copy2(full_p, dest_c)
             except OSError:
                 continue
 

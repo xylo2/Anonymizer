@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import json
 import os
 import re
@@ -9,6 +7,7 @@ from doc_anonymizer.chat_extractors import MultiPlatformChatExtractor
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.contact_csv_importer import ContactCatalogImporter
 from doc_anonymizer.duplicate_files_manager import DuplicateFilesManager
+from doc_anonymizer.linked_sources_manager import LinkedSourcesManager
 from doc_anonymizer.teams_chat_extractor import TeamsChatExtractor
 from doc_anonymizer.text_utils import DocumentTextUtils
 
@@ -55,43 +54,45 @@ class ChatFilterManager:
         ):
             return "Messenger (HTML)"
         if ext == ".json":
-            if '"messages"' in head and (
-                '"creator"' in head or "google chat" in norm_unix
-            ):
+            if '"messages"' in head and ('"creator"' in head or "google chat" in norm_unix):
                 return "Google Chat"
-            if '"messages"' in head and (
-                '"sender_name"' in head or "messages/" in norm_unix
-            ):
+            if '"messages"' in head and ('"sender_name"' in head or "messages/" in norm_unix):
                 return "Messenger / Instagram"
-            if '"conversations"' in head or (
-                '"messages"' in head
-                and ('"from"' in head or '"displayname"' in head.lower())
-            ):
+            if '"conversations"' in head or ('"messages"' in head and ('"from"' in head or '"displayname"' in head.lower())):
                 return "Microsoft Teams"
-            if '"source"' in head and (
-                '"sourcename"' in head.lower() or '"body"' in head
-            ):
+            if '"source"' in head and ('"sourcename"' in head.lower() or '"body"' in head):
                 return "Signal"
         return None
+
     @classmethod
     def is_chat_export_file(cls, file_path: str) -> bool:
         return cls._detect_chat_platform(file_path) is not None
 
     def list_export_files(self) -> List[str]:
         src_dir: str = self.paths["sources_dir"]
-        if not os.path.isdir(src_dir):
-            return []
+        ws_root: str = self.paths.get("workspace_root") or os.path.dirname(src_dir)
         ignored_dups: Set[str] = DuplicateFilesManager(self.paths).load_ignored_paths()
         found: List[str] = []
-        for root, _, files in os.walk(src_dir):
-            for fn in sorted(files):
-                full_p: str = os.path.normpath(os.path.join(root, fn))
-                if os.path.normcase(full_p) in ignored_dups:
-                    continue
-                if self.is_chat_export_file(full_p):
-                    found.append(full_p)
+        seen: Set[str] = set()
+        if os.path.isdir(src_dir):
+            for root, _, files in os.walk(src_dir):
+                for fn in sorted(files):
+                    full_p: str = os.path.normpath(os.path.join(root, fn))
+                    norm_k: str = os.path.normcase(full_p)
+                    if norm_k in ignored_dups or norm_k in seen:
+                        continue
+                    if self.is_chat_export_file(full_p):
+                        seen.add(norm_k)
+                        found.append(full_p)
+        linked, _ = LinkedSourcesManager(ws_root).expand_linked_files(set())
+        for full_p in linked:
+            norm_k = os.path.normcase(full_p)
+            if norm_k in ignored_dups or norm_k in seen:
+                continue
+            if self.is_chat_export_file(full_p):
+                seen.add(norm_k)
+                found.append(full_p)
         return found
-
     def organize_chat_exports(self, move: bool = True) -> int:
         src_dir: str = self.paths["sources_dir"]
         if not os.path.isdir(src_dir):
@@ -121,6 +122,7 @@ class ChatFilterManager:
                     shutil.copy2(full_p, dest_p)
                 moved_count += 1
         return moved_count
+
     @classmethod
     def inspect_chat_file_metadata(cls, file_path: str) -> Optional[Dict[str, Any]]:
         platform: Optional[str] = cls._detect_chat_platform(file_path)
