@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise (bibliothèque standard uniquement)
-
 import os
 import re
 from typing import Dict, List, Set, Tuple
@@ -17,6 +15,9 @@ class DiscoveredChatContactsBuilder:
 
     HEADER_SENDER_REGEX: re.Pattern[str] = re.compile(
         r"(?m)^(?:\[[^\]]+\]\s*DE|DE|PARTICIPANTS|WHATSAPP|MESSENGER|SIGNAL|TEAMS|GOOGLE CHAT)\s*:\s*(.+)$"
+    )
+    LINE_SPEAKER_REGEX: re.Pattern[str] = re.compile(
+        r"(?m)^(?:\[[^\]]+\]\s*)?([A-ZÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ][A-Za-zÉÈÊËÀÂÄÎÏÔÖÙÛÜÇéèêëàâäîïôöùûüç'\- ]{2,42})\s*:\s+"
     )
 
     def __init__(self, config: PipelineConfig) -> None:
@@ -58,12 +59,11 @@ class DiscoveredChatContactsBuilder:
                 if norm:
                     known.add(norm)
         return known
-
     def _format_candidate_pair(self, raw_name: str) -> Tuple[str, str]:
         """
         Valide un nom extrait d'un chat et génère la paire (Nom Complet, Alias).
 
-        :param raw_name: Chaîne brute extraite d'un en-tête de chat.
+        :param raw_name: Chaîne brute extraite d'un en-tête ou d'une ligne de chat.
         :return: Couple (cible, alias) ou ('', '') si non pertinent.
         """
         cleaned: str = re.sub(r"\([^)]*\)", " ", raw_name)
@@ -86,7 +86,7 @@ class DiscoveredChatContactsBuilder:
         tokens: List[str] = [t for t in cleaned.split(" ") if t]
         if len(tokens) < 2 or len(tokens) > 4:
             return "", ""
-        if not all(t[0].isupper() for t in tokens if t):
+        if not all(t[:1].isupper() for t in tokens if t):
             return "", ""
 
         norm_tokens: List[str] = [DocumentTextUtils.normalize_word(t) for t in tokens]
@@ -101,7 +101,7 @@ class DiscoveredChatContactsBuilder:
             return "", ""
 
         if self.config.known_first_names:
-            first_tok: str = norm_tokens[0]
+            first_tok: str = next(iter(norm_tokens))
             first_ok: bool = (
                 first_tok in self.config.known_first_names
                 or any(p in self.config.known_first_names for p in first_tok.split("-"))
@@ -110,10 +110,9 @@ class DiscoveredChatContactsBuilder:
                 return "", ""
 
         first_part: str = " ".join(tokens[:-1])
-        last_initial: str = tokens[-1][0].upper()
+        last_initial: str = tokens[-1][:1].upper()
         alias: str = f"{first_part} {last_initial}."
         return cleaned, alias
-
     def _scan_chat_transcriptions(self) -> Dict[str, str]:
         """Parcourt les transcriptions dans extracted_texts/**/Chats/."""
         discovered: Dict[str, str] = {}
@@ -140,6 +139,11 @@ class DiscoveredChatContactsBuilder:
                         target, alias = self._format_candidate_pair(candidate)
                         if target and alias:
                             discovered[target] = alias
+
+                for match in self.LINE_SPEAKER_REGEX.finditer(content):
+                    target, alias = self._format_candidate_pair(match.group(1))
+                    if target and alias:
+                        discovered[target] = alias
         return discovered
 
     def build_or_update(self) -> Tuple[int, int]:

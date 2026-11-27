@@ -4,7 +4,7 @@ import json
 import os
 import re
 import shutil
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 from doc_anonymizer import config_manager as _cfg_mod
 from doc_anonymizer.chat_filter_manager import ChatFilterManager
 from doc_anonymizer.contact_csv_importer import ContactCatalogImporter
@@ -181,9 +181,12 @@ class WorkspaceManager:
             cfg.write(f_ini)
         self.save_last_opened_workspace(ini_path)
         return ini_path
+
     @classmethod
-    def _ensure_contacts_ini_keys(cls, abs_ini: str, ws_dir: str, cfg: configparser.ConfigParser) -> None:
-        """Garantit que csv_directory et les sorties contacts pointent vers le dossier isolé."""
+    def _ensure_contacts_ini_keys(
+        cls, abs_ini: str, ws_dir: str, cfg: configparser.ConfigParser
+    ) -> None:
+        """Garantit que csv_directory et les sorties contacts sont isolés."""
         if not os.path.isfile(abs_ini):
             return
         in_contacts: str = os.path.join(ws_dir, "input_contacts")
@@ -246,7 +249,6 @@ class WorkspaceManager:
                     break
             val: str = raw or default_rel
             return val if os.path.isabs(val) else os.path.abspath(os.path.join(ws_dir, val))
-
         return {
             "workspace_root": ws_dir,
             "workspace_dir": ws_dir,
@@ -282,7 +284,7 @@ class WorkspaceManager:
 
     @staticmethod
     def compute_sources_signature(paths: Dict[str, str]) -> str:
-        """Calcule une empreinte rapide des pièces, liens et carnets."""
+        """Calcule une empreinte rapide des pièces, liens, carnets et doublons."""
         digest = hashlib.sha256()
         for tag, folder in (("S", paths["sources_dir"]), ("C", paths.get("contacts_dir", ""))):
             if not folder or not os.path.isdir(folder):
@@ -298,13 +300,16 @@ class WorkspaceManager:
                         digest.update(f"{tag}|{fp}|{st.st_size}|{st.st_mtime_ns}\n".encode("utf-8"))
                     except OSError:
                         continue
-        links_file: str = os.path.join(paths["workspace_root"], "linked_sources.json")
-        if os.path.isfile(links_file):
-            try:
-                st_l = os.stat(links_file)
-                digest.update(f"L|{st_l.st_size}|{st_l.st_mtime_ns}\n".encode("utf-8"))
-            except OSError:
-                pass
+        for tag, meta_f in (
+            ("L", os.path.join(paths["workspace_root"], "linked_sources.json")),
+            ("I", os.path.join(paths["workspace_root"], "audits", "ignored_duplicates.json")),
+        ):
+            if os.path.isfile(meta_f):
+                try:
+                    st_m = os.stat(meta_f)
+                    digest.update(f"{tag}|{st_m.st_size}|{st_m.st_mtime_ns}\n".encode("utf-8"))
+                except OSError:
+                    pass
         linked_files, _ = LinkedSourcesManager(paths["workspace_root"]).expand_linked_files(set())
         for fp in sorted(linked_files):
             try:
@@ -314,16 +319,25 @@ class WorkspaceManager:
                 continue
         return digest.hexdigest()
 
-    def auto_organize_dropped_files(self, ini_path: str, force: bool = False) -> Tuple[int, int]:
+    def scan_workspace_step1(
+        self, ini_path: str, force: bool = False
+    ) -> Tuple[int, int, List[Dict[str, Any]]]:
+        """Trie les fichiers déposés et retourne (contacts, sms, doublons) avec cache."""
         paths = self.resolve_workspace_paths(ini_path)
-        cache_path: str = os.path.join(paths["workspace_root"], "audits", ".step1_scan_cache.json")
+        cache_path: str = os.path.join(
+            paths["workspace_root"], "audits", ".step1_scan_cache.json"
+        )
         sig_before: str = self.compute_sources_signature(paths)
         if not force and os.path.isfile(cache_path):
             try:
                 with open(cache_path, "r", encoding="utf-8") as f_c:
                     cached = json.load(f_c)
-                if isinstance(cached, dict) and cached.get("signature") == sig_before:
-                    return 0, 0
+                if (
+                    isinstance(cached, dict)
+                    and cached.get("signature") == sig_before
+                    and isinstance(cached.get("duplicates"), list)
+                ):
+                    return 0, 0, list(cached["duplicates"])
             except (OSError, json.JSONDecodeError):
                 pass
 
@@ -362,12 +376,27 @@ class WorkspaceManager:
             except OSError:
                 continue
 
-        DuplicateFilesManager(paths).find_duplicate_items()
+        dups = DuplicateFilesManager(paths).find_duplicate_items()
         sig_after: str = self.compute_sources_signature(paths)
         try:
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
             with open(cache_path, "w", encoding="utf-8") as f_out:
-                json.dump({"signature": sig_after, "moved_contacts": moved_contacts, "moved_sms": moved_sms}, f_out, ensure_ascii=False)
+                json.dump(
+                    {
+                        "signature": sig_after,
+                        "moved_contacts": moved_contacts,
+                        "moved_sms": moved_sms,
+                        "duplicates": dups,
+                    },
+                    f_out,
+                    ensure_ascii=False,
+                )
         except OSError:
             pass
-        return moved_contacts, moved_sms
+        return moved_contacts, moved_sms, dups
+
+    def auto_organize_dropped_files(
+        self, ini_path: str, force: bool = False
+    ) -> Tuple[int, int]:
+        moved_c, moved_s, _ = self.scan_workspace_step1(ini_path, force=force)
+        return moved_c, moved_s

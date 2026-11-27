@@ -1,5 +1,9 @@
-# Commandes pip à exécuter : pip install customtkinter>=5.2.2
+# -*- coding: utf-8 -*-
+"""
+Interface graphique principale d'AnonVault — Pièces protégées.
 
+License: GNU GPL v3
+"""
 import os
 import subprocess
 import sys
@@ -25,9 +29,13 @@ from doc_anonymizer.gui_startup_error import (
 )
 from doc_anonymizer.gui_tables_mixin import GuiTablesMixin
 from doc_anonymizer.gui_widgets import (
-    HAS_CTK, UI_COLORS, configure_ttk_styles, ctk,
-    load_saved_ui_font_scale, register_scalable_font,
-    scaled_size, set_screen_reader_mode, set_ui_font_scale,
+    HAS_CTK,
+    UI_COLORS,
+    configure_ttk_styles,
+    ctk,
+    load_saved_ui_font_scale,
+    set_screen_reader_mode,
+    set_ui_font_scale,
 )
 from doc_anonymizer.workspace_settings_dialog import WorkspaceSettingsDialog
 
@@ -36,7 +44,8 @@ if "--screen-reader" in sys.argv or _ENV_SR in {"1", "true", "yes"}:
     set_screen_reader_mode(True)
 
 _BaseTkWindow: Any = (
-    tk.Tk if _gw.SCREEN_READER_MODE
+    tk.Tk
+    if _gw.SCREEN_READER_MODE
     else (ctk.CTk if (HAS_CTK and ctk is not None) else tk.Tk)
 )
 class AnonymizerGuiApp(
@@ -50,6 +59,7 @@ class AnonymizerGuiApp(
     """Fenêtre principale moderne et accessible (clavier, zoom et lecteur d'écran)."""
 
     def __init__(self, skip_startup_gate: bool = False) -> None:
+        """Initialise la fenêtre principale en plein écran et construit les écrans."""
         super().__init__()
         self.title("AnonVault — Pièces protégées")
         self._apply_window_icon()
@@ -61,11 +71,14 @@ class AnonymizerGuiApp(
         pos_y: int = max(0, (scr_h - win_h) // 2)
         self.geometry(f"{win_w}x{win_h}+{pos_x}+{pos_y}")
         self.minsize(960, 660)
+        self._maximized_once: bool = False
         if HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE:
             self.configure(fg_color=UI_COLORS["bg"])
         else:
             self.configure(bg=UI_COLORS["bg"])
-        self.controller: AnonymizerGuiController = AnonymizerGuiController(ROOT_DIR)
+        self.controller: AnonymizerGuiController = AnonymizerGuiController(
+            ROOT_DIR
+        )
         self._ui_prefs_file: str = os.path.join(
             self.controller.workspaces_base_dir, ".ui_preferences.json"
         )
@@ -73,7 +86,9 @@ class AnonymizerGuiApp(
         self.workspaces: List[Tuple[str, str]] = []
         self.workflow_mode: str = "ia"
         self.current_ini_var: tk.StringVar = tk.StringVar()
-        self.active_ws_badge_var: tk.StringVar = tk.StringVar(value="Dossier : aucun")
+        self.active_ws_badge_var: tk.StringVar = tk.StringVar(
+            value="Dossier : aucun"
+        )
         self.mode_badge_var: tk.StringVar = tk.StringVar(
             value="Objectif : IA (Anonymisé)"
         )
@@ -113,8 +128,33 @@ class AnonymizerGuiApp(
             self._set_workflow_mode("ia", navigate=True)
         else:
             self._show_page("gate")
+        self.after(80, self._maximize_main_window)
         self.after(200, self._enable_windows_drag_and_drop)
+
+    def _maximize_main_window(self) -> None:
+        """Passe la fenêtre principale en mode maximisé une seule fois au démarrage."""
+        if self._closing or getattr(self, "_maximized_once", False):
+            return
+        self._maximized_once = True
+        try:
+            self.wm_state("zoomed")
+            return
+        except tk.TclError:
+            pass
+        try:
+            self.wm_attributes("-zoomed", True)
+            return
+        except tk.TclError:
+            pass
+        try:
+            screen_w: int = max(960, int(self.winfo_screenwidth()))
+            screen_h: int = max(660, int(self.winfo_screenheight()))
+            self.geometry(f"{screen_w}x{screen_h}+0+0")
+        except tk.TclError:
+            pass
+
     def _bind_global_shortcuts(self) -> None:
+        """Associe les raccourcis clavier globaux de l'application."""
         self.protocol("WM_DELETE_WINDOW", self._on_close_requested)
         self.bind("<FocusIn>", self._on_window_focus_in)
         self.bind_all("<Control-f>", self._focus_contact_search)
@@ -126,19 +166,22 @@ class AnonymizerGuiApp(
         self.bind_all("<Escape>", self._clear_active_search)
         self.bind_all("<Alt-Left>", lambda _e: self._step_page(-1))
         self.bind_all("<Alt-Right>", lambda _e: self._step_page(1))
-
     def _bind_gate_return_keys(self) -> None:
+        """Permet de valider l'écran d'accueil avec la touche Entrée."""
         for attr_name in (
             "entry_gate_new",
             "ent_gate_new",
             "ent_gate_new_name",
             "combo_gate_ws",
         ):
-            w = getattr(self, attr_name, None)
-            if w is not None:
-                w.bind("<Return>", lambda _e: self._confirm_gate_and_workspace())
+            widget = getattr(self, attr_name, None)
+            if widget is not None:
+                widget.bind(
+                    "<Return>", lambda _e: self._confirm_gate_and_workspace()
+                )
 
     def _apply_window_icon(self) -> None:
+        """Génère si besoin et applique l'icône PNG/ICO de la fenêtre."""
         assets_dir: str = os.path.join(ROOT_DIR, "assets")
         png_path: str = os.path.join(assets_dir, "anonvault_icon.png")
         ico_path: str = os.path.join(assets_dir, "anonvault_icon.ico")
@@ -162,6 +205,7 @@ class AnonymizerGuiApp(
                 pass
 
     def _clear_active_search(self, _event: object = None) -> None:
+        """Efface le champ de recherche actif lors de l'appui sur Échap."""
         mapping = {
             "setup": ("ent_contact_search", self._on_contact_search_typed),
             "sms": ("ent_sms_search", self._on_sms_search_typed),
@@ -173,6 +217,7 @@ class AnonymizerGuiApp(
             getattr(self, ent_name).delete(0, "end")
             refresh_cb()
     def _step_page(self, delta: int) -> None:
+        """Navigue vers l'étape précédente ou suivante via Alt+Flèches."""
         ini_p: str = self.current_ini_var.get()
         if not ini_p:
             return
@@ -192,6 +237,7 @@ class AnonymizerGuiApp(
                 self._show_page(order[idx])
 
     def _on_window_focus_in(self, event: Any = None) -> None:
+        """Rafraîchit les listes lorsque la fenêtre reprend le focus."""
         if event is not None and event.widget is not self:
             return
         if self._closing or self.is_running or not self.current_ini_var.get():
@@ -206,13 +252,18 @@ class AnonymizerGuiApp(
             self._refresh_workspace_counters()
             self._refresh_contact_filter_list()
         elif self.active_page_key == "sms":
-            self.controller.auto_organize_dropped_files(self.current_ini_var.get())
+            self.controller.auto_organize_dropped_files(
+                self.current_ini_var.get()
+            )
             self._refresh_sms_number_list()
         elif self.active_page_key == "chats":
-            self.controller.auto_organize_dropped_files(self.current_ini_var.get())
+            self.controller.auto_organize_dropped_files(
+                self.current_ini_var.get()
+            )
             self._refresh_chat_filter_list()
 
     def _focus_contact_search(self, _event: object = None) -> str:
+        """Place le curseur dans la barre de recherche de l'écran actif."""
         targets = {
             "setup": "ent_contact_search",
             "sms": "ent_sms_search",
@@ -222,8 +273,8 @@ class AnonymizerGuiApp(
         if attr and hasattr(self, attr):
             getattr(self, attr).focus_set()
         return "break"
-
     def _sync_sidebar_width_for_scale(self, scale: float) -> None:
+        """Adapte la largeur du menu latéral au facteur de zoom police."""
         if hasattr(self, "sidebar"):
             try:
                 self.sidebar.configure(width=int(round(268 * max(1.0, scale))))
@@ -233,6 +284,7 @@ class AnonymizerGuiApp(
             self._rebuild_sidebar_nav()
 
     def _adjust_font_scale(self, delta: float) -> None:
+        """Augmente ou réduit la taille globale des polices."""
         new_scale: float = set_ui_font_scale(
             _gw.UI_FONT_SCALE + delta, prefs_path=self._ui_prefs_file
         )
@@ -241,16 +293,26 @@ class AnonymizerGuiApp(
         self.status_var.set(f"Taille du texte ajustée à {pct} %.")
 
     def _reset_font_scale(self) -> None:
+        """Réinitialise la taille globale des polices à 100 %."""
         new_scale: float = set_ui_font_scale(1.0, prefs_path=self._ui_prefs_file)
         self._sync_sidebar_width_for_scale(new_scale)
         self.status_var.set("Taille du texte réinitialisée à 100 %.")
+
     def _toggle_screen_reader_mode(self) -> None:
+        """Redémarre l'interface en activant ou désactivant le mode lecteur d'écran."""
         target_sr: bool = not _gw.SCREEN_READER_MODE
         self._flush_and_cancel_pending_timers()
-        cmd: List[str] = [sys.executable, os.path.abspath(__file__), "--gui-errors"]
+        cmd: List[str] = [
+            sys.executable,
+            os.path.abspath(__file__),
+            "--gui-errors",
+        ]
         if target_sr:
             cmd.append("--screen-reader")
-        env = {**os.environ, "ANONYMIZER_SCREEN_READER": "1" if target_sr else "0"}
+        env = {
+            **os.environ,
+            "ANONYMIZER_SCREEN_READER": "1" if target_sr else "0",
+        }
         subprocess.Popen(cmd, cwd=ROOT_DIR, env=env)
         try:
             self.destroy()
@@ -259,7 +321,10 @@ class AnonymizerGuiApp(
         os._exit(0)
 
     def _on_workspace_settings_saved(self, ini_path: str) -> None:
-        self.status_var.set("Paramètres du dossier enregistrés dans config.ini.")
+        """Propose de recalculer les lots après modification des réglages."""
+        self.status_var.set(
+            "Paramètres du dossier enregistrés dans config.ini."
+        )
         paths = self.controller.resolve_workspace_paths(ini_path)
         res_dir: str = paths.get("results_dir", "")
         has_existing_lots: bool = os.path.isdir(res_dir) and any(
@@ -272,26 +337,34 @@ class AnonymizerGuiApp(
             "avec ces nouveaux réglages ?",
         ):
             self._start_job("reset_anonymize_only")
-
     def _open_workspace_settings_dialog(self) -> None:
+        """Ouvre la boîte de dialogue des paramètres du dossier actif."""
         ini_path: str = self.current_ini_var.get()
         if not ini_path or not os.path.isfile(ini_path):
-            messagebox.showwarning("Dossier requis", "Ouvrez ou créez d'abord un dossier.")
+            messagebox.showwarning(
+                "Dossier requis", "Ouvrez ou créez d'abord un dossier."
+            )
             return
         WorkspaceSettingsDialog(
-            self, ini_path=ini_path, on_saved=lambda: self._on_workspace_settings_saved(ini_path)
+            self,
+            ini_path=ini_path,
+            on_saved=lambda: self._on_workspace_settings_saved(ini_path),
         )
 
     def _show_calendar_export_popup(self) -> None:
+        """Affiche l'aide d'export sur l'onglet Agenda."""
         ExportGuideDialog(self, initial_tab=0)
 
     def _open_help_dialog(self, initial_tab: int = 0) -> None:
+        """Affiche la fenêtre d'aide sur l'onglet demandé."""
         ExportGuideDialog(self, initial_tab=initial_tab)
 
     def _show_export_guide_popup(self) -> None:
+        """Affiche le guide pas-à-pas d'export des données."""
         ExportGuideDialog(self, initial_tab=0)
 
     def _flush_and_cancel_pending_timers(self) -> None:
+        """Sauvegarde les sélections en attente et annule les timers Tkinter."""
         for timer_attr, flush_fn in (
             ("_contact_save_after_id", self._persist_contact_filter_now),
             ("_sms_save_after_id", self._persist_sms_filter_now),
@@ -318,6 +391,7 @@ class AnonymizerGuiApp(
             pass
 
     def destroy(self) -> None:
+        """Nettoie les timers avant de détruire la fenêtre principale."""
         self._closing = True
         self._flush_and_cancel_pending_timers()
         try:
@@ -327,10 +401,17 @@ class AnonymizerGuiApp(
         super().destroy()
 
     def _on_close_requested(self) -> None:
+        """Gère la fermeture propre de la fenêtre et l'arrêt du sous-processus."""
         if self._closing:
             return
-        if self.is_running and self.current_proc and self.current_proc.poll() is None:
-            if not messagebox.askyesno("Traitement en cours", "Interrompre et fermer ?"):
+        if (
+            self.is_running
+            and self.current_proc
+            and self.current_proc.poll() is None
+        ):
+            if not messagebox.askyesno(
+                "Traitement en cours", "Interrompre et fermer ?"
+            ):
                 return
         self._closing = True
         if self.current_proc is not None and self.current_proc.poll() is None:
@@ -348,10 +429,12 @@ class AnonymizerGuiApp(
 
 
 def show_startup_error_dialog(exc: BaseException, details: str) -> None:
+    """Affiche une boîte de dialogue en cas d'erreur critique au démarrage."""
     _show_startup_error_dialog(exc, details, ROOT_DIR)
 
 
 def _run_app_loop() -> None:
+    """Boucle principale relançant la fenêtre en cas de bascule lecteur d'écran."""
     while True:
         app = AnonymizerGuiApp()
         app.mainloop()
@@ -361,12 +444,14 @@ def _run_app_loop() -> None:
 
 
 def run_with_optional_error_dialog(enable_gui_errors: bool = False) -> int:
+    """Exécute l'application avec capture optionnelle des exceptions de démarrage."""
     return _run_with_optional_error_dialog(
         _run_app_loop, ROOT_DIR, enable_gui_errors=enable_gui_errors
     )
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    """Point d'entrée CLI de l'interface graphique AnonVault."""
     args: List[str] = sys.argv[1:] if argv is None else argv
     if "--screen-reader" in args or _ENV_SR in {"1", "true", "yes"}:
         set_screen_reader_mode(True)

@@ -20,6 +20,7 @@ class TestRunnerAndUrlsGuard(unittest.TestCase):
     """Vérifie le compactage des erreurs, la couverture et les règles d'affichage."""
 
     def test_compact_error_report_deduplicates_and_extracts_warnings(self) -> None:
+        """Vérifie la déduplication des erreurs et la détection des warnings."""
         raw_out: str = (
             "======================================================================\n"
             "ERROR: test_one (tests.test_demo.Suite)\n"
@@ -45,12 +46,11 @@ class TestRunnerAndUrlsGuard(unittest.TestCase):
         self.assertIn("ERROR: test_one", compacted)
         self.assertIn("[DOUBLON] ERROR: test_two", compacted)
         self.assertIn("Ran 2 tests in 0.01s | FAILED (errors=2)", compacted)
-
-        warns: str = rtc.extract_warnings_and_console_errors(raw_out)
-        self.assertEqual(len(warns.splitlines()), 1)
-        self.assertIn("ResourceWarning", warns)
-
+        warn_lines = [ln for ln in compacted.splitlines() if ln.startswith("WARNING:")]
+        self.assertEqual(len(warn_lines), 1)
+        self.assertIn("ResourceWarning", next(iter(warn_lines)))
     def test_extract_coverage_section_and_main_writes_report_files(self) -> None:
+        """Vérifie l'extraction du tableau des modules incomplets (< 100 %)."""
         fake_stdout: str = (
             "Ran 10 tests in 0.12s\nOK\n"
             "=== 3. COUVERTURE (10 tests unitaires + .mbox) ===\n"
@@ -67,9 +67,10 @@ class TestRunnerAndUrlsGuard(unittest.TestCase):
         self.assertIn("COUVERTURE GLOBALE : 92.5%", cov_txt)
         self.assertIn("doc_anonymizer/b.py | 85.0%", cov_txt)
         self.assertNotIn("doc_anonymizer/a.py", cov_txt)
-        self.assertIn("- doc_anonymizer/b.py : 12-14", cov_txt)
+        self.assertIn("doc_anonymizer/b.py | 85.0% | 17/20 | 12-14", cov_txt)
 
     def test_fix_docs_and_svg_urls_repairs_broken_links_and_cleans_temp(self) -> None:
+        """Vérifie la réparation des URLs et la suppression des fichiers temporaires."""
         with tempfile.TemporaryDirectory() as tmp_d:
             tmp_art: str = os.path.join(tmp_d, "iaexport")
             with open(tmp_art, "w", encoding="utf-8") as f_t:

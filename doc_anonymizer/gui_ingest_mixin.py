@@ -74,7 +74,6 @@ class GuiIngestMixin:
             set_win_long(ctypes.c_void_p(hwnd), -4, self._win_dnd_proc_ref)
         except Exception:
             pass
-
     def _on_tkdnd_drop(self, event: Any) -> None:
         raw: str = str(getattr(event, "data", "") or "").strip()
         if raw:
@@ -105,6 +104,7 @@ class GuiIngestMixin:
         folder: str = self.controller.resolve_workspace_paths(ini_path)[key]
         os.makedirs(folder, exist_ok=True)
         self._open_path_in_os(folder)
+
     def _get_selected_linked_index(self) -> Optional[int]:
         if not hasattr(self, "links_tree"):
             return None
@@ -170,10 +170,9 @@ class GuiIngestMixin:
             lock = threading.Lock()
             self._prewarm_lock = lock
         with lock:
-            moved_c, moved_s = self.controller.auto_organize_dropped_files(
+            moved_c, moved_s, dups = self.controller.ws_manager.scan_workspace_step1(
                 ini_path
             )
-            dups = self.controller.load_duplicate_file_items(ini_path)
             self._prewarm_cache_result = (ini_path, moved_c, moved_s, dups)
             return moved_c, moved_s, dups
 

@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import json
 import os
 import re
@@ -17,6 +15,7 @@ class ExtractionFilterLoader:
 
     @staticmethod
     def normalize_any_phone(raw_phone: str) -> str:
+        """Normalise un numéro de téléphone FR ou international."""
         fr_norm: str = DocumentTextUtils._normalize_fr_phone(raw_phone)
         if fr_norm:
             return fr_norm
@@ -27,6 +26,7 @@ class ExtractionFilterLoader:
         return generic if len(digits_only) >= 4 else ""
 
     def load_filter_paths_list(self) -> List[str]:
+        """Retourne la liste des fichiers de contacts utilisés pour le filtrage."""
         sel_file: str = getattr(
             self.config, "selected_extraction_contacts_file", ""
         )
@@ -38,14 +38,15 @@ class ExtractionFilterLoader:
             self.config.discovered_chats_file,
             self.config.manual_contacts_file,
         ]
-    def load_allowed_chat_names(self) -> Set[str]:
+    def load_allowed_chat_names(self) -> Optional[Set[str]]:
+        """Retourne les noms autorisés depuis whitelist_contacts.json, ou None si absent."""
         contacts_dir: str = os.path.dirname(
             os.path.abspath(self.config.contacts_file)
         )
         wl_file: str = os.path.join(contacts_dir, "whitelist_contacts.json")
-        allowed_names: Set[str] = set()
         if not os.path.isfile(wl_file):
-            return allowed_names
+            return None
+        allowed_names: Set[str] = set()
         try:
             with open(wl_file, "r", encoding="utf-8") as f_wl:
                 raw_list = json.load(f_wl)
@@ -62,6 +63,7 @@ class ExtractionFilterLoader:
         return allowed_names
 
     def load_allowed_chat_titles(self) -> Optional[Set[str]]:
+        """Retourne les titres de conversations autorisés, ou None si absent."""
         contacts_dir: str = os.path.dirname(
             os.path.abspath(self.config.contacts_file)
         )
@@ -83,11 +85,12 @@ class ExtractionFilterLoader:
     def is_chat_file_allowed_by_whitelist(
         self, file_path: str, allowed_titles: Optional[Set[str]]
     ) -> bool:
+        """Vérifie si une conversation de chat est autorisée par whitelist_chats.json."""
         if allowed_titles is None:
             return True
         from doc_anonymizer.chat_filter_manager import ChatFilterManager
 
-        meta = ChatFilterManager.inspect_chat_file_metadata(file_path)
+        meta = ChatFilterManager._inspect_chat_metadata(file_path)
         if not meta:
             return True
         norm_title: str = DocumentTextUtils.normalize_word(
@@ -96,6 +99,7 @@ class ExtractionFilterLoader:
         return norm_title in allowed_titles
 
     def load_all_filter_contacts(self) -> Tuple[Dict[str, str], Set[str]]:
+        """Charge tous les numéros et e-mails retenus pour le filtrage."""
         target_phones: Dict[str, str] = {}
         allowed_emails: Set[str] = set()
         for path in self.load_filter_paths_list():
@@ -137,6 +141,7 @@ class ExtractionReportWriter:
     def _merge_existing_lines(
         cls, file_path: str, phones_out: Set[str], emails_out: Set[str]
     ) -> None:
+        """Fusionne les entrées déjà enregistrées dans un fichier de rapport."""
         if not file_path or not os.path.exists(file_path):
             return
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f_old:
@@ -152,13 +157,13 @@ class ExtractionReportWriter:
                     np: str = ExtractionFilterLoader.normalize_any_phone(s)
                     if np:
                         phones_out.add(np)
-
     def finalize_reports(
         self,
         discovered_phones: Set[str],
         discovered_emails: Set[str],
         warnings: List[str],
     ) -> None:
+        """Écrit les rapports finaux (numéros SMS, e-mails et anomalies)."""
         clean_phones: Set[str] = set()
         clean_emails: Set[str] = set()
         for raw_p in discovered_phones:

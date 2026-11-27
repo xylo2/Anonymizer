@@ -1,10 +1,9 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import hashlib
 import os
 import threading
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from doc_anonymizer.chat_extractors import MultiPlatformChatExtractor
+from doc_anonymizer.comm_cache_index import CommunicationExtractionCache
 from doc_anonymizer.comm_extractors import CommunicationExtractor
 from doc_anonymizer.config_manager import PipelineConfig
 from doc_anonymizer.duplicate_files_manager import DuplicateFilesManager
@@ -53,6 +52,12 @@ class DocumentExtractionRunner:
         )
         self.filter_loader: ExtractionFilterLoader = ExtractionFilterLoader(config)
         self.report_writer: ExtractionReportWriter = ExtractionReportWriter(config)
+        audits_dir: str = os.path.dirname(
+            os.path.abspath(config.extraction_report_file)
+        )
+        self.comm_cache: CommunicationExtractionCache = (
+            CommunicationExtractionCache(audits_dir)
+        )
         self._seen_content_hashes: Set[str] = set()
         self._write_lock: threading.Lock = threading.Lock()
         self.skipped_zip_files: List[str] = []
@@ -110,6 +115,7 @@ class DocumentExtractionRunner:
                 auto_ignored.add(os.path.normcase(raw_p))
                 self.duplicate_source_files.append(raw_p)
         return auto_ignored
+
     def collect_source_files(
         self, already_extracted: Optional[Set[str]] = None
     ) -> List[str]:
@@ -156,7 +162,6 @@ class DocumentExtractionRunner:
                 seen.add(full_p)
                 candidates.append(full_p)
         return candidates
-
     def load_all_filter_contacts(self) -> Tuple[Dict[str, str], Set[str]]:
         return self.filter_loader.load_all_filter_contacts()
 
@@ -179,6 +184,7 @@ class DocumentExtractionRunner:
         out_path: str = os.path.join(out_dir, safe_fn)
         DocumentTextUtils.atomic_write_text(out_path, cleaned + "\n")
         return out_path
+
     def _collect_text_identifiers(
         self, text: str, phones_out: Set[str], emails_out: Set[str]
     ) -> None:
@@ -192,6 +198,73 @@ class DocumentExtractionRunner:
                 if ne and not ne.endswith(ExtractionReportWriter.IGNORED_SUFFIXES):
                     emails_out.add(ne)
 
+    def _extract_sms_cached(
+        self, file_path: str, stem: str, target_phones: Dict[str, str],
+        sms_processed: Set[str], disc_phones: Set[str], disc_emails: Set[str],
+    ) -> List[str]:
+        def _build_sms_index() -> Dict[str, Any]:
+            class _CatchAllPhones(dict):  # type: ignore[type-arg]
+                def __contains__(self, k: object) -> bool:
+                    return True
+
+                def __getitem__(self, k: str) -> str:
+                    return f"__NUM_{k}__"
+
+            local_p: Set[str] = set()
+            local_e: Set[str] = set()
+            by_m, errs = self.comm_extractor.parse_sms_xml(
+                file_path, _CatchAllPhones(), set(), local_p, local_e
+            )
+            return {
+                "by_month": {k: [list(x) for x in v] for k, v in by_m.items()},
+                "errors": errs,
+                "phones": sorted(local_p),
+                "emails": sorted(local_e),
+            }
+        cached = self.comm_cache.get_or_build(file_path, "sms_xml", _build_sms_index)
+        for e in cached.get("errors", []):
+            self._log_extraction_warning(str(e))
+        disc_phones.update(cached.get("phones", []))
+        disc_emails.update(cached.get("emails", []))
+
+        fname: str = os.path.basename(file_path)
+        by_month_all: Dict[str, List[Any]] = cached.get("by_month", {})
+        by_month_filt: Dict[str, List[Tuple[int, str]]] = {}
+
+        for period, entries in by_month_all.items():
+            kept: List[Tuple[int, str]] = []
+            for ts_ms, raw_blk in entries:
+                blk: str = str(raw_blk)
+                if not target_phones:
+                    clean_b: str = blk.replace("__NUM_", "").replace("__", "")
+                    kept.append((int(ts_ms), clean_b))
+                    continue
+                matched_aliases: List[str] = []
+                for ph, alias in target_phones.items():
+                    marker: str = f"__NUM_{ph}__"
+                    if marker in blk:
+                        sms_processed.add(f"{fname}|{ph}")
+                        if alias not in matched_aliases:
+                            matched_aliases.append(alias)
+                if matched_aliases:
+                    clean_b = blk
+                    for ph, alias in target_phones.items():
+                        clean_b = clean_b.replace(f"__NUM_{ph}__", alias)
+                    clean_b = clean_b.replace("__NUM_", "").replace("__", "")
+                    kept.append((int(ts_ms), clean_b))
+            if kept:
+                by_month_filt[period] = kept
+
+        generated: List[str] = []
+        for period, entries in sorted(by_month_filt.items()):
+            entries.sort(key=lambda pair: next(iter(pair)))
+            out_p = self._write_period_output(
+                period, "SMS", f"sms_{stem}.txt",
+                "".join(b for _, b in entries),
+            )
+            if out_p:
+                generated.append(out_p)
+        return generated
     def _extract_chat_or_comm(
         self, file_path: str, ext: str, target_phones: Dict[str, str],
         allowed_emails: Set[str], sms_processed: Set[str],
@@ -202,27 +275,16 @@ class DocumentExtractionRunner:
         parent_tag: str = DocumentTextUtils.sanitize_filename_component(
             os.path.basename(os.path.dirname(file_path))
         )
-        allowed_names: Set[str] = self.filter_loader.load_allowed_chat_names()
+        allowed_names: Optional[Set[str]] = self.filter_loader.load_allowed_chat_names()
         allowed_titles: Optional[Set[str]] = (
             self.filter_loader.load_allowed_chat_titles()
         )
         generated: List[str] = []
-
         if ext == ".xml":
-            by_month, errs = self.comm_extractor.parse_sms_xml(
-                file_path, target_phones, sms_processed, disc_phones, disc_emails
+            return self._extract_sms_cached(
+                file_path, stem, target_phones,
+                sms_processed, disc_phones, disc_emails,
             )
-            for e in errs:
-                self._log_extraction_warning(e)
-            for period, entries in sorted(by_month.items()):
-                entries.sort(key=lambda pair: next(iter(pair)))
-                out_p = self._write_period_output(
-                    period, "SMS", f"sms_{stem}.txt",
-                    "".join(b for _, b in entries),
-                )
-                if out_p:
-                    generated.append(out_p)
-            return generated
 
         if ext in {".mbox", ".eml", ".msg", ".pst", ".ost"}:
             if ext == ".msg":
@@ -254,10 +316,23 @@ class DocumentExtractionRunner:
                 file_path, allowed_titles
             ):
                 return []
-            buckets, err_j = self.chat_extractor.extract_json_chat(
-                file_path, target_phones, allowed_emails, disc_phones,
-                disc_emails, allowed_names=allowed_names,
-            )
+            import json
+
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f_j:
+                    payload_j = json.load(f_j)
+            except Exception:
+                payload_j = None
+            if payload_j is not None and self.teams_extractor.is_teams_json_payload(payload_j):
+                buckets = self.teams_extractor.extract_teams_json(
+                    file_path, payload_j, disc_emails
+                )
+                err_j = None
+            else:
+                buckets, err_j = self.chat_extractor.extract_json_chat(
+                    file_path, target_phones, allowed_emails, disc_phones,
+                    disc_emails, allowed_names=allowed_names,
+                )
             if err_j:
                 self._log_extraction_warning(f"{fname} -> {err_j}")
             for period, txt in sorted(buckets.items()):
@@ -267,7 +342,6 @@ class DocumentExtractionRunner:
                 if out_p:
                     generated.append(out_p)
             return generated
-
         if ext == ".vtt":
             if not self.filter_loader.is_chat_file_allowed_by_whitelist(
                 file_path, allowed_titles
@@ -300,7 +374,8 @@ class DocumentExtractionRunner:
                 if norm_p not in self.skipped_zip_files:
                     self.skipped_zip_files.append(norm_p)
             self._log_extraction_warning(
-                f"[ARCHIVE ZIP IGNORÉE] '{fname}' -> archive non analysée par sécurité, décompressez-la."
+                f"[ARCHIVE ZIP IGNORÉE] '{fname}' -> "
+                "archive non analysée par sécurité, décompressez-la."
             )
             with self._write_lock:
                 already_extracted.add(norm_p)
@@ -319,7 +394,6 @@ class DocumentExtractionRunner:
             with self._write_lock:
                 already_extracted.add(norm_p)
             return special
-
         raw_txt: Optional[str] = None
         err_msg: Optional[str] = None
         category: str = "Documents"
