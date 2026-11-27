@@ -19,7 +19,7 @@ class AnonymizerGuiController:
 
     AI_PROMPT_TEMPLATES: List[Tuple[str, str]] = [
         (
-            "1. Dossier médical / MDPH / Santé (chronologie & retentissement)",
+            "1. Dossier AnonVault / MDPH / Santé (chronologie & retentissement)",
             "Tu es un assistant spécialisé en droit médico-social (MDPH, handicap, santé).\n"
             "Analyse les pièces anonymisées ci-dessous et fournis :\n"
             "1) Une frise chronologique détaillée des faits médicaux, bilans et suivis.\n"

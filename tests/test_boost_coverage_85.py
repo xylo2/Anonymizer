@@ -82,7 +82,7 @@ class TestBoostCoverage85(unittest.TestCase):
                 "END:VCARD\n"
                 "BEGIN:VCARD\n"
                 "VERSION:3.0\n"
-                "ORG:Cabinet Médical;Lyon\n"
+                "ORG:Cabinet AnonVault;Lyon\n"
                 "EMAIL:contact@cabinet-sante.fr\n"
                 "END:VCARD\n"
             )
@@ -94,7 +94,7 @@ class TestBoostCoverage85(unittest.TestCase):
         mapped = dict(pairs)
         self.assertEqual(mapped.get("camille.dupont@exemple.fr"), "Camille-Marie Dupont")
         self.assertEqual(mapped.get("+33 6 12 3456 78"), "Camille-Marie Dupont")
-        self.assertEqual(mapped.get("contact@cabinet-sante.fr"), "Cabinet Médical Lyon")
+        self.assertEqual(mapped.get("contact@cabinet-sante.fr"), "Cabinet AnonVault Lyon")
         self.assertEqual(reader.parse_file(os.path.join(self.tmp_dir, "inexistant.vcf")), [])
     def test_manual_contacts_importer_full_flow(self) -> None:
         """Couvre AuditManualContactsImporter (lecture audit, seuils, exclusions, écriture)."""

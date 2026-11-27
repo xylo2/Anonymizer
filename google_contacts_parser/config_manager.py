@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import configparser
 import os
 from typing import Dict, List, Set
@@ -21,8 +19,12 @@ class ContactsConfig:
         if os.path.exists(self.config_path):
             self.parser.read(self.config_path, encoding="utf-8")
 
+        default_csv_dir: str = (
+            self.parser.get("paths", "input_contacts_dir", fallback="").strip()
+            or "input_contacts"
+        )
         self.csv_directory: str = self._resolve_path(
-            "files", "csv_directory", "input_contacts"
+            "files", "csv_directory", default_csv_dir
         )
         raw_prefixes: str = self.parser.get(
             "files", "csv_prefixes", fallback=""
@@ -51,7 +53,6 @@ class ContactsConfig:
         self.excluded_words_file: str = self._resolve_path(
             "files", "excluded_words_file", "data/mots_exclus.txt"
         )
-
         self.output_file: str = self._resolve_path(
             "files", "output_file", "output_contacts/.intermediates/indexed_contacts.txt"
         )

@@ -1,6 +1,5 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import os
+import re
 import tkinter as tk
 from typing import Any, Dict, List, Tuple
 
@@ -41,6 +40,15 @@ class GuiChatTableMixin:
                 f"Conversations enregistrées : {kept} conservée(s)."
             )
 
+    def _get_chat_min_messages(self) -> int:
+        raw: str = (
+            self.chat_min_msg_var.get()  # type: ignore[attr-defined]
+            if hasattr(self, "chat_min_msg_var")
+            else ""
+        )
+        m = re.search(r"(\d+)", raw)
+        return int(m.group(1)) if m else 0
+
     def _on_chat_view_changed(self) -> None:
         self.chat_page_index = 0
         self._render_chat_filter_tree()
@@ -67,14 +75,10 @@ class GuiChatTableMixin:
             self.chat_sort_reverse = col_id == "count"
         self.chat_page_index = 0
         self._render_chat_filter_tree()
-
     def _chat_sort_key(self, item: Dict[str, Any]) -> Tuple[Any, ...]:
         plat_low: str = str(item.get("platform") or "").lower()
         conv_low: str = str(item.get("conversation") or "").lower()
-        part_raw: str = str(
-            item.get("participants_display")
-            or ", ".join(item.get("participants", []))
-        )
+        part_raw: str = str(item.get("participants_display") or ", ".join(item.get("participants", [])))
         part_low: str = part_raw.lower()
         cnt: int = int(item.get("count", 0))
         sort_c: str = getattr(self, "chat_sort_col", "count")
@@ -87,6 +91,7 @@ class GuiChatTableMixin:
         if sort_c == "participants":
             return (part_low, conv_low, -cnt)
         return (cnt, conv_low)
+
     def _render_chat_filter_tree(self) -> None:
         if not hasattr(self, "chat_filter_tree"):
             return
@@ -102,6 +107,7 @@ class GuiChatTableMixin:
         items_all: List[Dict[str, Any]] = getattr(self, "chat_filter_items", [])
         query: str = self.chat_filter_search_var.get().strip().lower() if hasattr(self, "chat_filter_search_var") else ""  # type: ignore[attr-defined]
         view_mode: str = self.chat_filter_view_var.get() if hasattr(self, "chat_filter_view_var") else "Tous"  # type: ignore[attr-defined]
+        min_msgs: int = self._get_chat_min_messages()
         kept_total: int = sum(1 for it in items_all if it.get("selected"))
         ignored_total: int = len(items_all) - kept_total
         indexed = list(enumerate(items_all))
@@ -110,7 +116,7 @@ class GuiChatTableMixin:
         filtered: List[Tuple[int, Dict[str, Any]]] = []
         for orig_idx, item in indexed:
             is_kept: bool = bool(item.get("selected"))
-            if (view_mode == "Gardées" and not is_kept) or (view_mode == "Mises de côté" and is_kept):
+            if (view_mode == "Gardées" and not is_kept) or (view_mode == "Mises de côté" and is_kept) or int(item.get("count", 0)) < min_msgs:
                 continue
             plat_s: str = str(item.get("platform") or "")
             conv_s: str = str(item.get("conversation") or "")
@@ -147,11 +153,12 @@ class GuiChatTableMixin:
 
     def _set_all_chats_selected(self, selected: bool, exclusive: bool = False) -> None:
         query: str = self.chat_filter_search_var.get().strip().lower() if hasattr(self, "chat_filter_search_var") else ""  # type: ignore[attr-defined]
+        min_msgs: int = self._get_chat_min_messages()
         for item in getattr(self, "chat_filter_items", []):
             plat_s: str = str(item.get("platform") or "")
             conv_s: str = str(item.get("conversation") or "")
             part_s: str = str(item.get("participants_display") or ", ".join(item.get("participants", [])))
-            if self._matches_search_query(query, plat_s, conv_s, part_s):  # type: ignore[attr-defined]
+            if int(item.get("count", 0)) >= min_msgs and self._matches_search_query(query, plat_s, conv_s, part_s):  # type: ignore[attr-defined]
                 item["selected"] = selected
             elif exclusive and selected:
                 item["selected"] = False

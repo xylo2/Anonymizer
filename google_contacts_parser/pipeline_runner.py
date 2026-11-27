@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise (bibliothèque standard uniquement)
-
 import os
 import time
 from typing import List, Tuple
@@ -29,9 +27,11 @@ class ContactsPipelineRunner:
         print("=== [1/3] EXTRACTION DES CONTACTS (CSV & vCard .vcf) ===")
         contact_files: List[str] = self.config.get_csv_files()
         if not contact_files:
-            raise FileNotFoundError(
-                f"Aucun fichier CSV ou vCard (.vcf) trouvé dans '{self.config.csv_directory}'."
+            print(
+                f"[INFO] Aucun carnet CSV ou vCard (.vcf) dans "
+                f"'{self.config.csv_directory}' : étape CSV ignorée.\n"
             )
+            return 0, []
 
         csv_reader: GoogleContactsReader = GoogleContactsReader(config=self.config)
         vcf_reader: VCardContactsReader = VCardContactsReader(config=self.config)
@@ -51,7 +51,6 @@ class ContactsPipelineRunner:
             f"-> '{self.config.output_file}'.\n"
         )
         return len(all_entries), contact_files
-
     def _run_anonymization(self) -> int:
         print("=== [2/3] ANONYMISATION DES CONTACTS ===")
         anonymizer: ContactsAnonymizer = ContactsAnonymizer(config=self.config)
@@ -85,6 +84,8 @@ class ContactsPipelineRunner:
         return read_count, written_count, merged_count
 
     def _run_first_name_suggestions(self, csv_files: List[str]) -> int:
+        if not csv_files:
+            return 0
         suggester: MissingFirstNamesSuggester = MissingFirstNamesSuggester(
             config=self.config
         )
@@ -100,9 +101,10 @@ class ContactsPipelineRunner:
     def run_all(self) -> int:
         start_time: float = time.perf_counter()
         _, contact_files = self._run_extraction()
-        self._run_anonymization()
-        self._run_deduplication_and_export()
-        self._run_first_name_suggestions(csv_files=contact_files)
+        if contact_files:
+            self._run_anonymization()
+            self._run_deduplication_and_export()
+            self._run_first_name_suggestions(csv_files=contact_files)
         elapsed_str: str = SharedCoreUtils.format_duration(
             time.perf_counter() - start_time
         )

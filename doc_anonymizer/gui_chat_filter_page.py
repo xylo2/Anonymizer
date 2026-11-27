@@ -1,12 +1,10 @@
-# Commandes pip à exécuter : pip install customtkinter>=5.2.2
-
 import tkinter as tk
 from typing import Any, Dict
 from doc_anonymizer import gui_widgets as _gw
 from doc_anonymizer.gui_widgets import (
     CleanSegmentedTabs, HAS_CTK, UI_COLORS, ctk, make_card,
-    make_modern_entry, make_styled_button, register_scalable_font,
-    scaled_size,
+    make_modern_dropdown, make_modern_entry, make_styled_button,
+    register_scalable_font, scaled_size,
 )
 
 
@@ -16,7 +14,9 @@ class GuiChatFilterPageMixin:
     pages: Dict[str, Any]
 
     def _build_page_chats(self) -> None:
-        use_ctk: bool = bool(HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE)
+        use_ctk: bool = bool(
+            HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE
+        )
         page = self.pages["chats"]
         card_ch = make_card(
             page,
@@ -24,10 +24,13 @@ class GuiChatFilterPageMixin:
             subtitle="Vos exports Google Chat, Teams, WhatsApp, Messenger et Signal sont détectés automatiquement.",
             accent_color=UI_COLORS["primary"],
         )
-        self.chat_files_summary_var = tk.StringVar(value="Exports de messageries détectés : aucun.")
+        self.chat_files_summary_var = tk.StringVar(
+            value="Exports de messageries détectés : aucun."
+        )
         lbl_cf = tk.Label(
             card_ch, textvariable=self.chat_files_summary_var,
-            bg=UI_COLORS["card"], fg=UI_COLORS["muted"], font=("Segoe UI", scaled_size(8)),
+            bg=UI_COLORS["card"], fg=UI_COLORS["muted"],
+            font=("Segoe UI", scaled_size(8)),
         )
         lbl_cf.pack(anchor="w")
         register_scalable_font(lbl_cf, "Segoe UI", 8, "normal")
@@ -35,7 +38,8 @@ class GuiChatFilterPageMixin:
         self.chat_filter_summary_var = tk.StringVar(value="0 conversation(s).")
         lbl_cs = tk.Label(
             card_ch, textvariable=self.chat_filter_summary_var,
-            bg=UI_COLORS["card"], fg="#1d4ed8", font=("Segoe UI", scaled_size(9), "bold"),
+            bg=UI_COLORS["card"], fg="#1d4ed8",
+            font=("Segoe UI", scaled_size(9), "bold"),
         )
         lbl_cs.pack(anchor="w", pady=(2, 6))
         register_scalable_font(lbl_cs, "Segoe UI", 9, "bold")
@@ -44,18 +48,42 @@ class GuiChatFilterPageMixin:
         self.chat_filter_view_var = tk.StringVar(value="Tous")
         self.tabs_chat_view = CleanSegmentedTabs(
             bar_ch,
-            [("Tous (0)", "Tous"), ("Gardées (0)", "Gardées"), ("Mises de côté (0)", "Mises de côté")],
+            [
+                ("Tous (0)", "Tous"),
+                ("Gardées (0)", "Gardées"),
+                ("Mises de côté (0)", "Mises de côté"),
+            ],
             self.chat_filter_view_var,
             command=lambda _v: self._on_chat_view_changed(),  # type: ignore[attr-defined]
         )
         self.tabs_chat_view.pack(side="left", padx=(0, 8))
+        self.chat_min_msg_var = tk.StringVar(value="Tous msgs")
+        self.combo_chat_min_msg = make_modern_dropdown(
+            bar_ch,
+            self.chat_min_msg_var,
+            ["Tous msgs", "≥ 2 msgs", "≥ 5 msgs", "≥ 10 msgs", "≥ 50 msgs"],
+            width=120,
+            command=lambda _v: self._on_chat_view_changed(),  # type: ignore[attr-defined]
+        )
+        self.combo_chat_min_msg.pack(side="left", padx=(0, 6))
         self.chat_filter_search_var = tk.StringVar()
-        self.ent_chat_search = make_modern_entry(bar_ch, textvariable=self.chat_filter_search_var, width=170, placeholder="Rechercher...")
+        self.ent_chat_search = make_modern_entry(
+            bar_ch, textvariable=self.chat_filter_search_var,
+            width=150, placeholder="Rechercher...",
+        )
         self.ent_chat_search.pack(side="left", padx=(0, 6))
         for seq in ("<KeyRelease>", "<FocusOut>", "<<Paste>>", "<Control-v>", "<Control-V>"):
-            self.ent_chat_search.bind(seq, lambda _e: self.after_idle(self._on_chat_search_typed), add="+")  # type: ignore[attr-defined]
-        make_styled_button(bar_ch, text="Tout cocher", command=lambda: self._set_all_chats_selected(True), variant="secondary").pack(side="left", padx=(0, 4))  # type: ignore[attr-defined]
-        make_styled_button(bar_ch, text="Tout décocher", command=lambda: self._set_all_chats_selected(False), variant="secondary").pack(side="left")  # type: ignore[attr-defined]
+            self.ent_chat_search.bind(
+                seq, lambda _e: self.after_idle(self._on_chat_search_typed), add="+"  # type: ignore[attr-defined]
+            )
+        make_styled_button(
+            bar_ch, text="Tout cocher",
+            command=lambda: self._set_all_chats_selected(True), variant="secondary",  # type: ignore[attr-defined]
+        ).pack(side="left", padx=(0, 4))
+        make_styled_button(
+            bar_ch, text="Tout décocher",
+            command=lambda: self._set_all_chats_selected(False), variant="secondary",  # type: ignore[attr-defined]
+        ).pack(side="left")
 
         (
             self.chat_filter_tree,
@@ -80,7 +108,10 @@ class GuiChatFilterPageMixin:
 
         nav_ch = tk.Frame(page, bg=UI_COLORS["bg"])
         nav_ch.pack(fill="x", pady=(6, 0))
-        make_styled_button(nav_ch, text="<- Retour (Étape 3)", command=lambda: self._show_page("sms"), variant="secondary").pack(side="left")  # type: ignore[attr-defined]
+        make_styled_button(
+            nav_ch, text="<- Retour (Étape 3)",
+            command=lambda: self._show_page("sms"), variant="secondary",  # type: ignore[attr-defined]
+        ).pack(side="left")
         if use_ctk:
             btn_next_ch = ctk.CTkButton(
                 nav_ch, text="Étape suivante : Choisir l'objectif ->",
@@ -91,4 +122,7 @@ class GuiChatFilterPageMixin:
             register_scalable_font(btn_next_ch, "Segoe UI", 11, "bold")
             btn_next_ch.pack(side="right")
         else:
-            make_styled_button(nav_ch, text="Étape suivante : Choisir l'objectif ->", command=self._save_chat_filter_and_continue, variant="primary").pack(side="right")  # type: ignore[attr-defined]
+            make_styled_button(
+                nav_ch, text="Étape suivante : Choisir l'objectif ->",
+                command=self._save_chat_filter_and_continue, variant="primary",  # type: ignore[attr-defined]
+            ).pack(side="right")

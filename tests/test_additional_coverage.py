@@ -70,7 +70,7 @@ class TestAdditionalCoverage(unittest.TestCase):
 
         docx_path: str = os.path.join(self.tmp_dir, "compte_rendu.docx")
         doc = docx.Document()
-        doc.add_paragraph("Compte rendu médical de Camille Dupont.")
+        doc.add_paragraph("Compte rendu AnonVault de Camille Dupont.")
         tbl = doc.add_table(rows=2, cols=2)
         tbl.cell(0, 0).text = "Date"
         tbl.cell(0, 1).text = "Observation"
@@ -81,7 +81,7 @@ class TestAdditionalCoverage(unittest.TestCase):
         txt_docx, err_docx = ext.extract_docx(docx_path)
         self.assertIsNone(err_docx)
         assert txt_docx is not None
-        self.assertIn("Compte rendu médical de Camille Dupont.", txt_docx)
+        self.assertIn("Compte rendu AnonVault de Camille Dupont.", txt_docx)
         self.assertIn("12/05/2024 | Suivi orthophonique", txt_docx)
 
         xlsx_path: str = os.path.join(self.tmp_dir, "heures_sup.xlsx")
@@ -172,7 +172,7 @@ class TestAdditionalCoverage(unittest.TestCase):
         page = pdf_doc.new_page()
         page.insert_text(
             (72, 72),
-            "Ordonnance médicale jointe à l'e-mail pour Camille Dupont (document complet).",
+            "Ordonnance AnonVaulte jointe à l'e-mail pour Camille Dupont (document complet).",
         )
         pdf_bytes: bytes = pdf_doc.tobytes()
         pdf_doc.close()
@@ -180,7 +180,7 @@ class TestAdditionalCoverage(unittest.TestCase):
         msg = EmailMessage()
         msg["From"] = "Marc Lefevre <marc.lefevre@exemple.fr>"
         msg["To"] = "Camille Dupont <camille.dupont@exemple.fr>"
-        msg["Subject"] = "Pièce jointe médicale"
+        msg["Subject"] = "Pièce jointe AnonVaulte"
         msg["Date"] = "Mon, 10 Jun 2024 08:30:00 +0200"
         msg.set_content("Veuillez trouver ci-joint l'ordonnance.")
         msg.add_attachment(
@@ -200,7 +200,7 @@ class TestAdditionalCoverage(unittest.TestCase):
         self.assertIsNone(err)
         self.assertIn("2024-06", by_month)
         joined: str = "\n".join(by_month["2024-06"])
-        self.assertIn("Ordonnance médicale jointe", joined)
+        self.assertIn("Ordonnance AnonVaulte jointe", joined)
 
         xxe_xml: str = os.path.join(self.tmp_dir, "malicious_sms.xml")
         with open(xxe_xml, "w", encoding="utf-8") as f_xml:

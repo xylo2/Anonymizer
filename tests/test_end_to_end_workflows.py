@@ -57,7 +57,7 @@ class TestEndToEndBusinessWorkflows(unittest.TestCase):
         paths_b = self.ctrl.resolve_workspace_paths(ini_b)
 
         with open(os.path.join(paths_a["sources_dir"], "2024-03_bilan.txt"), "w", encoding="utf-8") as f_a:
-            f_a.write("Bilan médical de Camille Dupont réalisé par Dr Valmont à Lyon.\n")
+            f_a.write("Bilan AnonVault de Camille Dupont réalisé par Dr Valmont à Lyon.\n")
         with open(os.path.join(paths_b["sources_dir"], "2024-04_avertissement.txt"), "w", encoding="utf-8") as f_b:
             f_b.write("Courrier RH de Marc Lefevre concernant le licenciement à Paris.\n")
 

@@ -39,7 +39,6 @@ class TestNewGuiAndMaskerCoverage(unittest.TestCase):
         app.withdraw()
         app._sync_docs_tasks = True  # type: ignore[attr-defined]
         return app
-
     def test_gui_duplicates_columns_entry_and_scroll(self) -> None:
         try:
             app = self._new_app()
@@ -72,7 +71,7 @@ class TestNewGuiAndMaskerCoverage(unittest.TestCase):
             self.assertEqual(app.contact_filter_search_var.get(), "")
 
             mgr = TreeviewColumnLayoutManager.attach_to_tree(app.contacts_filter_tree)
-            for col in ("phones", "emails", "alias"):
+            for col in ("phones", "emails", "alias", "count"):
                 mgr.toggle_column_visibility(col)
             mgr.toggle_column_visibility("keep")
             self.assertEqual(mgr.get_visible_columns(), ["keep"])

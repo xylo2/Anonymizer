@@ -53,7 +53,7 @@ class TestWhatsAppAndMessengerHtml(unittest.TestCase):
 
         pdf_doc = pymupdf.open()
         page = pdf_doc.new_page()
-        page.insert_text((72, 72), "Attestation médicale pour Claire Bernard.")
+        page.insert_text((72, 72), "Attestation AnonVaulte pour Claire Bernard.")
         pdf_path_dir: str = os.path.join(sources, "WhatsApp_Claire_Bernard")
         os.makedirs(pdf_path_dir, exist_ok=True)
         pdf_doc.save(os.path.join(pdf_path_dir, "2024-09-18_attestation.pdf"))
@@ -103,7 +103,7 @@ class TestWhatsAppAndMessengerHtml(unittest.TestCase):
                 chunks.append(f_res.read())
         merged: str = "\n".join(chunks)
 
-        self.assertIn("Attestation médicale pour Claire B.", merged)
+        self.assertIn("Attestation AnonVaulte pour Claire B.", merged)
         self.assertIn("MESSENGER : Sophie M.", merged)
         self.assertNotIn("Claire Bernard", merged)
         self.assertNotIn("Sophie Martin", merged)

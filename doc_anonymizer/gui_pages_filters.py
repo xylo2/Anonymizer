@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : pip install customtkinter>=5.2.2
-
 import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable, Dict, Tuple
@@ -8,8 +6,8 @@ from doc_anonymizer.gui_chat_filter_page import GuiChatFilterPageMixin
 from doc_anonymizer.gui_table_helpers import TreeviewTableHelper
 from doc_anonymizer.gui_widgets import (
     CleanSegmentedTabs, HAS_CTK, UI_COLORS, ctk, make_card,
-    make_modern_entry, make_styled_button, register_scalable_font,
-    scaled_size,
+    make_modern_dropdown, make_modern_entry, make_styled_button,
+    register_scalable_font, scaled_size,
 )
 
 
@@ -48,6 +46,7 @@ class GuiPagesFiltersMixin(GuiChatFilterPageMixin):
         btn_prev = make_styled_button(pager, text="< Précédent", command=on_prev, variant="secondary")
         btn_prev.pack(side="right")
         return tree, info_var, btn_prev, btn_next
+
     def _build_page_setup(self) -> None:
         use_ctk: bool = bool(HAS_CTK and ctk is not None and not _gw.SCREEN_READER_MODE)
         page = self.pages["setup"]
@@ -64,14 +63,17 @@ class GuiPagesFiltersMixin(GuiChatFilterPageMixin):
         self.contact_filter_view_var = tk.StringVar(value="Tous")
         self.tabs_contact_view = CleanSegmentedTabs(bar_c, [("Tous (0)", "Tous"), ("Gardés (0)", "Gardés"), ("Mis de côté (0)", "Mis de côté")], self.contact_filter_view_var, command=lambda _v: self._on_contact_view_changed())  # type: ignore[attr-defined]
         self.tabs_contact_view.pack(side="left", padx=(0, 8))
+        self.contact_min_msg_var = tk.StringVar(value="Tous msgs")
+        self.combo_contact_min_msg = make_modern_dropdown(bar_c, self.contact_min_msg_var, ["Tous msgs", "≥ 2 msgs", "≥ 5 msgs", "≥ 10 msgs", "≥ 50 msgs"], width=120, command=lambda _v: self._on_contact_view_changed())  # type: ignore[attr-defined]
+        self.combo_contact_min_msg.pack(side="left", padx=(0, 6))
         self.contact_filter_search_var = tk.StringVar()
-        self.ent_contact_search = make_modern_entry(bar_c, textvariable=self.contact_filter_search_var, width=150, placeholder="Rechercher...")
+        self.ent_contact_search = make_modern_entry(bar_c, textvariable=self.contact_filter_search_var, width=130, placeholder="Rechercher...")
         self.ent_contact_search.pack(side="left", padx=(0, 6))
         for seq in ("<KeyRelease>", "<FocusOut>", "<<Paste>>", "<Control-v>", "<Control-V>"):
             self.ent_contact_search.bind(seq, lambda _e: self.after_idle(self._on_contact_search_typed), add="+")  # type: ignore[attr-defined]
         make_styled_button(bar_c, text="Tout décocher", command=lambda: self._set_all_contacts_selected(False), variant="secondary").pack(side="right")  # type: ignore[attr-defined]
         make_styled_button(bar_c, text="Tout cocher", command=lambda: self._set_all_contacts_selected(True), variant="secondary").pack(side="right", padx=(0, 4))  # type: ignore[attr-defined]
-        self.contacts_filter_tree, self.contact_page_info_var, self.btn_contact_prev_page, self.btn_contact_next_page = self._build_tree_and_pager(card_c, ("keep", "alias", "phones", "emails"), (("keep", "STATUT", 100, "center", lambda: self._sort_contacts_by_column("keep")), ("alias", "CONTACT", 180, "w", lambda: self._sort_contacts_by_column("alias")), ("phones", "TÉLÉPHONE", 175, "w", lambda: self._sort_contacts_by_column("phones")), ("emails", "EMAIL", 205, "w", lambda: self._sort_contacts_by_column("emails"))), self._toggle_contact_row_by_id, self._toggle_selected_contact_filter, lambda: self._change_contact_page(-1), lambda: self._change_contact_page(1))  # type: ignore[attr-defined]
+        self.contacts_filter_tree, self.contact_page_info_var, self.btn_contact_prev_page, self.btn_contact_next_page = self._build_tree_and_pager(card_c, ("keep", "alias", "phones", "emails", "count"), (("keep", "STATUT", 95, "center", lambda: self._sort_contacts_by_column("keep")), ("alias", "CONTACT", 170, "w", lambda: self._sort_contacts_by_column("alias")), ("phones", "TÉLÉPHONE", 155, "w", lambda: self._sort_contacts_by_column("phones")), ("emails", "EMAIL", 185, "w", lambda: self._sort_contacts_by_column("emails")), ("count", "MESSAGES", 90, "center", lambda: self._sort_contacts_by_column("count"))), self._toggle_contact_row_by_id, self._toggle_selected_contact_filter, lambda: self._change_contact_page(-1), lambda: self._change_contact_page(1))  # type: ignore[attr-defined]
         nav_c = tk.Frame(page, bg=UI_COLORS["bg"])
         nav_c.pack(fill="x", pady=(6, 0))
         make_styled_button(nav_c, text="<- Retour (Étape 1)", command=self._go_back_from_setup, variant="secondary").pack(side="left")  # type: ignore[attr-defined]
@@ -99,8 +101,11 @@ class GuiPagesFiltersMixin(GuiChatFilterPageMixin):
         self.sms_filter_view_var = tk.StringVar(value="Tous")
         self.tabs_sms_view = CleanSegmentedTabs(bar_s, [("Tous (0)", "Tous"), ("Gardés (0)", "Gardés"), ("Mis de côté (0)", "Mis de côté"), ("Numéros courts (0)", "Numéros courts")], self.sms_filter_view_var, command=lambda _v: self._on_sms_view_changed())  # type: ignore[attr-defined]
         self.tabs_sms_view.pack(side="left", padx=(0, 8))
+        self.sms_min_msg_var = tk.StringVar(value="Tous msgs")
+        self.combo_sms_min_msg = make_modern_dropdown(bar_s, self.sms_min_msg_var, ["Tous msgs", "≥ 2 msgs", "≥ 5 msgs", "≥ 10 msgs", "≥ 50 msgs"], width=120, command=lambda _v: self._on_sms_view_changed())  # type: ignore[attr-defined]
+        self.combo_sms_min_msg.pack(side="left", padx=(0, 6))
         self.sms_filter_search_var = tk.StringVar()
-        self.ent_sms_search = make_modern_entry(bar_s, textvariable=self.sms_filter_search_var, width=140, placeholder="Rechercher...")
+        self.ent_sms_search = make_modern_entry(bar_s, textvariable=self.sms_filter_search_var, width=130, placeholder="Rechercher...")
         self.ent_sms_search.pack(side="left", padx=(0, 6))
         for seq in ("<KeyRelease>", "<FocusOut>", "<<Paste>>", "<Control-v>", "<Control-V>"):
             self.ent_sms_search.bind(seq, lambda _e: self.after_idle(self._on_sms_search_typed), add="+")  # type: ignore[attr-defined]

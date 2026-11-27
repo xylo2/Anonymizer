@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import configparser
 import hashlib
 import json
@@ -48,6 +46,7 @@ class WorkspaceManager:
         except (OSError, json.JSONDecodeError):
             pass
         return ""
+
     def save_last_opened_workspace(self, ini_path: str) -> None:
         """Mémorise le dernier dossier ouvert pour le proposer au démarrage."""
         if not ini_path:
@@ -71,7 +70,6 @@ class WorkspaceManager:
                 )
         except OSError:
             pass
-
     def list_workspaces(self) -> List[Tuple[str, str]]:
         results: List[Tuple[str, str]] = []
         if not os.path.isdir(self.workspaces_base_dir):
@@ -183,13 +181,51 @@ class WorkspaceManager:
             cfg.write(f_ini)
         self.save_last_opened_workspace(ini_path)
         return ini_path
+    @classmethod
+    def _ensure_contacts_ini_keys(cls, abs_ini: str, ws_dir: str, cfg: configparser.ConfigParser) -> None:
+        """Garantit que csv_directory et les sorties contacts pointent vers le dossier isolé."""
+        if not os.path.isfile(abs_ini):
+            return
+        in_contacts: str = os.path.join(ws_dir, "input_contacts")
+        contacts_dir: str = os.path.join(ws_dir, "contacts")
+        inter_dir: str = os.path.join(contacts_dir, ".intermediates")
+        dirty: bool = False
+        if not cfg.has_section("files"):
+            cfg.add_section("files")
+            dirty = True
+        cur_csv: str = cfg.get("files", "csv_directory", fallback="").strip()
+        if not cur_csv or not os.path.isabs(cur_csv):
+            cfg.set("files", "csv_directory", in_contacts)
+            dirty = True
+        expected_files: Dict[str, str] = {
+            "output_file": os.path.join(inter_dir, "indexed_contacts.txt"),
+            "anonymized_output_file": os.path.join(inter_dir, "anonymized_contacts.txt"),
+            "surnames_output_file": os.path.join(inter_dir, "contact_surnames.txt"),
+            "deduplicated_output_file": os.path.join(inter_dir, "deduplicated_contacts.txt"),
+            "suggested_first_names_file": os.path.join(inter_dir, "suggested_first_names.txt"),
+            "inverted_output_file": os.path.join(contacts_dir, "contacts.txt"),
+            "manual_contacts_file": os.path.join(contacts_dir, "contacts_manuels.txt"),
+            "discovered_contacts_file": os.path.join(contacts_dir, "discovered_email_contacts.txt"),
+        }
+        for key, target_p in expected_files.items():
+            cur_v: str = cfg.get("files", key, fallback="").strip()
+            if not cur_v or not os.path.isabs(cur_v):
+                cfg.set("files", key, target_p)
+                dirty = True
+        if dirty:
+            try:
+                with open(abs_ini, "w", encoding="utf-8") as f_out:
+                    cfg.write(f_out)
+            except OSError:
+                pass
 
-    @staticmethod
-    def resolve_workspace_paths(ini_path: str) -> Dict[str, str]:
+    @classmethod
+    def resolve_workspace_paths(cls, ini_path: str) -> Dict[str, str]:
         abs_ini: str = os.path.abspath(ini_path)
         ws_dir: str = os.path.dirname(abs_ini)
         cfg = configparser.ConfigParser()
         cfg.read(abs_ini, encoding="utf-8")
+        cls._ensure_contacts_ini_keys(abs_ini, ws_dir, cfg)
 
         def _get(key: str, default_rel: str) -> str:
             raw: str = ""
@@ -212,35 +248,14 @@ class WorkspaceManager:
             "contacts_dir": _get("contacts_dir", "contacts"),
             "transcriptions_dir": _get("transcriptions_dir", "transcriptions"),
             "results_dir": _get("results_dir", "results"),
-            "contacts_file": _get(
-                "contacts_file", os.path.join("contacts", "contacts.txt")
-            ),
-            "selected_extraction_contacts_file": _get(
-                "selected_extraction_contacts_file",
-                os.path.join("contacts", "selected_extraction_contacts.txt"),
-            ),
-            "mapping_file": _get(
-                "mapping_file", os.path.join("contacts", "mapping.json")
-            ),
-            "manual_contacts_file": _get(
-                "manual_contacts_file",
-                os.path.join("contacts", "contacts_manuels.txt"),
-            ),
-            "locations_file": _get(
-                "locations_file", os.path.join("contacts", "villes_masquees.txt")
-            ),
-            "audit_copy_file": _get(
-                "audit_copy_file",
-                os.path.join("audits", "residual_names_copy.txt"),
-            ),
-            "excluded_words_file": _get(
-                "excluded_words_file",
-                os.path.join("contacts", "mots_exclus_dossier.txt"),
-            ),
-            "audit_report_file": _get(
-                "audit_report_file",
-                os.path.join("audits", "residual_names_audit.txt"),
-            ),
+            "contacts_file": _get("contacts_file", os.path.join("contacts", "contacts.txt")),
+            "selected_extraction_contacts_file": _get("selected_extraction_contacts_file", os.path.join("contacts", "selected_extraction_contacts.txt")),
+            "mapping_file": _get("mapping_file", os.path.join("contacts", "mapping.json")),
+            "manual_contacts_file": _get("manual_contacts_file", os.path.join("contacts", "contacts_manuels.txt")),
+            "locations_file": _get("locations_file", os.path.join("contacts", "villes_masquees.txt")),
+            "audit_copy_file": _get("audit_copy_file", os.path.join("audits", "residual_names_copy.txt")),
+            "excluded_words_file": _get("excluded_words_file", os.path.join("contacts", "mots_exclus_dossier.txt")),
+            "audit_report_file": _get("audit_report_file", os.path.join("audits", "residual_names_audit.txt")),
         }
 
     def detect_zip_files(self, ini_path: str) -> List[str]:
@@ -252,21 +267,17 @@ class WorkspaceManager:
                 for fn in sorted(files):
                     if fn.lower().endswith(".zip") and not fn.startswith("."):
                         zips.append(os.path.join(root_p, fn))
-        linked_files, _ = LinkedSourcesManager(
-            paths["workspace_root"]
-        ).expand_linked_files(set())
+        linked_files, _ = LinkedSourcesManager(paths["workspace_root"]).expand_linked_files(set())
         for fp in linked_files:
             if fp.lower().endswith(".zip") and fp not in zips:
                 zips.append(fp)
         return zips
+
     @staticmethod
     def compute_sources_signature(paths: Dict[str, str]) -> str:
         """Calcule une empreinte rapide des pièces, liens et carnets."""
         digest = hashlib.sha256()
-        for tag, folder in (
-            ("S", paths["sources_dir"]),
-            ("C", paths.get("contacts_dir", "")),
-        ):
+        for tag, folder in (("S", paths["sources_dir"]), ("C", paths.get("contacts_dir", ""))):
             if not folder or not os.path.isdir(folder):
                 continue
             for root_p, dirs, files in os.walk(folder):
@@ -277,53 +288,34 @@ class WorkspaceManager:
                     fp: str = os.path.join(root_p, fn)
                     try:
                         st = os.stat(fp)
-                        digest.update(
-                            f"{tag}|{fp}|{st.st_size}|{st.st_mtime_ns}\n".encode(
-                                "utf-8"
-                            )
-                        )
+                        digest.update(f"{tag}|{fp}|{st.st_size}|{st.st_mtime_ns}\n".encode("utf-8"))
                     except OSError:
                         continue
-        links_file: str = os.path.join(
-            paths["workspace_root"], "linked_sources.json"
-        )
+        links_file: str = os.path.join(paths["workspace_root"], "linked_sources.json")
         if os.path.isfile(links_file):
             try:
                 st_l = os.stat(links_file)
-                digest.update(
-                    f"L|{st_l.st_size}|{st_l.st_mtime_ns}\n".encode("utf-8")
-                )
+                digest.update(f"L|{st_l.st_size}|{st_l.st_mtime_ns}\n".encode("utf-8"))
             except OSError:
                 pass
-        linked_files, _ = LinkedSourcesManager(
-            paths["workspace_root"]
-        ).expand_linked_files(set())
+        linked_files, _ = LinkedSourcesManager(paths["workspace_root"]).expand_linked_files(set())
         for fp in sorted(linked_files):
             try:
                 st = os.stat(fp)
-                digest.update(
-                    f"R|{fp}|{st.st_size}|{st.st_mtime_ns}\n".encode("utf-8")
-                )
+                digest.update(f"R|{fp}|{st.st_size}|{st.st_mtime_ns}\n".encode("utf-8"))
             except OSError:
                 continue
         return digest.hexdigest()
 
-    def auto_organize_dropped_files(
-        self, ini_path: str, force: bool = False
-    ) -> Tuple[int, int]:
+    def auto_organize_dropped_files(self, ini_path: str, force: bool = False) -> Tuple[int, int]:
         paths = self.resolve_workspace_paths(ini_path)
-        cache_path: str = os.path.join(
-            paths["workspace_root"], "audits", ".step1_scan_cache.json"
-        )
+        cache_path: str = os.path.join(paths["workspace_root"], "audits", ".step1_scan_cache.json")
         sig_before: str = self.compute_sources_signature(paths)
         if not force and os.path.isfile(cache_path):
             try:
                 with open(cache_path, "r", encoding="utf-8") as f_c:
                     cached = json.load(f_c)
-                if (
-                    isinstance(cached, dict)
-                    and cached.get("signature") == sig_before
-                ):
+                if isinstance(cached, dict) and cached.get("signature") == sig_before:
                     return 0, 0
             except (OSError, json.JSONDecodeError):
                 pass
@@ -334,8 +326,7 @@ class WorkspaceManager:
         importer = ContactCatalogImporter(paths, ini_path)
         sms_mgr = SmsFilterManager(paths, importer)
         chat_mgr = ChatFilterManager(paths, importer)
-        moved_contacts: int = 0
-        moved_sms: int = 0
+        moved_contacts = moved_sms = 0
 
         if os.path.isdir(src_dir):
             for root, _, files in os.walk(src_dir):
@@ -355,9 +346,7 @@ class WorkspaceManager:
                         continue
             chat_mgr.organize_chat_exports(move=True)
 
-        linked_files, _ = LinkedSourcesManager(
-            paths["workspace_root"]
-        ).expand_linked_files(set())
+        linked_files, _ = LinkedSourcesManager(paths["workspace_root"]).expand_linked_files(set())
         for full_p in linked_files:
             try:
                 if ContactCatalogImporter.is_contact_catalog_file(full_p):
@@ -368,9 +357,7 @@ class WorkspaceManager:
                     moved_sms += 1
                 elif ChatFilterManager.is_chat_export_file(full_p):
                     os.makedirs(chat_dir, exist_ok=True)
-                    dest_c: str = ContactCatalogImporter._unique_dest_path(
-                        chat_dir, os.path.basename(full_p)
-                    )
+                    dest_c: str = ContactCatalogImporter._unique_dest_path(chat_dir, os.path.basename(full_p))
                     if os.path.basename(full_p) not in os.listdir(chat_dir):
                         shutil.copy2(full_p, dest_c)
             except OSError:
@@ -381,15 +368,7 @@ class WorkspaceManager:
         try:
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
             with open(cache_path, "w", encoding="utf-8") as f_out:
-                json.dump(
-                    {
-                        "signature": sig_after,
-                        "moved_contacts": moved_contacts,
-                        "moved_sms": moved_sms,
-                    },
-                    f_out,
-                    ensure_ascii=False,
-                )
+                json.dump({"signature": sig_after, "moved_contacts": moved_contacts, "moved_sms": moved_sms}, f_out, ensure_ascii=False)
         except OSError:
             pass
         return moved_contacts, moved_sms

@@ -47,7 +47,7 @@ class TestContactsPipeline(unittest.TestCase):
 
         self.assertTrue(
             ContactTextUtils.is_non_person_entity(
-                "Cabinet Médical", "0102030405", prefixes, keywords, first_names
+                "Cabinet AnonVault", "0102030405", prefixes, keywords, first_names
             )
         )
         self.assertTrue(

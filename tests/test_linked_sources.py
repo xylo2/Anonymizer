@@ -41,7 +41,7 @@ class TestLinkedSourcesReadOnly(unittest.TestCase):
         os.makedirs(external_repo, exist_ok=True)
 
         orig_note: str = os.path.join(external_repo, "2024-06_compte_rendu.txt")
-        orig_note_content: str = "Compte rendu médical de Camille Dupont.\n"
+        orig_note_content: str = "Compte rendu AnonVault de Camille Dupont.\n"
         with open(orig_note, "w", encoding="utf-8") as f_n:
             f_n.write(orig_note_content)
         orig_mtime: float = os.path.getmtime(orig_note)

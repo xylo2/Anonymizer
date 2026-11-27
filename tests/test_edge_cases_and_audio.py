@@ -98,7 +98,7 @@ class TestEdgeCasesAndAudio(unittest.TestCase):
         os.makedirs(trans_doc_dir, exist_ok=True)
         paragraph = (
             "Compte rendu détaillé avec Jean Dupont et Claire Bernard "
-            "concernant le suivi administratif et médical du dossier. " * 12 + "\n"
+            "concernant le suivi administratif et AnonVault du dossier. " * 12 + "\n"
         )
         for idx in (1, 2):
             with open(os.path.join(trans_doc_dir, f"gros_document_{idx}.txt"), "w", encoding="utf-8") as f:

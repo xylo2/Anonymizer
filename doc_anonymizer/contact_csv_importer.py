@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import csv
 import json
 import os
@@ -49,12 +47,8 @@ def build_person_initial_alias(first_name: str, last_name: str, fallback: str = 
         split_idx: int = len(tokens) - 1
         while split_idx > 1 and tokens[split_idx - 1].lower().rstrip("'\u2019") in _NAME_PARTICLES:
             split_idx -= 1
-        fn_part: str = " ".join(tokens[:split_idx])
-        ln_part: str = " ".join(tokens[split_idx:])
-        return f"{fn_part} {_format_surname_initials(ln_part)}"
+        return f"{' '.join(tokens[:split_idx])} {_format_surname_initials(' '.join(tokens[split_idx:]))}"
     return fallback.strip()
-
-
 class ContactCatalogImporter:
     """Gère l'importation et l'indexation des carnets (.csv / .vcf) et la liste blanche contacts."""
 
@@ -105,11 +99,9 @@ class ContactCatalogImporter:
             return candidate
         stem, ext = os.path.splitext(filename)
         idx: int = 2
-        while True:
-            alt: str = os.path.join(dest_dir, f"{stem}_{idx}{ext}")
-            if not os.path.exists(alt):
-                return alt
+        while os.path.exists(os.path.join(dest_dir, f"{stem}_{idx}{ext}")):
             idx += 1
+        return os.path.join(dest_dir, f"{stem}_{idx}{ext}")
     def parse_file_to_mapping(self, source_file: str, mapping_data: Dict[str, Any]) -> None:
         if source_file.lower().endswith(".csv"):
             with open(source_file, "r", encoding="utf-8-sig", newline="") as f_csv:
@@ -146,22 +138,48 @@ class ContactCatalogImporter:
                 if norm_v:
                     mapping_data[norm_v] = {"alias": alias, "real_name": full_name}
 
+    def _compute_contact_activity_counts(self) -> Dict[str, int]:
+        """Agrège les volumes d'échanges SMS et Chats depuis les caches du dossier."""
+        ws_root: str = self.paths.get("workspace_root") or os.path.dirname(self.paths["contacts_dir"])
+        audits_dir: str = os.path.join(ws_root, "audits")
+        counts: Dict[str, int] = {}
+        sms_cache: str = os.path.join(audits_dir, ".sms_numbers_cache.json")
+        if os.path.isfile(sms_cache):
+            try:
+                with open(sms_cache, "r", encoding="utf-8") as f_s:
+                    stats = json.load(f_s).get("stats", {})
+                if isinstance(stats, dict):
+                    for num, info in stats.items():
+                        if isinstance(info, dict):
+                            k: str = normalize_phone_identifier(str(num)).lower()
+                            counts[k] = counts.get(k, 0) + int(info.get("count", 0))
+            except (OSError, json.JSONDecodeError):
+                pass
+        chat_cache: str = os.path.join(audits_dir, ".chats_filter_cache.json")
+        if os.path.isfile(chat_cache):
+            try:
+                with open(chat_cache, "r", encoding="utf-8") as f_c:
+                    metas = json.load(f_c).get("metas", [])
+                if isinstance(metas, list):
+                    for m in metas:
+                        if isinstance(m, dict):
+                            cnt: int = int(m.get("count", 0))
+                            for p in m.get("participants", []):
+                                pk: str = str(p).strip().lower()
+                                if pk:
+                                    counts[pk] = counts.get(pk, 0) + cnt
+            except (OSError, json.JSONDecodeError):
+                pass
+        return counts
     def import_contact_file(self, source_file: str, move_source: bool = False) -> str:
         os.makedirs(self.paths["input_contacts_dir"], exist_ok=True)
         os.makedirs(self.paths["contacts_dir"], exist_ok=True)
         dest_dir: str = self.paths["input_contacts_dir"]
-        if os.path.abspath(os.path.dirname(source_file)) == os.path.abspath(dest_dir):
-            dest_path: str = source_file
-        else:
-            dest_path = self._unique_dest_path(dest_dir, os.path.basename(source_file))
-            if move_source:
-                shutil.move(source_file, dest_path)
-            else:
-                shutil.copy2(source_file, dest_path)
+        dest_path: str = source_file if os.path.abspath(os.path.dirname(source_file)) == os.path.abspath(dest_dir) else self._unique_dest_path(dest_dir, os.path.basename(source_file))
+        if dest_path != source_file:
+            (shutil.move if move_source else shutil.copy2)(source_file, dest_path)
 
-        prev_items = self.load_filter_items()
-        prev_states: Dict[str, bool] = {str(it["display_name"]).lower(): bool(it["selected"]) for it in prev_items}
-
+        prev_states: Dict[str, bool] = {str(it["display_name"]).lower(): bool(it["selected"]) for it in self.load_filter_items()}
         mapping_data: Dict[str, Any] = {}
         if os.path.isfile(self.paths["mapping_file"]):
             try:
@@ -170,10 +188,8 @@ class ContactCatalogImporter:
                 if isinstance(loaded, dict):
                     mapping_data = loaded
             except (OSError, json.JSONDecodeError):
-                mapping_data = {}
-
+                pass
         self.parse_file_to_mapping(dest_path, mapping_data)
-
         with open(self.paths["mapping_file"], "w", encoding="utf-8") as f_out:
             json.dump(mapping_data, f_out, ensure_ascii=False, indent=2)
 
@@ -183,20 +199,17 @@ class ContactCatalogImporter:
                 with open(self.paths["contacts_file"], "r", encoding="utf-8", errors="ignore") as f_old:
                     for raw_ln in f_old:
                         ln: str = raw_ln.strip()
-                        if not ln or ln.startswith("#") or "=" not in ln:
-                            continue
-                        left_k, right_v = [x.strip() for x in ln.split("=", 1)]
-                        if left_k and right_v:
-                            merged_contacts[left_k] = right_v
+                        if ln and not ln.startswith("#") and "=" in ln:
+                            lk, rv = [x.strip() for x in ln.split("=", 1)]
+                            if lk and rv:
+                                merged_contacts[lk] = rv
             except OSError:
                 pass
-
         for ident, info in mapping_data.items():
             if isinstance(info, dict) and info.get("alias"):
                 merged_contacts[ident] = str(info["alias"]).strip()
-
         with open(self.paths["contacts_file"], "w", encoding="utf-8") as f_ct:
-            for ident, alias_val in sorted(merged_contacts.items(), key=lambda x: x[0].lower()):
+            for ident, alias_val in sorted(merged_contacts.items(), key=lambda x: next(iter(x)).lower()):
                 f_ct.write(f"{ident} = {alias_val}\n")
 
         updated_items = self.load_filter_items()
@@ -205,16 +218,10 @@ class ContactCatalogImporter:
         self.save_filter_selection(updated_items)
         return dest_path
     def load_filter_items(self) -> List[Dict[str, Any]]:
-        mapping_path: str = self.paths["mapping_file"]
-        contacts_txt: str = self.paths["contacts_file"]
+        mapping_path, contacts_txt = self.paths["mapping_file"], self.paths["contacts_file"]
         wl_path: str = os.path.join(self.paths["contacts_dir"], "whitelist_contacts.json")
-
         if not os.path.isfile(mapping_path) and os.path.isdir(self.paths["input_contacts_dir"]):
-            c_files = sorted(
-                os.path.join(self.paths["input_contacts_dir"], fn)
-                for fn in os.listdir(self.paths["input_contacts_dir"])
-                if fn.lower().endswith((".csv", ".vcf"))
-            )
+            c_files = sorted(os.path.join(self.paths["input_contacts_dir"], fn) for fn in os.listdir(self.paths["input_contacts_dir"]) if fn.lower().endswith((".csv", ".vcf")))
             if c_files:
                 rebuilt: Dict[str, Any] = {}
                 for cf in c_files:
@@ -246,12 +253,10 @@ class ContactCatalogImporter:
                         alias: str = str(info.get("alias") or "").strip()
                         real_name: str = str(info.get("real_name") or info.get("name") or alias).strip()
                         ident_str: str = str(raw_ident).lstrip("* ").strip()
-                        if not alias and not real_name:
-                            continue
-                        key: str = f"{real_name}|{alias}"
-                        entry = grouped.setdefault(key, {"display_name": real_name or alias, "alias": alias, "identifiers": []})
-                        if ident_str and ident_str.lower() != real_name.lower() and ident_str not in entry["identifiers"]:
-                            entry["identifiers"].append(ident_str)
+                        if alias or real_name:
+                            entry = grouped.setdefault(f"{real_name}|{alias}", {"display_name": real_name or alias, "alias": alias, "identifiers": []})
+                            if ident_str and ident_str.lower() != real_name.lower() and ident_str not in entry["identifiers"]:
+                                entry["identifiers"].append(ident_str)
             except (OSError, json.JSONDecodeError):
                 pass
 
@@ -259,25 +264,23 @@ class ContactCatalogImporter:
             with open(contacts_txt, "r", encoding="utf-8", errors="ignore") as f_c:
                 for raw_ln in f_c:
                     ln: str = raw_ln.strip()
-                    if not ln or ln.startswith("#") or "=" not in ln:
-                        continue
-                    left, right = [x.lstrip("* ").strip() for x in ln.split("=", 1)]
-                    if not left or not right:
-                        continue
-                    is_coord: bool = ("@" in left) or any(ch.isdigit() for ch in left)
-                    disp: str = right if is_coord else left
-                    entry = grouped.setdefault(disp, {"display_name": disp, "alias": right, "identifiers": []})
-                    if is_coord and left not in entry["identifiers"]:
-                        entry["identifiers"].append(left)
+                    if ln and not ln.startswith("#") and "=" in ln:
+                        left, right = [x.lstrip("* ").strip() for x in ln.split("=", 1)]
+                        if left and right:
+                            is_coord: bool = ("@" in left) or any(ch.isdigit() for ch in left)
+                            disp: str = right if is_coord else left
+                            entry = grouped.setdefault(disp, {"display_name": disp, "alias": right, "identifiers": []})
+                            if is_coord and left not in entry["identifiers"]:
+                                entry["identifiers"].append(left)
 
+        activity = self._compute_contact_activity_counts()
         items: List[Dict[str, Any]] = []
         for entry in sorted(grouped.values(), key=lambda x: str(x["display_name"]).lower()):
             idents: List[str] = list(entry["identifiers"])
-            selected: bool = True if not has_wl_file else (
-                any(normalize_phone_identifier(id_val).lower() in wl_set for id_val in idents)
-                or str(entry["display_name"]).lower() in wl_set
-            )
-            items.append({**entry, "selected": selected})
+            disp_low: str = str(entry["display_name"]).lower()
+            msg_cnt: int = activity.get(disp_low, 0) + sum(activity.get(normalize_phone_identifier(id_v).lower(), 0) for id_v in idents)
+            selected: bool = True if not has_wl_file else (any(normalize_phone_identifier(id_val).lower() in wl_set for id_val in idents) or disp_low in wl_set)
+            items.append({**entry, "count": msg_cnt, "selected": selected})
         return items
 
     def sync_selected_extraction_file(self, kept_identifiers: List[str]) -> None:
@@ -296,8 +299,7 @@ class ContactCatalogImporter:
         for ident in kept_identifiers:
             clean_id: str = normalize_phone_identifier(ident.strip())
             if clean_id and ("@" in clean_id or any(ch.isdigit() for ch in clean_id)):
-                alias: str = alias_lookup.get(clean_id.lower(), "Contact_SMS")
-                lines.append(f"{clean_id} = {alias}\n")
+                lines.append(f"{clean_id} = {alias_lookup.get(clean_id.lower(), 'Contact_SMS')}\n")
         with open(self.paths["selected_extraction_contacts_file"], "w", encoding="utf-8") as f_sel:
             f_sel.writelines(lines)
 

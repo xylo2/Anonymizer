@@ -1,5 +1,3 @@
-# Commandes pip à exécuter : Aucune dépendance externe requise
-
 import os
 import shutil
 import sys
@@ -36,7 +34,6 @@ class TestTreeColumnCustomization(unittest.TestCase):
         app.withdraw()
         app._sync_docs_tasks = True  # type: ignore[attr-defined]
         return app
-
     def test_reorder_hide_autofit_persist_and_reset(self) -> None:
         try:
             app1 = self._new_app()
@@ -52,20 +49,23 @@ class TestTreeColumnCustomization(unittest.TestCase):
             tree1 = app1.contacts_filter_tree
             tree1.insert(
                 "", "end",
-                values=("✓ Garder", "Contact_Test_1_Nom_Tres_Long_Pour_Test", "06 00 00 00 01", "contact1@exemple.test"),
+                values=(
+                    "✓ Garder", "Contact_Test_1_Nom_Tres_Long_Pour_Test",
+                    "06 00 00 00 01", "contact1@exemple.test", "0 msg",
+                ),
             )
             mgr1 = TreeviewColumnLayoutManager.attach_to_tree(tree1)
-            self.assertEqual(mgr1.get_visible_columns(), ["keep", "alias", "phones", "emails"])
+            self.assertEqual(mgr1.get_visible_columns(), ["keep", "alias", "phones", "emails", "count"])
 
             fitted_w: int = mgr1.auto_fit_column("alias")
-            self.assertGreater(fitted_w, 180)
+            self.assertGreater(fitted_w, 170)
             self.assertEqual(int(tree1.column("alias", "width")), fitted_w)
 
             mgr1.toggle_column_visibility("emails")
-            self.assertEqual(mgr1.get_visible_columns(), ["keep", "alias", "phones"])
+            self.assertEqual(mgr1.get_visible_columns(), ["keep", "alias", "phones", "count"])
 
             mgr1.move_column_to_x("phones", 10)
-            self.assertEqual(mgr1.get_visible_columns(), ["phones", "keep", "alias"])
+            self.assertEqual(mgr1.get_visible_columns(), ["phones", "keep", "alias", "count"])
             self.assertTrue(os.path.isfile(app1._ui_prefs_file))
         finally:
             app1.destroy()
@@ -77,12 +77,12 @@ class TestTreeColumnCustomization(unittest.TestCase):
             app2.update_idletasks()
             tree2 = app2.contacts_filter_tree
             mgr2 = TreeviewColumnLayoutManager.attach_to_tree(tree2)
-            self.assertEqual(mgr2.get_visible_columns(), ["phones", "keep", "alias"])
+            self.assertEqual(mgr2.get_visible_columns(), ["phones", "keep", "alias", "count"])
             self.assertEqual(int(tree2.column("alias", "width")), fitted_w)
 
             mgr2.reset_to_default()
-            self.assertEqual(mgr2.get_visible_columns(), ["keep", "alias", "phones", "emails"])
-            self.assertEqual(int(tree2.column("alias", "width")), 180)
+            self.assertEqual(mgr2.get_visible_columns(), ["keep", "alias", "phones", "emails", "count"])
+            self.assertEqual(int(tree2.column("alias", "width")), 170)
         finally:
             app2.destroy()
 

@@ -121,7 +121,7 @@ class TestBugfixesRegression(unittest.TestCase):
         paths = self.ctrl.resolve_workspace_paths(ini_path)
         src_doc = os.path.join(paths["sources_dir"], "2024-07_rapport.txt")
         with open(src_doc, "w", encoding="utf-8") as f_src:
-            f_src.write("Rapport médical de Camille Dupont.\n")
+            f_src.write("Rapport AnonVault de Camille Dupont.\n")
 
         cfg = PipelineConfig(ini_path)
         DocAnonymizerPipelineRunner(config=cfg, prevent_sleep=False).run_extract_only()
